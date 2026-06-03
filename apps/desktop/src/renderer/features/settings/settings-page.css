@@ -1,0 +1,546 @@
+.settings {
+  --settings-page-bg: #f7f8fb;
+  --settings-panel-bg: rgba(255, 255, 255, 0.96);
+  --settings-panel-border: rgba(17, 24, 39, 0.08);
+  --settings-row-border: rgba(17, 24, 39, 0.08);
+  --settings-title: #171717;
+  --settings-text: #242424;
+  --settings-muted: #8a8f98;
+  --settings-control-bg: #ffffff;
+  --settings-control-border: #dddedf;
+  --settings-control-border-hover: #c8ccd2;
+  --settings-control-focus: rgba(37, 99, 235, 0.14);
+  --settings-control-width: 300px;
+  --settings-accent: #2563eb;
+}
+
+:root[data-theme="dark"] .settings,
+:root:not([data-theme="light"]) .settings {
+  --settings-page-bg: #07080b;
+  --settings-panel-bg: rgba(16, 22, 33, 0.9);
+  --settings-panel-border: rgba(148, 163, 184, 0.16);
+  --settings-row-border: rgba(148, 163, 184, 0.14);
+  --settings-title: #f8fafc;
+  --settings-text: rgba(248, 250, 252, 0.9);
+  --settings-muted: rgba(148, 163, 184, 0.82);
+  --settings-control-bg: rgba(2, 6, 23, 0.42);
+  --settings-control-border: rgba(148, 163, 184, 0.24);
+  --settings-control-border-hover: rgba(203, 213, 225, 0.38);
+  --settings-control-focus: rgba(148, 163, 184, 0.16);
+  --settings-accent: #60a5fa;
+}
+
+.settings__title {
+  margin: 0 0 4px 0;
+  color: var(--settings-title);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.settings .settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2px 0 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.settings .settings__section--plain {
+  padding: 2px 0 6px;
+}
+
+.settings-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 7px 18px 8px;
+  color: var(--settings-muted);
+  border-bottom: 1px solid var(--settings-row-border);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.settings-group-header__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--settings-muted);
+}
+
+.settings-group-header__icon svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+
+.settings-group-header__label {
+  line-height: 1;
+}
+
+.settings-group-header::after {
+  content: none;
+}
+
+.settings .settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, var(--settings-control-width));
+  align-items: center;
+  gap: 24px;
+  min-height: 50px;
+  padding: 9px 18px;
+  color: var(--settings-text);
+  background: transparent;
+  border: 0;
+  border-bottom: 0;
+  border-radius: 0;
+}
+
+.settings .settings-row:last-child {
+  border-bottom: 0;
+}
+
+.settings .settings-row--proxy,
+.settings .settings-row--service {
+  align-items: start;
+}
+
+.settings .settings-row__text strong,
+.settings .settings-row strong {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--settings-text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.settings .settings-row__text small,
+.settings .settings-row small {
+  display: block;
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings .settings-row__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.settings__label {
+  color: var(--settings-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings__field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings__field-value {
+  flex: 0 0 auto;
+  color: var(--settings-muted);
+  font-size: 12px;
+}
+
+.settings .settings-shortcut-recorder-field {
+  position: relative;
+  width: min(var(--settings-control-width), 100%);
+}
+
+.settings .settings__select,
+.settings .settings__input,
+.settings .mic-picker__trigger,
+.settings .settings-shortcut-recorder {
+  box-sizing: border-box;
+  width: min(var(--settings-control-width), 100%);
+  min-height: 38px;
+  height: 38px;
+  padding: 0 12px;
+  color: var(--settings-text);
+  background-color: var(--settings-control-bg);
+  border: 1px solid var(--settings-control-border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  box-shadow: none;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 120ms ease;
+}
+
+.settings .settings__select,
+.settings select.settings__select {
+  padding-right: 36px;
+}
+
+.settings .settings__input {
+  padding: 8px 12px;
+}
+
+.settings .settings__select:hover,
+.settings .settings__input:hover,
+.settings .mic-picker__trigger:hover,
+.settings .settings-shortcut-recorder:hover:not(:disabled) {
+  border-color: var(--settings-control-border-hover);
+}
+
+.settings .settings__select:focus,
+.settings .settings__input:focus,
+.settings .mic-picker__trigger:focus-visible,
+.settings .settings-shortcut-recorder:focus-visible,
+.settings .settings-shortcut-recorder--recording {
+  border-color: var(--settings-accent);
+  box-shadow: none;
+}
+
+.settings .settings__select:disabled,
+.settings .settings__input:disabled,
+.settings .settings-shortcut-recorder:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.settings .settings-shortcut-recorder {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings .settings-shortcut-recorder--invalid,
+.settings .settings-shortcut-recorder--invalid:focus-visible {
+  border-color: #ff3b5f;
+  box-shadow: none;
+}
+
+.settings .settings-shortcut-recorder__error {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  width: 100%;
+  margin: 0;
+  color: #ff3b5f;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.settings .settings-shortcut-recorder:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.settings .mic-picker {
+  width: min(var(--settings-control-width), 100%);
+}
+
+.settings .settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 31px;
+  height: 18px;
+  padding: 0;
+  background: #c9ced6;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.settings .settings-switch[data-checked="true"] {
+  background: #2563eb;
+}
+
+.settings .settings-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--settings-control-focus);
+}
+
+.settings .settings-switch__thumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.24);
+  transition: transform 160ms ease;
+}
+
+.settings .settings-switch[data-checked="true"] .settings-switch__thumb {
+  transform: translateX(13px);
+}
+
+.settings .mic-picker__trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings .mic-picker__chevron {
+  color: var(--settings-muted);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.settings .settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: min(var(--settings-control-width), 100%);
+  min-width: 0;
+}
+
+.settings .settings-field--proxy {
+  gap: 6px;
+}
+
+.settings .settings-field--proxy .settings__label {
+  margin-top: 6px;
+}
+
+.settings .settings-field--proxy .settings__label:first-child {
+  margin-top: 0;
+}
+
+.settings .settings-service-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: min(var(--settings-control-width), 100%);
+}
+
+.settings .settings-service-control .settings__input {
+  width: 100%;
+}
+
+.settings .settings-waveform-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings .settings-waveform-preview {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0;
+}
+
+.settings .settings-waveform-preview .waveform-preview {
+  width: min(138px, 100%);
+  max-width: 138px;
+}
+
+.settings__btn {
+  min-height: 38px;
+  padding: 0 14px;
+  color: var(--settings-text);
+  background: color-mix(in srgb, var(--settings-control-bg), var(--settings-accent) 4%);
+  border: 1px solid var(--settings-control-border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 120ms ease;
+}
+
+.settings__btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--settings-control-bg), var(--settings-accent) 9%);
+  border-color: var(--settings-control-border-hover);
+}
+
+.settings__btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.settings__btn:focus-visible {
+  outline: none;
+  border-color: var(--settings-accent);
+  box-shadow: none;
+}
+
+.settings__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings__btn--compact {
+  flex: 0 0 auto;
+  min-width: 68px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+
+.connection-test-result {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.connection-test-result--page {
+  margin-top: 1px;
+}
+
+.connection-test-result--page.connection-test-result--ok {
+  color: #15803d;
+}
+
+.connection-test-result--page.connection-test-result--fail {
+  color: #c2410c;
+}
+
+.connection-test-result--page.connection-test-result--testing {
+  color: var(--settings-muted);
+}
+
+:root[data-theme="dark"] .connection-test-result--page.connection-test-result--ok,
+:root:not([data-theme="light"]) .connection-test-result--page.connection-test-result--ok {
+  color: #86efac;
+}
+
+:root[data-theme="dark"] .connection-test-result--page.connection-test-result--fail,
+:root:not([data-theme="light"]) .connection-test-result--page.connection-test-result--fail {
+  color: #fca5a5;
+}
+
+.connection-test-result--modal.connection-test-result--ok {
+  color: #15803d;
+}
+
+.connection-test-result--modal.connection-test-result--fail {
+  color: #c2410c;
+}
+
+.connection-test-result--modal.connection-test-result--testing {
+  color: #8a8f98;
+}
+
+.settings__subsection-title {
+  margin: 0;
+  color: var(--settings-muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.settings__proxy-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.settings__hint {
+  margin: -3px 4px 0;
+  color: var(--settings-muted);
+  font-size: 12px;
+}
+
+.settings__hint--error {
+  color: #c2410c;
+}
+
+:root[data-theme="dark"] .settings__hint--error,
+:root:not([data-theme="light"]) .settings__hint--error {
+  color: #fca5a5;
+}
+
+.settings__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.settings__spacer {
+  flex: 1 1 auto;
+}
+
+.settings__toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  padding: 10px 18px;
+  font-size: 13px;
+  border-radius: 999px;
+  box-shadow: none;
+  backdrop-filter: blur(6px);
+  transform: translateX(-50%);
+}
+
+.settings__toast--info {
+  color: #0f172a;
+  background: rgba(134, 239, 172, 0.95);
+}
+
+.settings__toast--error {
+  color: #fff;
+  background: rgba(248, 113, 113, 0.95);
+}
+
+.settings__loading,
+.settings__error {
+  padding: 40px 16px;
+  color: var(--settings-muted);
+  text-align: center;
+  font-size: 14px;
+}
+
+.settings__error {
+  color: #c2410c;
+}
+
+@media (max-width: 620px) {
+  .settings .settings-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .settings .settings-row__control {
+    justify-content: flex-start;
+  }
+
+  .settings .settings__select,
+  .settings .settings__input,
+  .settings .mic-picker,
+  .settings .mic-picker__trigger,
+  .settings .settings-shortcut-recorder,
+  .settings .settings-field,
+  .settings .settings-service-control,
+  .settings .settings-waveform-control {
+    width: 100%;
+  }
+}

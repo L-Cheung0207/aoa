@@ -1,0 +1,15 @@
+{
+  "name": "@voice/native-helper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cargo build --features node-addon && node scripts/copy-node-addon.mjs",
+    "build:native": "cargo build --features node-addon && node scripts/copy-node-addon.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

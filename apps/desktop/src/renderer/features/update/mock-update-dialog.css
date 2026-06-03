@@ -1,0 +1,107 @@
+.update-ready {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 90;
+  box-sizing: border-box;
+  width: 252px;
+  min-height: 150px;
+  padding: 16px 18px 18px;
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: #2d2d2d;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.update-ready__header {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 22px;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.update-ready__icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  color: #aebce8;
+}
+
+.update-ready__header h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-ready__close {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.5);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.update-ready__close:hover {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.update-ready__close:focus-visible,
+.update-ready__restart:focus-visible {
+  outline: 2px solid rgba(174, 188, 232, 0.7);
+  outline-offset: 2px;
+}
+
+.update-ready__message {
+  margin: 22px 0 16px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.update-ready__restart {
+  display: block;
+  width: 116px;
+  height: 38px;
+  margin: 0 auto;
+  color: rgba(255, 255, 255, 0.92);
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.update-ready__restart:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (max-width: 520px) {
+  .update-ready {
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}

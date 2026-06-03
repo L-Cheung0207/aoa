@@ -1,0 +1,114 @@
+.waveform-preview {
+  --overlay-mode-accent: rgba(148, 163, 184, 0.2);
+  --overlay-shadow: rgba(255, 255, 255, 0.03);
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 138px;
+  height: 34px;
+  padding: 0 4px;
+  overflow: hidden;
+  color: #e5e7eb;
+  background: linear-gradient(135deg, rgba(17, 24, 39, 0.86), rgba(39, 51, 68, 0.82));
+  border: 0;
+  border-radius: 9px;
+  box-shadow: none;
+  transform: translateZ(0);
+}
+
+.waveform-preview::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--overlay-mode-accent), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0.72);
+  transform-origin: center;
+  animation: overlay-top-breathe 1.8s ease-in-out infinite;
+}
+
+.waveform-preview .volume-meter {
+  --meter-width: 100%;
+  justify-self: stretch;
+}
+
+.waveform-preview--compact {
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  width: min(160px, 100%);
+  height: 40px;
+  min-height: 40px;
+  flex: 1 1 auto;
+}
+
+.waveform-preview--compact .volume-meter {
+  --meter-width: 100%;
+  gap: 3px;
+  justify-content: space-between;
+  width: 100%;
+  height: 22px;
+}
+
+.waveform-preview__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: rgba(226, 232, 240, 0.78);
+  background: rgba(36, 39, 43, 0.94);
+  font-size: 0;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.22) inset;
+}
+
+.waveform-preview__button svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.waveform-preview__button--cancel {
+  color: rgba(226, 232, 240, 0.62);
+}
+
+.waveform-preview__button--confirm {
+  color: #f8fafc;
+}
+
+.waveform-preview--compact .waveform-preview__button {
+  width: 32px;
+  height: 32px;
+}
+
+.waveform-preview--compact .waveform-preview__button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.waveform-preview--waveform-sunset {
+  --overlay-mode-accent: rgba(236, 92, 78, 0.72);
+  --overlay-shadow: rgba(236, 92, 78, 0.3);
+}
+
+.waveform-preview--waveform-mono {
+  --overlay-mode-accent: rgba(130, 138, 148, 0.76);
+  --overlay-shadow: rgba(148, 163, 184, 0.22);
+}
+
+.waveform-preview--waveform-candy {
+  --overlay-mode-accent: rgba(204, 45, 180, 0.78);
+  --overlay-shadow: rgba(204, 45, 180, 0.34);
+}

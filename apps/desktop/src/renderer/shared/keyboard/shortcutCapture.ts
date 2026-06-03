@@ -1,0 +1,345 @@
+import { validateShortcut } from "@voice/shared/shortcuts/reservedShortcutPolicy";
+
+export const SUPPORTED_SHORTCUTS = [
+  "RightAlt",
+  "RightAlt+Space",
+  "RightAlt+RightShift"
+] as const;
+
+export type SupportedShortcut = (typeof SUPPORTED_SHORTCUTS)[number];
+
+const SHORTCUT_LABELS: Record<SupportedShortcut, string> = {
+  RightAlt: "Right Alt",
+  "RightAlt+Space": "Right Alt + Space",
+  "RightAlt+RightShift": "Right Alt + Right Shift"
+};
+
+const SYMBOL_KEY_LABELS: Record<string, string> = {
+  "-": "-",
+  "=": "=",
+  ",": ",",
+  ".": ".",
+  "/": "/",
+  "\\": "\\",
+  ";": ";",
+  "'": "'",
+  "[": "[",
+  "]": "]",
+  "`": "`"
+};
+
+const SYMBOL_KEY_ACCELERATORS: Record<string, string> = {
+  Minus: "-",
+  Equal: "=",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backquote: "`"
+};
+
+const RIGHT_ALT_FALLBACK_CAPTURE_MS = 600;
+
+export function formatShortcutLabel(value: string): string {
+  if (value in SHORTCUT_LABELS) {
+    return SHORTCUT_LABELS[value as SupportedShortcut];
+  }
+
+  return value
+    .split("+")
+    .filter(Boolean)
+    .map((part) => {
+      switch (part) {
+        case "Ctrl":
+        case "Alt":
+        case "Shift":
+          return part;
+        case "Super":
+          return "Win";
+        case "AltGr":
+        case "RightAlt":
+          return "Right Alt";
+        default:
+          if (part in SYMBOL_KEY_LABELS) {
+            return SYMBOL_KEY_LABELS[part];
+          }
+          return part.length === 1 ? part.toUpperCase() : part;
+      }
+    })
+    .join(" + ");
+}
+
+export function isSupportedShortcut(value: string): boolean {
+  return validateShortcut(value, "win32").ok;
+}
+
+export interface ShortcutCaptureHandlers {
+  handleKeyDown(event: KeyboardEvent): void;
+  handleKeyUp(event: KeyboardEvent): void;
+  reset(): void;
+}
+
+export interface CreateShortcutCaptureHandlersOptions {
+  onCapture(accelerator: string): void;
+  onCancel(): void;
+  onInvalid?(message: string): void;
+}
+
+const INVALID_SHORTCUT_MESSAGE = "请按下一个快捷键";
+
+export function createShortcutCaptureHandlers(
+  options: CreateShortcutCaptureHandlersOptions
+): ShortcutCaptureHandlers {
+  const pressedModifiers = new Set<string>();
+  let rightAltFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let finished = false;
+
+  const reset = (): void => {
+    if (rightAltFallbackTimer) {
+      clearTimeout(rightAltFallbackTimer);
+      rightAltFallbackTimer = undefined;
+    }
+    pressedModifiers.clear();
+    finished = false;
+  };
+
+  const clearRightAltFallback = (): void => {
+    if (!rightAltFallbackTimer) {
+      return;
+    }
+    clearTimeout(rightAltFallbackTimer);
+    rightAltFallbackTimer = undefined;
+  };
+
+  const finish = (accelerator: string): void => {
+    if (finished) {
+      return;
+    }
+    clearRightAltFallback();
+
+    const validation = validateShortcut(accelerator, "win32");
+    if (!validation.ok) {
+      options.onInvalid?.(validation.message ?? INVALID_SHORTCUT_MESSAGE);
+      return;
+    }
+
+    finished = true;
+    options.onCapture(accelerator);
+    reset();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.code === "Escape") {
+      options.onCancel();
+      reset();
+      return;
+    }
+
+    const modifier = modifierFromEvent(event);
+    if (modifier) {
+      syncHeldModifiersFromEvent(event, pressedModifiers, modifier);
+      if (pressedModifiers.has("RightAlt") && event.code === "ShiftRight") {
+        finish("RightAlt+RightShift");
+        return;
+      }
+      pressedModifiers.add(modifier);
+      if (modifier === "RightAlt" && pressedModifiers.size === 1 && !rightAltFallbackTimer) {
+        rightAltFallbackTimer = setTimeout(() => {
+          if (pressedModifiers.size === 1 && pressedModifiers.has("RightAlt") && !finished) {
+            finish("RightAlt");
+          }
+        }, RIGHT_ALT_FALLBACK_CAPTURE_MS);
+      }
+      return;
+    }
+
+    syncHeldModifiersFromEvent(event, pressedModifiers);
+    if (pressedModifiers.has("RightAlt") && event.code === "Space") {
+      finish("RightAlt+Space");
+      return;
+    }
+
+    const key = keyFromEvent(event);
+    if (!key) {
+      options.onInvalid?.(INVALID_SHORTCUT_MESSAGE);
+      return;
+    }
+
+    finish(buildAccelerator(pressedModifiers, key));
+  };
+
+  const handleKeyUp = (event: KeyboardEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.code === "AltRight" || event.key === "AltGraph") {
+      if (pressedModifiers.has("RightAlt") && !finished && pressedModifiers.size === 1) {
+        finish("RightAlt");
+        return;
+      }
+      clearRightAltFallback();
+      pressedModifiers.delete("RightAlt");
+      return;
+    }
+
+    const modifier = modifierFromEvent(event);
+    if (modifier) {
+      if (pressedModifiers.has(modifier) && !finished) {
+        if (pressedModifiers.size === 1) {
+          finish(modifier);
+          return;
+        }
+        if (pressedModifiers.size > 1) {
+          finish(buildModifierAccelerator(pressedModifiers));
+          return;
+        }
+      }
+      pressedModifiers.delete(modifier);
+    }
+  };
+
+  return {
+    handleKeyDown,
+    handleKeyUp,
+    reset
+  };
+}
+
+function modifierFromEvent(event: KeyboardEvent): string | undefined {
+  switch (event.code) {
+    case "ControlLeft":
+    case "ControlRight":
+      return "Ctrl";
+    case "AltLeft":
+      return "Alt";
+    case "AltRight":
+      return "RightAlt";
+    case "ShiftLeft":
+    case "ShiftRight":
+      return "Shift";
+    case "MetaLeft":
+    case "MetaRight":
+      return "Super";
+    default:
+      if (event.key === "AltGraph") {
+        return "RightAlt";
+      }
+      return undefined;
+  }
+}
+
+function syncHeldModifiersFromEvent(
+  event: KeyboardEvent,
+  modifiers: Set<string>,
+  currentModifier?: string
+): void {
+  if (isAltGraphActive(event)) {
+    modifiers.delete("Ctrl");
+    modifiers.delete("Alt");
+    modifiers.add("RightAlt");
+  } else {
+    if (event.ctrlKey && currentModifier !== "Ctrl") {
+      modifiers.add("Ctrl");
+    }
+    if (
+      event.altKey &&
+      currentModifier !== "Alt" &&
+      currentModifier !== "RightAlt"
+    ) {
+      modifiers.add("Alt");
+    }
+  }
+
+  if (event.shiftKey && currentModifier !== "Shift") {
+    modifiers.add("Shift");
+  }
+  if (event.metaKey && currentModifier !== "Super") {
+    modifiers.add("Super");
+  }
+}
+
+function isAltGraphActive(event: KeyboardEvent): boolean {
+  if (typeof event.getModifierState !== "function") {
+    return false;
+  }
+  return event.getModifierState("AltGraph");
+}
+
+function buildAccelerator(modifiers: Set<string>, key: string): string {
+  const parts = ["Ctrl", "Alt", "Shift", "Super"].filter((modifier) =>
+    modifiers.has(modifier)
+  );
+  if (modifiers.has("RightAlt")) {
+    parts.push("AltGr");
+  }
+  return [...new Set(parts), key].join("+");
+}
+
+function buildModifierAccelerator(modifiers: Set<string>): string {
+  const parts = ["Ctrl", "Alt", "Shift", "Super"].filter((modifier) =>
+    modifiers.has(modifier)
+  );
+  if (modifiers.has("RightAlt")) {
+    parts.push("RightAlt");
+  }
+  return [...new Set(parts)].join("+");
+}
+
+function keyFromEvent(event: KeyboardEvent): string | undefined {
+  if (/^Key[A-Z]$/.test(event.code)) {
+    return event.code.slice(3);
+  }
+  if (/^Digit[0-9]$/.test(event.code)) {
+    return event.code.slice(5);
+  }
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(event.code)) {
+    return event.code;
+  }
+
+  switch (event.code) {
+    case "Space":
+    case "Tab":
+    case "Enter":
+    case "Backspace":
+    case "Delete":
+    case "Insert":
+    case "Home":
+    case "End":
+    case "PageUp":
+    case "PageDown":
+      return event.code;
+    case "Escape":
+      return "Esc";
+    case "ArrowUp":
+      return "Up";
+    case "ArrowDown":
+      return "Down";
+    case "ArrowLeft":
+      return "Left";
+    case "ArrowRight":
+      return "Right";
+    case "Minus":
+    case "Equal":
+    case "Comma":
+    case "Period":
+    case "Slash":
+    case "Backslash":
+    case "Semicolon":
+    case "Quote":
+    case "BracketLeft":
+    case "BracketRight":
+    case "Backquote":
+      return SYMBOL_KEY_ACCELERATORS[event.code];
+    case "PrintScreen":
+      return "PrintScreen";
+    default:
+      return undefined;
+  }
+}

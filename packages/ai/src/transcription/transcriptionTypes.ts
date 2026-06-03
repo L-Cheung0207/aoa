@@ -1,0 +1,49 @@
+import type { AudioFrame, RecordingLanguage } from "@voice/shared";
+
+export interface TranscriptionStartInput {
+  installationId: string;
+  language: RecordingLanguage;
+  sampleRate: 16000;
+}
+
+export type TranscriptionEvent =
+  | {
+      type: "started";
+    }
+  | {
+      type: "partial";
+      text: string;
+    }
+  | {
+      type: "final";
+      text: string;
+    }
+  | {
+      type: "error";
+      error: Error;
+    }
+  | {
+      type: "stopped";
+    };
+
+export interface TranscriptionProvider {
+  subscribe(listener: (event: TranscriptionEvent) => void): () => void;
+  start(input: TranscriptionStartInput): Promise<void>;
+  sendAudio(frame: AudioFrame): void;
+  stop(): Promise<void>;
+  cancel(): Promise<void>;
+}
+
+export function encodePcm16ToBase64(pcm: Int16Array): string {
+  const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}

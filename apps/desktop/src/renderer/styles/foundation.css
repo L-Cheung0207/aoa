@@ -1,0 +1,147 @@
+:root {
+  color: #eef2ff;
+  background: transparent;
+  --font-sans:
+    "Segoe UI Variable",
+    "Segoe UI",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Noto Sans CJK SC",
+    "Source Han Sans SC",
+    sans-serif;
+  --font-mono:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+
+  font-family: var(--font-sans);
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-kerning: normal;
+  font-feature-settings: "kern", "liga", "calt";
+}
+
+/* ===== Global form controls (theme-aware) ===== */
+:root {
+  --ui-select-fg: rgba(248, 250, 252, 0.92);
+  --ui-select-bg: rgba(2, 6, 23, 0.38);
+  --ui-select-border: rgba(248, 250, 252, 0.22);
+  --ui-select-border-hover: rgba(248, 250, 252, 0.32);
+  --ui-select-focus-ring: rgba(248, 250, 252, 0.12);
+  --ui-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+:root[data-theme="light"] {
+  --ui-select-fg: rgba(15, 23, 42, 0.9);
+  --ui-select-bg: rgba(255, 255, 255, 0.98);
+  --ui-select-border: rgba(15, 23, 42, 0.16);
+  --ui-select-border-hover: rgba(15, 23, 42, 0.22);
+  --ui-select-focus-ring: rgba(37, 99, 235, 0.18);
+  --ui-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+/* Apply consistent select styling across app surfaces. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 36px 0 12px;
+  color: var(--ui-select-fg);
+  background-color: var(--ui-select-bg);
+  border: 1px solid var(--ui-select-border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: normal;
+  outline: none;
+  background-image: var(--ui-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+select {
+  background-image: var(--ui-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+
+select:hover {
+  border-color: var(--ui-select-border-hover);
+}
+
+select:focus {
+  border-color: var(--ui-select-border-hover);
+  box-shadow: 0 0 0 3px var(--ui-select-focus-ring);
+}
+
+/* Native dropdown menu items (Chromium/Electron):
+   keep options high-contrast regardless of theme. */
+select option,
+select optgroup {
+  background: #ffffff;
+  color: #0b1220;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 全域性捲軸樣式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4d4d4;
+  border-radius: 4px;
+  transition: background 150ms ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}

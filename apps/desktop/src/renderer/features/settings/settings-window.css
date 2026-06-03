@@ -1,0 +1,210 @@
+/* ===== 設定頁：參考 old SettingsDialog 的分割槽式表單佈局 ===== */
+/* 設定窗可滾動：取消 body 全域性 overflow:hidden（懸浮窗需要）。
+   設定頁作為獨立視窗渲染時，允許 root 容器滾動。 */
+body:has(.settings):not(:has(.home-page)) {
+  overflow: auto;
+  background: #07080b;
+}
+
+:root[data-theme="light"] body:has(.settings):not(:has(.home-page)) {
+  background: #f4f6fb;
+}
+
+.settings {
+  box-sizing: border-box;
+  width: 100vw;
+  min-height: 100vh;
+  padding: 28px 32px 34px;
+  background: radial-gradient(circle at 14% 18%, rgba(148, 163, 184, 0.08), transparent 52%),
+    radial-gradient(circle at 76% 66%, rgba(59, 130, 246, 0.08), transparent 54%),
+    linear-gradient(180deg, #07080b, #05060a 64%, #07080b);
+  color: #e2e8f0;
+  -webkit-user-select: none;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+:root[data-theme="light"] .settings {
+  color: #0b1220;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(59, 130, 246, 0.12), transparent 52%),
+    radial-gradient(circle at 76% 66%, rgba(168, 85, 247, 0.1), transparent 54%),
+    linear-gradient(180deg, #f6f8fd, #eef2f7 64%, #f6f8fd);
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.settings-header__left {
+  min-width: 0;
+}
+
+.settings-header__title {
+  margin: 0 0 8px;
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 26px;
+  line-height: 1.15;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+:root[data-theme="light"] .settings-header__title {
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.settings-header__subtitle {
+  margin: 0;
+  color: rgba(148, 163, 184, 0.84);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+:root[data-theme="light"] .settings-header__subtitle {
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.settings-header__right {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-header__select {
+  width: 180px;
+  min-width: 180px;
+}
+
+.settings-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+}
+
+.settings-tabs__item {
+  height: 32px;
+  padding: 0 14px;
+  color: rgba(226, 232, 240, 0.78);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
+}
+
+.settings-tabs__item:hover {
+  color: rgba(248, 250, 252, 0.92);
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.settings-tabs__item:active {
+  transform: scale(0.98);
+}
+
+.settings-tabs__item--active {
+  color: #0b0f16;
+  background: rgba(248, 250, 252, 0.95);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.home-content--settings {
+  margin: 48px 22px 22px 22px;
+  padding: 0;
+  overflow: auto;
+  background: transparent;
+  border: 0;
+}
+
+.home-content--settings .settings {
+  width: 100%;
+  min-height: 100%;
+  padding: 24px 26px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.92) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 32px 90px rgba(0, 0, 0, 0.42);
+}
+
+:root[data-theme="light"] .home-content--settings .settings {
+  color: #0b1220;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.03) inset,
+    0 32px 90px rgba(15, 23, 42, 0.14);
+}
+
+:root[data-theme="light"] .home-content--settings .settings__label,
+:root[data-theme="light"] .home-content--settings .settings__field-value,
+:root[data-theme="light"] .home-content--settings .settings__hint {
+  color: rgba(15, 23, 42, 0.72);
+}
+
+:root[data-theme="light"] .home-content--settings .settings-row__text strong {
+  color: rgba(15, 23, 42, 0.9);
+}
+
+:root[data-theme="light"] .home-content--settings .settings-row__text small {
+  color: rgba(15, 23, 42, 0.64);
+}
+
+:root[data-theme="light"] .home-content--settings .settings__select,
+:root[data-theme="light"] .home-content--settings .settings__input,
+:root[data-theme="light"] .home-content--settings .mic-picker__trigger,
+:root[data-theme="light"] .home-content--settings .settings-shortcut-recorder {
+  color: rgba(15, 23, 42, 0.9);
+  background-color: rgba(255, 255, 255, 0.98);
+  border-color: rgba(15, 23, 42, 0.16);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+:root[data-theme="light"] .home-content--settings .settings__select:hover,
+:root[data-theme="light"] .home-content--settings .settings__input:hover,
+:root[data-theme="light"] .home-content--settings .mic-picker__trigger:hover,
+:root[data-theme="light"] .home-content--settings .settings-shortcut-recorder:hover:not(:disabled) {
+  border-color: rgba(15, 23, 42, 0.22);
+}
+
+:root[data-theme="light"] .home-content--settings .settings__select:focus,
+:root[data-theme="light"] .home-content--settings .settings__input:focus,
+:root[data-theme="light"] .home-content--settings .mic-picker__trigger:focus-visible,
+:root[data-theme="light"] .home-content--settings .settings-shortcut-recorder:focus-visible,
+:root[data-theme="light"] .home-content--settings .settings-shortcut-recorder--recording {
+  border-color: rgba(37, 99, 235, 0.75);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+:root[data-theme="light"] .home-content--settings .settings-shortcut-recorder--invalid,
+:root[data-theme="light"] .home-content--settings .settings-shortcut-recorder--invalid:focus-visible {
+  border-color: #ff3b5f;
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .home-content--settings .settings__btn {
+  color: rgba(15, 23, 42, 0.84);
+  background: rgba(15, 23, 42, 0.06);
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+:root[data-theme="light"] .home-content--settings .settings__btn:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.1);
+  border-color: rgba(15, 23, 42, 0.14);
+}

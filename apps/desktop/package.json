@@ -1,0 +1,29 @@
+{
+  "name": "@voice/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@voice/ai": "workspace:*",
+    "@voice/backend-client": "workspace:*",
+    "@voice/native-helper": "workspace:*",
+    "@voice/shared": "workspace:*",
+    "electron-store": "^10.0.1",
+    "electron-updater": "^6.8.3",
+    "https-proxy-agent": "^9.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "undici": "^8.2.0",
+    "ws": "^8.20.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

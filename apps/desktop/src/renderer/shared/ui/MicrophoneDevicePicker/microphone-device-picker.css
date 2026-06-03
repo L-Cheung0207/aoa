@@ -1,0 +1,231 @@
+.mic-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.mic-picker__trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px 0 12px;
+  color: #4c4c4c;
+  background: #fff;
+  border: 1px solid #d9d7d2;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.mic-picker__trigger:hover {
+  border-color: #c9c6bf;
+  background: #fbfbfa;
+}
+
+.mic-picker__trigger:focus-visible {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.mic-picker__trigger-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mic-picker__chevron {
+  color: #111;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.mic-picker__modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mic-picker__backdrop {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.48);
+  border: 0;
+}
+
+.mic-picker__panel {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: min(450px, calc(100vw - 64px));
+  max-height: min(560px, calc(100vh - 64px));
+  overflow: auto;
+  padding: 22px 24px 24px;
+  color: #202020;
+  background: #fff;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.mic-picker__panel header {
+  display: block;
+  margin: 0 34px 18px 0;
+  color: #202020;
+}
+
+.mic-picker__panel h3 {
+  margin: 0 0 10px;
+  color: #111;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mic-picker__panel p {
+  margin: 0;
+  color: #777;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mic-picker__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #555;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mic-picker__close:hover {
+  background: #f0f0ee;
+}
+
+.mic-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mic-picker__option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 68px;
+  padding: 14px 14px 14px 16px;
+  color: #202020;
+  background: #fff;
+  border: 1px solid #eceae6;
+  border-radius: 8px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.mic-picker__option:hover {
+  border-color: #d9d7d2;
+  background: #fbfbfa;
+}
+
+.mic-picker__option--selected {
+  border-color: #111;
+  background: #f4f4f3;
+  box-shadow: 0 0 0 1px #111 inset;
+}
+
+.mic-picker__option strong {
+  display: block;
+  min-width: 0;
+  margin: 0 0 5px;
+  overflow: hidden;
+  color: #202020;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mic-picker__option small {
+  display: block;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.mic-picker__status {
+  margin-top: 12px !important;
+  color: #777 !important;
+  font-size: 12px !important;
+}
+
+.mic-level-meter {
+  --mic-level: 0;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 8px;
+  box-shadow:
+    0 14px 42px rgba(30, 41, 59, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  backdrop-filter: blur(18px);
+}
+
+.mic-level-meter__bar {
+  position: relative;
+  display: block;
+  width: 5px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d9d9d9 0%, #cfcfcf 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+.mic-level-meter__bar::after {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(180deg, #2d6df7 0%, #1f5fe5 100%);
+  content: "";
+  opacity: 0;
+  transition: opacity 420ms ease-out;
+}
+
+.mic-level-meter__bar[data-filled="true"]::after {
+  opacity: 1;
+}

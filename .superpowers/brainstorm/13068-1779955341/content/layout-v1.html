@@ -1,0 +1,135 @@
+<h2>设置页重构：先定“间距与密度”</h2>
+<p class="subtitle">点击选择你希望的整体节奏；后续我会按这个密度去统一所有分组与表单行。</p>
+
+<div class="cards">
+  <div class="card" data-choice="compact" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">紧凑（更像系统设置）</div>
+        <div class="mockup-body">
+          <div class="section">
+            <div class="label">连接</div>
+            <div style="border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:10px 14px">
+              <div style="display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:700">ASR WebSocket</div>
+                  <div style="opacity:.7;font-size:12px;margin-top:4px">语音识别实时转写连接地址。</div>
+                </div>
+                <div style="width:280px;height:34px;border:1px solid rgba(0,0,0,.12);border-radius:10px;background:rgba(255,255,255,.95)"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;gap:18px;padding:10px 0">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:700">WS 代理（可选）</div>
+                  <div style="opacity:.7;font-size:12px;margin-top:4px">留空表示直连。</div>
+                </div>
+                <div style="width:280px;display:flex;flex-direction:column;gap:8px">
+                  <div style="height:34px;border:1px solid rgba(0,0,0,.12);border-radius:10px;background:#fff"></div>
+                  <div style="height:34px;border:1px solid rgba(0,0,0,.12);border-radius:10px;background:#fff"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="height:6px"></div>
+          <div class="section">
+            <div class="label">录音</div>
+            <div style="border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:10px 14px">
+              <div style="display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:700">麦克风</div>
+                  <div style="opacity:.7;font-size:12px;margin-top:4px">选择录音输入设备。</div>
+                </div>
+                <div style="width:280px;height:34px;border:1px solid rgba(0,0,0,.12);border-radius:10px;background:#fff"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;gap:18px;padding:10px 0">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:700">声波效果</div>
+                  <div style="opacity:.7;font-size:12px;margin-top:4px">选择悬浮窗波形风格。</div>
+                </div>
+                <div style="width:280px">
+                  <div style="height:34px;border:1px solid rgba(0,0,0,.12);border-radius:10px;background:#fff"></div>
+                  <div style="height:28px;margin-top:8px;border-radius:999px;background:linear-gradient(90deg,#f97316,#fb7185)"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>紧凑</h3>
+      <p>每行更矮、分隔线更轻；代理区块不再“撑高”页面。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="balanced" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">标准（现在主流设置页）</div>
+        <div class="mockup-body">
+          <div style="border:1px solid rgba(0,0,0,.08);border-radius:14px;padding:14px 16px">
+            <div style="display:flex;justify-content:space-between;gap:22px;padding:14px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700">ASR WebSocket</div>
+                <div style="opacity:.7;font-size:12px;margin-top:6px">语音识别实时转写连接地址。</div>
+              </div>
+              <div style="width:320px;height:38px;border:1px solid rgba(0,0,0,.12);border-radius:12px;background:#fff"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:22px;padding:14px 0">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700">WS 代理（可选）</div>
+                <div style="opacity:.7;font-size:12px;margin-top:6px">留空表示直连。</div>
+              </div>
+              <div style="width:320px;display:flex;flex-direction:column;gap:10px">
+                <div style="height:38px;border:1px solid rgba(0,0,0,.12);border-radius:12px;background:#fff"></div>
+                <div style="height:38px;border:1px solid rgba(0,0,0,.12);border-radius:12px;background:#fff"></div>
+                <div style="height:38px;border:1px solid rgba(0,0,0,.12);border-radius:12px;background:#fff"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>标准</h3>
+      <p>行高更舒适，控件更大；阅读轻松但占用更高。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="airy" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">舒展（更“Web”）</div>
+        <div class="mockup-body">
+          <div style="border:1px solid rgba(0,0,0,.08);border-radius:16px;padding:18px 18px">
+            <div style="display:flex;justify-content:space-between;gap:24px;padding:18px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:800">ASR WebSocket</div>
+                <div style="opacity:.7;font-size:12px;margin-top:8px">语音识别实时转写连接地址。</div>
+              </div>
+              <div style="width:340px;height:42px;border:1px solid rgba(0,0,0,.12);border-radius:14px;background:#fff"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:24px;padding:18px 0">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:800">WS 代理（可选）</div>
+                <div style="opacity:.7;font-size:12px;margin-top:8px">留空表示直连。</div>
+              </div>
+              <div style="width:340px;display:flex;flex-direction:column;gap:12px">
+                <div style="height:42px;border:1px solid rgba(0,0,0,.12);border-radius:14px;background:#fff"></div>
+                <div style="height:42px;border:1px solid rgba(0,0,0,.12);border-radius:14px;background:#fff"></div>
+                <div style="height:42px;border:1px solid rgba(0,0,0,.12);border-radius:14px;background:#fff"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>舒展</h3>
+      <p>层级更“呼吸”，但会显得偏 Web 表单，不太像系统设置。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">你更想要哪种？（建议选“紧凑”或“标准”）</p>
+</div>

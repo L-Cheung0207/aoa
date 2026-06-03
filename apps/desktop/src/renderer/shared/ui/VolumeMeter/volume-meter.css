@@ -1,0 +1,87 @@
+/* Shared volume meter used by the overlay and waveform previews. */
+.volume-meter {
+  --meter-level: 0;
+  --meter-width: 82px;
+  --wave-a: #2dd4bf;
+  --wave-b: #8ee66a;
+  --wave-c: #f8df3a;
+  --wave-d: #9ee871;
+  --wave-glow: rgba(45, 212, 191, 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 1 1 auto;
+  width: var(--meter-width);
+  max-width: none;
+  height: 22px;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.volume-meter__bar {
+  flex: 0 0 2px;
+  width: 2px;
+  min-width: 0;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    var(--wave-a) 0%,
+    var(--wave-b) 38%,
+    var(--wave-c) 72%,
+    var(--wave-d) 100%
+  );
+  border-radius: 999px;
+  opacity: var(--bar-opacity, 0.82);
+  transform-origin: center;
+  transition:
+    opacity 100ms ease-out,
+    transform 72ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: opacity, transform;
+  box-shadow:
+    0 0 8px var(--wave-glow),
+    0 0 16px color-mix(in srgb, var(--wave-glow), transparent 30%);
+  animation: waveform-shimmer 0.9s ease-in-out infinite;
+  animation-delay: calc(var(--bar-index, 0) * -34ms);
+}
+
+.volume-meter[data-active="false"] .volume-meter__bar {
+  background: rgba(148, 163, 184, 0.35);
+  box-shadow: none;
+  opacity: 0.55;
+}
+
+.volume-meter--waveform-sunset {
+  --wave-a: #ff5e57;
+  --wave-b: #ff9e49;
+  --wave-c: #f4ca4a;
+  --wave-d: #55e0c8;
+  --wave-glow: rgba(255, 128, 78, 0.5);
+}
+
+.volume-meter--waveform-mono {
+  --wave-a: #98a2ad;
+  --wave-b: #cbd5e1;
+  --wave-c: #f8fafc;
+  --wave-d: #d1d5db;
+  --wave-glow: rgba(226, 232, 240, 0.34);
+}
+
+.volume-meter--waveform-candy {
+  --wave-a: #2bbde8;
+  --wave-b: #766df3;
+  --wave-c: #ff42bb;
+  --wave-d: #f3df4a;
+  --wave-glow: rgba(255, 66, 187, 0.44);
+}
+
+@keyframes waveform-shimmer {
+  0%,
+  100% {
+    filter: brightness(0.94) saturate(1);
+  }
+  50% {
+    filter: brightness(calc(1.04 + var(--bar-weight, 0.5) * var(--meter-level) * 0.18)) saturate(1.12);
+  }
+}

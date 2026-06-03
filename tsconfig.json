@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/backend-client" },
+    { "path": "./packages/ai" },
+    { "path": "./packages/db" },
+    { "path": "./apps/desktop" }
+  ]
+}
