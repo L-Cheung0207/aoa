@@ -8,6 +8,9 @@
 !ifndef SW_SHOW
   !define SW_SHOW 5
 !endif
+!ifndef SW_MINIMIZE
+  !define SW_MINIMIZE 6
+!endif
 !ifndef BST_UNCHECKED
   !define BST_UNCHECKED 0
 !endif
@@ -23,12 +26,59 @@
 !ifndef WM_COMMAND
   !define WM_COMMAND 0x0111
 !endif
+!ifndef WM_CLOSE
+  !define WM_CLOSE 0x0010
+!endif
+!ifndef PBM_GETPOS
+  !define PBM_GETPOS 0x0408
+!endif
+!ifndef GWL_STYLE
+  !define GWL_STYLE -16
+!endif
+!ifndef SWP_NOZORDER
+  !define SWP_NOZORDER 0x0004
+!endif
+!ifndef SWP_NOSIZE
+  !define SWP_NOSIZE 0x0001
+!endif
+!ifndef SWP_NOMOVE
+  !define SWP_NOMOVE 0x0002
+!endif
+!ifndef SWP_NOACTIVATE
+  !define SWP_NOACTIVATE 0x0010
+!endif
+!ifndef SWP_FRAMECHANGED
+  !define SWP_FRAMECHANGED 0x0020
+!endif
+!ifndef SWP_SHOWWINDOW
+  !define SWP_SHOWWINDOW 0x0040
+!endif
+!ifndef SWP_HIDEWINDOW
+  !define SWP_HIDEWINDOW 0x0080
+!endif
+!ifndef HWND_TOP
+  !define HWND_TOP 0
+!endif
+!ifndef WS_CHILD
+  !define WS_CHILD 0x40000000
+!endif
+!ifndef WS_VISIBLE
+  !define WS_VISIBLE 0x10000000
+!endif
+!ifndef SS_CENTER
+  !define SS_CENTER 0x00000001
+!endif
+!ifndef SS_BITMAP
+  !define SS_BITMAP 0x0000000E
+!endif
 
+!define VOICE_WIN_W 780
+!define VOICE_WIN_H 570
+!define VOICE_WINDOW_STYLE 0x96000000
 !define VOICE_TEXT_COLOR 0x111111
 !define VOICE_MUTED_COLOR 0x5F6368
 !define VOICE_BLUE_COLOR 0x2F80ED
 !define VOICE_BG_COLOR 0xF2F3F5
-!define VOICE_DISABLED_BG 0xD8D8D8
 
 !ifndef BUILD_UNINSTALLER
 Var VoiceMode
@@ -37,13 +87,25 @@ Var VoiceDesktopState
 Var VoiceQuickLaunchState
 Var VoiceStartupState
 Var VoicePage
-Var VoiceBrandLabel
-Var VoiceLogoLabel
+Var VoiceProgressPage
+Var VoiceFinishPage
+Var VoiceBackground
+Var VoiceBackgroundImage
+Var VoiceLogo
+Var VoiceLogoImage
 Var VoiceTitleLabel
+Var VoiceBrandLabel
+Var VoiceMinimizeButton
+Var VoiceCloseButton
 Var VoiceSimpleInstallButton
+Var VoiceSimpleInstallImage
 Var VoiceSimpleAgreeCheckbox
 Var VoiceCustomOpenButton
+Var VoiceCustomArrowButton
+Var VoiceCustomArrowImage
 Var VoicePathInput
+Var VoicePathRow
+Var VoicePathRowImage
 Var VoiceBrowseButton
 Var VoiceDiskLabel
 Var VoiceDesktopCheckbox
@@ -51,17 +113,40 @@ Var VoiceQuickLaunchCheckbox
 Var VoiceStartupCheckbox
 Var VoiceCustomAgreeCheckbox
 Var VoiceCustomInstallButton
+Var VoiceCustomInstallImage
 Var VoiceBackButton
-Var VoiceFinishPage
-Var VoiceFinishTitle
-Var VoiceFinishButton
-Var VoiceProgressPage
-Var VoiceProgressLogo
-Var VoiceProgressTitle
+Var VoiceBackArrowButton
+Var VoiceBackArrowImage
 Var VoiceProgressStatus
 Var VoiceProgressBar
+Var VoiceProgressTrack
+Var VoiceProgressTrackImage
+Var VoiceProgressFill
+Var VoiceProgressFillImage
+Var VoiceFinishTitle
+Var VoiceFinishButton
+Var VoiceFinishButtonImage
+
+!macro customHeader
+  BrandingText " "
+!macroend
 
 !macro customInit
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\installer-bg.bmp "${BUILD_RESOURCES_DIR}\installer-bg.bmp"
+  File /oname=$PLUGINSDIR\installer-logo.bmp "${BUILD_RESOURCES_DIR}\installer-logo.bmp"
+  File /oname=$PLUGINSDIR\button-one-install.bmp "${BUILD_RESOURCES_DIR}\button-one-install.bmp"
+  File /oname=$PLUGINSDIR\button-install-now.bmp "${BUILD_RESOURCES_DIR}\button-install-now.bmp"
+  File /oname=$PLUGINSDIR\button-experience.bmp "${BUILD_RESOURCES_DIR}\button-experience.bmp"
+  File /oname=$PLUGINSDIR\path-row.bmp "${BUILD_RESOURCES_DIR}\path-row.bmp"
+  File /oname=$PLUGINSDIR\arrow-down.bmp "${BUILD_RESOURCES_DIR}\arrow-down.bmp"
+  File /oname=$PLUGINSDIR\arrow-up.bmp "${BUILD_RESOURCES_DIR}\arrow-up.bmp"
+  File /oname=$PLUGINSDIR\progress-track.bmp "${BUILD_RESOURCES_DIR}\progress-track.bmp"
+  File /oname=$PLUGINSDIR\progress-fill.bmp "${BUILD_RESOURCES_DIR}\progress-fill.bmp"
+
+  !ifndef INSTALL_MODE_PER_ALL_USERS
+    !insertmacro setInstallModePerUser
+  !endif
   StrCpy $VoiceMode "simple"
   StrCpy $VoiceAgreeState ${BST_UNCHECKED}
   StrCpy $VoiceDesktopState ${BST_CHECKED}
@@ -69,8 +154,15 @@ Var VoiceProgressBar
   StrCpy $VoiceStartupState ${BST_CHECKED}
 !macroend
 
+!macro customInstallMode
+  StrCpy $isForceCurrentInstall "1"
+!macroend
+
 !macro customWelcomePage
   Page custom VoiceInstallerPageCreate VoiceInstallerPageLeave
+!macroend
+
+!macro customPageAfterChangeDir
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceProgressPageShow
   !define MUI_PAGE_CUSTOMFUNCTION_LEAVE VoiceProgressPageLeave
 !macroend
@@ -100,7 +192,6 @@ Var VoiceProgressBar
     ClearErrors
   ${EndIf}
 !macroend
-
 !endif
 
 !macro customUnInstall
@@ -115,93 +206,260 @@ Var VoiceProgressBar
 !ifndef BUILD_UNINSTALLER
 
 Function VoiceInstallerPageCreate
+  Call VoiceApplyWindowFrame
   nsDialogs::Create 1018
   Pop $VoicePage
   ${If} $VoicePage == error
     Abort
   ${EndIf}
-
-  Call VoiceHideWizardButtons
-  Call VoiceCreateCommonHeader
-  Call VoiceCreateSimpleControls
-  Call VoiceCreateCustomControls
+  Call VoiceStretchPage
+  Call VoiceCreateShell
+  Call VoiceCreateWelcomeContent
+  Call VoiceCreateCustomContent
   Call VoiceApplyInstallMode
-
+  Call VoiceSendInstallerLayersToBack
   nsDialogs::Show
 FunctionEnd
 
-Function VoiceCreateCommonHeader
-  ${NSD_CreateLabel} 0u 0u 100u 12u "Voice Assistant"
-  Pop $VoiceBrandLabel
-  SetCtlColors $VoiceBrandLabel ${VOICE_MUTED_COLOR} ${VOICE_BG_COLOR}
-
-  ${NSD_CreateLabel} 126u 30u 48u 20u "●   ●"
-  Pop $VoiceLogoLabel
-  CreateFont $0 "Microsoft YaHei UI" 18 700
-  SendMessage $VoiceLogoLabel ${WM_SETFONT} $0 1
-  SetCtlColors $VoiceLogoLabel ${VOICE_BLUE_COLOR} ${VOICE_BG_COLOR}
-
-  ${NSD_CreateLabel} 54u 66u 230u 20u "欢迎使用 Voice Assistant Service"
-  Pop $VoiceTitleLabel
-  CreateFont $0 "Microsoft YaHei UI" 14 700
-  SendMessage $VoiceTitleLabel ${WM_SETFONT} $0 1
-  SetCtlColors $VoiceTitleLabel ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
+Function VoiceApplyWindowFrame
+  System::Call "user32::GetSystemMetrics(i0)i.r0"
+  System::Call "user32::GetSystemMetrics(i1)i.r1"
+  IntOp $2 $0 - ${VOICE_WIN_W}
+  IntOp $2 $2 / 2
+  IntOp $3 $1 - ${VOICE_WIN_H}
+  IntOp $3 $3 / 2
+  System::Call "user32::SetWindowLong(p$HWNDPARENT,i${GWL_STYLE},p${VOICE_WINDOW_STYLE})"
+  System::Call "user32::SetWindowPos(p$HWNDPARENT,p0,i$2,i$3,i${VOICE_WIN_W},i${VOICE_WIN_H},i${SWP_NOZORDER}|${SWP_FRAMECHANGED}|${SWP_SHOWWINDOW})"
+  Call VoiceHideWizardChrome
 FunctionEnd
 
-Function VoiceCreateSimpleControls
-  ${NSD_CreateButton} 108u 112u 84u 22u "一键安装"
+Function VoiceStretchPage
+  System::Call "user32::SetWindowPos(p$VoicePage,p0,i0,i0,i${VOICE_WIN_W},i${VOICE_WIN_H},i${SWP_NOZORDER}|${SWP_SHOWWINDOW})"
+FunctionEnd
+
+Function VoiceStretchProgressPage
+  System::Call "user32::SetWindowPos(p$VoiceProgressPage,p0,i0,i0,i${VOICE_WIN_W},i${VOICE_WIN_H},i${SWP_NOZORDER}|${SWP_SHOWWINDOW})"
+FunctionEnd
+
+Function VoiceFindProgressPage
+  StrCpy $VoiceProgressPage 0
+  StrCpy $VoiceProgressBar 0
+  StrCpy $0 0
+
+  loop:
+    System::Call 'user32::FindWindowEx(p$HWNDPARENT,p$0,t"#32770",p0)p.r0'
+    ${If} $0 == 0
+      Return
+    ${EndIf}
+
+    GetDlgItem $1 $0 1004
+    ${If} $1 P<> 0
+      StrCpy $VoiceProgressPage $0
+      StrCpy $VoiceProgressBar $1
+      Return
+    ${EndIf}
+    Goto loop
+FunctionEnd
+
+Function VoiceCreateShell
+  ${NSD_CreateBitmap} 0 0 ${VOICE_WIN_W} ${VOICE_WIN_H} ""
+  Pop $VoiceBackground
+  ${NSD_SetStretchedImage} $VoiceBackground "$PLUGINSDIR\installer-bg.bmp" $VoiceBackgroundImage
+
+  ${NSD_CreateLabel} 26 22 180 24 "Voice Assistant"
+  Pop $VoiceBrandLabel
+  CreateFont $0 "Microsoft YaHei UI" 10 600
+  SendMessage $VoiceBrandLabel ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceBrandLabel ${VOICE_MUTED_COLOR} transparent
+
+  ${NSD_CreateLabel} 690 14 32 32 "−"
+  Pop $VoiceMinimizeButton
+  CreateFont $0 "Microsoft YaHei UI" 20 400
+  SendMessage $VoiceMinimizeButton ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceMinimizeButton ${VOICE_MUTED_COLOR} transparent
+  ${NSD_OnClick} $VoiceMinimizeButton VoiceMinimize
+
+  ${NSD_CreateLabel} 744 13 32 32 "×"
+  Pop $VoiceCloseButton
+  CreateFont $0 "Microsoft YaHei UI" 22 400
+  SendMessage $VoiceCloseButton ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceCloseButton ${VOICE_MUTED_COLOR} transparent
+  ${NSD_OnClick} $VoiceCloseButton VoiceClose
+FunctionEnd
+
+Function VoiceSendBackgroundToBack
+  System::Call "user32::SetWindowPos(p$VoiceBackground,p1,i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE})"
+FunctionEnd
+
+Function VoiceBringInstallerChromeToTop
+  System::Call "user32::SetWindowPos(p$VoiceBrandLabel,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceMinimizeButton,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceCloseButton,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceLogo,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceTitleLabel,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+FunctionEnd
+
+Function VoiceSendInstallerLayersToBack
+  System::Call "user32::SetWindowPos(p$VoicePathRow,p1,i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE})"
+  Call VoiceSendBackgroundToBack
+FunctionEnd
+
+Function VoiceCreateBrandHero
+  ${NSD_CreateBitmap} 334 168 112 82 ""
+  Pop $VoiceLogo
+  ${NSD_SetImage} $VoiceLogo "$PLUGINSDIR\installer-logo.bmp" $VoiceLogoImage
+
+  ${NSD_CreateLabel} 200 281 380 34 "欢迎使用 Voice Assistant Service"
+  Pop $VoiceTitleLabel
+  CreateFont $0 "Microsoft YaHei UI" 18 700
+  SendMessage $VoiceTitleLabel ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceTitleLabel ${VOICE_TEXT_COLOR} transparent
+FunctionEnd
+
+Function VoiceCreateProgressShell
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i0,i0,i${VOICE_WIN_W},i${VOICE_WIN_H},p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceBackground $0
+  ${NSD_SetImage} $VoiceBackground "$PLUGINSDIR\installer-bg.bmp" $VoiceBackgroundImage
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"Voice Assistant",i${WS_CHILD}|${WS_VISIBLE},i26,i22,i180,i24,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceBrandLabel $0
+  CreateFont $0 "Microsoft YaHei UI" 10 600
+  SendMessage $VoiceBrandLabel ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceBrandLabel ${VOICE_MUTED_COLOR} transparent
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"−",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i690,i14,i32,i32,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceMinimizeButton $0
+  CreateFont $0 "Microsoft YaHei UI" 20 400
+  SendMessage $VoiceMinimizeButton ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceMinimizeButton ${VOICE_MUTED_COLOR} transparent
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"×",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i744,i13,i32,i32,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceCloseButton $0
+  CreateFont $0 "Microsoft YaHei UI" 22 400
+  SendMessage $VoiceCloseButton ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceCloseButton ${VOICE_MUTED_COLOR} transparent
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i334,i168,i112,i82,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceLogo $0
+  ${NSD_SetImage} $VoiceLogo "$PLUGINSDIR\installer-logo.bmp" $VoiceLogoImage
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"欢迎使用 Voice Assistant Service",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i200,i281,i380,i34,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceTitleLabel $0
+  CreateFont $0 "Microsoft YaHei UI" 18 700
+  SendMessage $VoiceTitleLabel ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceTitleLabel ${VOICE_TEXT_COLOR} transparent
+FunctionEnd
+
+Function VoiceCreateProgressControls
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i70,i426,i660,i16,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceProgressTrack $0
+  ${NSD_SetImage} $VoiceProgressTrack "$PLUGINSDIR\progress-track.bmp" $VoiceProgressTrackImage
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i70,i426,i1,i16,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceProgressFill $0
+  ${NSD_SetImage} $VoiceProgressFill "$PLUGINSDIR\progress-fill.bmp" $VoiceProgressFillImage
+
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"正在安装 0%",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i330,i474,i140,i28,p$HWNDPARENT,p0,p0,p0)p.r0'
+  StrCpy $VoiceProgressStatus $0
+  CreateFont $0 "Microsoft YaHei UI" 11 400
+  SendMessage $VoiceProgressStatus ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceProgressStatus ${VOICE_TEXT_COLOR} transparent
+FunctionEnd
+
+Function VoiceCreateWelcomeContent
+  Call VoiceCreateBrandHero
+
+  ${NSD_CreateBitmap} 283 399 214 64 ""
   Pop $VoiceSimpleInstallButton
+  ${NSD_SetImage} $VoiceSimpleInstallButton "$PLUGINSDIR\button-one-install.bmp" $VoiceSimpleInstallImage
   ${NSD_OnClick} $VoiceSimpleInstallButton VoiceStartDefaultInstall
 
-  ${NSD_CreateCheckbox} 18u 178u 118u 12u "同意《用户使用协议》"
+  ${NSD_CreateCheckbox} 68 516 220 24 "同意《用户使用协议》"
   Pop $VoiceSimpleAgreeCheckbox
+  CreateFont $0 "Microsoft YaHei UI" 10 400
+  SendMessage $VoiceSimpleAgreeCheckbox ${WM_SETFONT} $0 1
   SendMessage $VoiceSimpleAgreeCheckbox ${BM_SETCHECK} $VoiceAgreeState 0
   SetCtlColors $VoiceSimpleAgreeCheckbox ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
 
-  ${NSD_CreateButton} 230u 176u 58u 16u "自定义安装"
+  ${NSD_CreateLabel} 616 519 88 24 "自定义安装"
   Pop $VoiceCustomOpenButton
+  CreateFont $0 "Microsoft YaHei UI" 10 400 /UNDERLINE
+  SendMessage $VoiceCustomOpenButton ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceCustomOpenButton ${VOICE_TEXT_COLOR} transparent
   ${NSD_OnClick} $VoiceCustomOpenButton VoiceOpenCustomInstall
+
+  ${NSD_CreateBitmap} 708 512 28 28 ""
+  Pop $VoiceCustomArrowButton
+  ${NSD_SetImage} $VoiceCustomArrowButton "$PLUGINSDIR\arrow-down.bmp" $VoiceCustomArrowImage
+  ${NSD_OnClick} $VoiceCustomArrowButton VoiceOpenCustomInstall
 FunctionEnd
 
-Function VoiceCreateCustomControls
-  ${NSD_CreateText} 18u 112u 210u 17u "$INSTDIR"
-  Pop $VoicePathInput
+Function VoiceCreateCustomContent
+  ${NSD_CreateBitmap} 68 357 660 40 ""
+  Pop $VoicePathRow
+  ${NSD_SetImage} $VoicePathRow "$PLUGINSDIR\path-row.bmp" $VoicePathRowImage
 
-  ${NSD_CreateButton} 230u 112u 68u 17u "选择安装位置"
+  ${NSD_CreateLabel} 88 365 490 24 "$INSTDIR"
+  Pop $VoicePathInput
+  CreateFont $0 "Microsoft YaHei UI" 11 400
+  SendMessage $VoicePathInput ${WM_SETFONT} $0 1
+  SetCtlColors $VoicePathInput ${VOICE_TEXT_COLOR} transparent
+
+  ${NSD_CreateLabel} 598 357 130 40 " "
   Pop $VoiceBrowseButton
+  SetCtlColors $VoiceBrowseButton ${VOICE_TEXT_COLOR} transparent
   ${NSD_OnClick} $VoiceBrowseButton VoiceBrowseInstallDir
 
-  ${NSD_CreateLabel} 30u 135u 220u 12u "需要至少 200MB 可用空间，硬盘可用空间 50GB。"
+  ${NSD_CreateLabel} 98 411 360 24 "需要至少 200MB 可用空间，硬盘可用空间 50GB。"
   Pop $VoiceDiskLabel
-  SetCtlColors $VoiceDiskLabel ${VOICE_MUTED_COLOR} ${VOICE_BG_COLOR}
+  CreateFont $0 "Microsoft YaHei UI" 10 400
+  SendMessage $VoiceDiskLabel ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceDiskLabel ${VOICE_MUTED_COLOR} transparent
 
-  ${NSD_CreateCheckbox} 18u 154u 78u 12u "创建桌面图标"
+  ${NSD_CreateCheckbox} 68 469 160 24 "创建桌面图标"
   Pop $VoiceDesktopCheckbox
+  CreateFont $0 "Microsoft YaHei UI" 10 400
+  SendMessage $VoiceDesktopCheckbox ${WM_SETFONT} $0 1
   SendMessage $VoiceDesktopCheckbox ${BM_SETCHECK} $VoiceDesktopState 0
   SetCtlColors $VoiceDesktopCheckbox ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
 
-  ${NSD_CreateCheckbox} 112u 154u 88u 12u "创建到快速启动栏"
+  ${NSD_CreateCheckbox} 263 469 190 24 "创建到快速启动栏"
   Pop $VoiceQuickLaunchCheckbox
+  CreateFont $0 "Microsoft YaHei UI" 10 400
+  SendMessage $VoiceQuickLaunchCheckbox ${WM_SETFONT} $0 1
   SendMessage $VoiceQuickLaunchCheckbox ${BM_SETCHECK} $VoiceQuickLaunchState 0
   SetCtlColors $VoiceQuickLaunchCheckbox ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
 
-  ${NSD_CreateCheckbox} 220u 154u 78u 12u "开机自启动"
+  ${NSD_CreateCheckbox} 491 469 160 24 "开机自启动"
   Pop $VoiceStartupCheckbox
+  CreateFont $0 "Microsoft YaHei UI" 10 400
+  SendMessage $VoiceStartupCheckbox ${WM_SETFONT} $0 1
   SendMessage $VoiceStartupCheckbox ${BM_SETCHECK} $VoiceStartupState 0
   SetCtlColors $VoiceStartupCheckbox ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
 
-  ${NSD_CreateCheckbox} 18u 178u 118u 12u "同意《用户使用协议》"
+  ${NSD_CreateCheckbox} 68 528 220 24 "同意《用户使用协议》"
   Pop $VoiceCustomAgreeCheckbox
+  CreateFont $0 "Microsoft YaHei UI" 10 400
+  SendMessage $VoiceCustomAgreeCheckbox ${WM_SETFONT} $0 1
   SendMessage $VoiceCustomAgreeCheckbox ${BM_SETCHECK} $VoiceAgreeState 0
   SetCtlColors $VoiceCustomAgreeCheckbox ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
 
-  ${NSD_CreateButton} 202u 174u 64u 20u "立即安装"
+  ${NSD_CreateBitmap} 490 514 128 46 ""
   Pop $VoiceCustomInstallButton
+  ${NSD_SetImage} $VoiceCustomInstallButton "$PLUGINSDIR\button-install-now.bmp" $VoiceCustomInstallImage
   ${NSD_OnClick} $VoiceCustomInstallButton VoiceStartCustomInstall
 
-  ${NSD_CreateButton} 270u 176u 32u 16u "返回"
+  ${NSD_CreateLabel} 660 526 44 24 "返回"
   Pop $VoiceBackButton
+  CreateFont $0 "Microsoft YaHei UI" 10 400 /UNDERLINE
+  SendMessage $VoiceBackButton ${WM_SETFONT} $0 1
+  SetCtlColors $VoiceBackButton ${VOICE_TEXT_COLOR} transparent
   ${NSD_OnClick} $VoiceBackButton VoiceBackToSimpleInstall
+
+  ${NSD_CreateBitmap} 708 518 28 28 ""
+  Pop $VoiceBackArrowButton
+  ${NSD_SetImage} $VoiceBackArrowButton "$PLUGINSDIR\arrow-up.bmp" $VoiceBackArrowImage
+  ${NSD_OnClick} $VoiceBackArrowButton VoiceBackToSimpleInstall
 FunctionEnd
 
 Function VoiceStartDefaultInstall
@@ -220,6 +478,7 @@ Function VoiceOpenCustomInstall
   Call VoiceReadControlState
   StrCpy $VoiceMode "custom"
   SendMessage $VoiceCustomAgreeCheckbox ${BM_SETCHECK} $VoiceAgreeState 0
+  ${NSD_SetText} $VoicePathInput "$INSTDIR"
   Call VoiceApplyInstallMode
 FunctionEnd
 
@@ -277,6 +536,8 @@ Function VoiceApplyInstallMode
     ShowWindow $VoiceSimpleInstallButton ${SW_HIDE}
     ShowWindow $VoiceSimpleAgreeCheckbox ${SW_HIDE}
     ShowWindow $VoiceCustomOpenButton ${SW_HIDE}
+    ShowWindow $VoiceCustomArrowButton ${SW_HIDE}
+    ShowWindow $VoicePathRow ${SW_SHOW}
     ShowWindow $VoicePathInput ${SW_SHOW}
     ShowWindow $VoiceBrowseButton ${SW_SHOW}
     ShowWindow $VoiceDiskLabel ${SW_SHOW}
@@ -286,10 +547,13 @@ Function VoiceApplyInstallMode
     ShowWindow $VoiceCustomAgreeCheckbox ${SW_SHOW}
     ShowWindow $VoiceCustomInstallButton ${SW_SHOW}
     ShowWindow $VoiceBackButton ${SW_SHOW}
+    ShowWindow $VoiceBackArrowButton ${SW_SHOW}
   ${Else}
     ShowWindow $VoiceSimpleInstallButton ${SW_SHOW}
     ShowWindow $VoiceSimpleAgreeCheckbox ${SW_SHOW}
     ShowWindow $VoiceCustomOpenButton ${SW_SHOW}
+    ShowWindow $VoiceCustomArrowButton ${SW_SHOW}
+    ShowWindow $VoicePathRow ${SW_HIDE}
     ShowWindow $VoicePathInput ${SW_HIDE}
     ShowWindow $VoiceBrowseButton ${SW_HIDE}
     ShowWindow $VoiceDiskLabel ${SW_HIDE}
@@ -299,53 +563,71 @@ Function VoiceApplyInstallMode
     ShowWindow $VoiceCustomAgreeCheckbox ${SW_HIDE}
     ShowWindow $VoiceCustomInstallButton ${SW_HIDE}
     ShowWindow $VoiceBackButton ${SW_HIDE}
+    ShowWindow $VoiceBackArrowButton ${SW_HIDE}
   ${EndIf}
 FunctionEnd
 
-Function VoiceHideWizardButtons
+Function VoiceHideWizardChrome
   GetDlgItem $0 $HWNDPARENT 1
   ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $HWNDPARENT 2
   ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $HWNDPARENT 3
   ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1028
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1034
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1035
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1036
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1037
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1038
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1039
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 1045
+  ShowWindow $0 ${SW_HIDE}
 FunctionEnd
 
-Function VoiceProgressPageShow
-  GetDlgItem $0 $HWNDPARENT 3
-  ShowWindow $0 ${SW_HIDE}
+Function VoiceHideProgressNativeChrome
+  Call VoiceHideWizardChrome
 
-  FindWindow $VoiceProgressPage "#32770" "" $HWNDPARENT
+  ${If} $VoiceProgressPage == 0
+  ${OrIf} $VoiceProgressPage == ""
+    Call VoiceFindProgressPage
+  ${EndIf}
+
   GetDlgItem $0 $VoiceProgressPage 1006
   ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $VoiceProgressPage 1016
   ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $VoiceProgressPage 1027
   ShowWindow $0 ${SW_HIDE}
-  GetDlgItem $VoiceProgressBar $VoiceProgressPage 1004
+  ShowWindow $VoiceProgressBar ${SW_HIDE}
+  System::Call "user32::SetWindowPos(p$VoiceProgressPage,p1,i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE})"
+FunctionEnd
 
-  ${NSD_CreateLabel} 126u 32u 48u 20u "●   ●"
-  Pop $VoiceProgressLogo
-  CreateFont $0 "Microsoft YaHei UI" 18 700
-  SendMessage $VoiceProgressLogo ${WM_SETFONT} $0 1
-  SetCtlColors $VoiceProgressLogo ${VOICE_BLUE_COLOR} transparent
+Function VoiceProgressPageShow
+  Call VoiceApplyWindowFrame
+  Call VoiceFindProgressPage
+  Call VoiceStretchProgressPage
+  Call VoiceHideProgressNativeChrome
 
-  ${NSD_CreateLabel} 70u 66u 180u 18u "正在安装 Voice Assistant"
-  Pop $VoiceProgressTitle
-  CreateFont $0 "Microsoft YaHei UI" 14 700
-  SendMessage $VoiceProgressTitle ${WM_SETFONT} $0 1
-  SetCtlColors $VoiceProgressTitle ${VOICE_TEXT_COLOR} transparent
-
-  ${NSD_CreateLabel} 120u 136u 80u 12u "正在安装 0%"
-  Pop $VoiceProgressStatus
-  SetCtlColors $VoiceProgressStatus ${VOICE_MUTED_COLOR} transparent
+  Call VoiceCreateProgressShell
+  Call VoiceCreateProgressControls
 
   ${NSD_CreateTimer} VoiceProgressTick 250
   Call VoiceProgressTick
+  Call VoiceBringInstallerChromeToTop
   SetDetailsPrint none
 FunctionEnd
 
 Function VoiceProgressTick
+  Call VoiceHideProgressNativeChrome
+
   ${If} $VoiceProgressBar != ""
   ${AndIf} $VoiceProgressStatus != ""
     SendMessage $VoiceProgressBar ${PBM_GETPOS} 0 0 $0
@@ -355,8 +637,20 @@ Function VoiceProgressTick
     ${If} $0 > 100
       StrCpy $0 "100"
     ${EndIf}
+    IntOp $1 $0 * 660
+    IntOp $1 $1 / 100
+    ${If} $1 < 6
+      StrCpy $1 6
+    ${EndIf}
+    System::Call "user32::SetWindowPos(p$VoiceProgressFill,p0,i70,i426,i$1,i16,i${SWP_NOZORDER}|${SWP_SHOWWINDOW})"
     SendMessage $VoiceProgressStatus ${WM_SETTEXT} 0 "STR:正在安装 $0%"
   ${EndIf}
+
+  System::Call "user32::SetWindowPos(p$VoiceBackground,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceProgressTrack,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceProgressFill,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceProgressStatus,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  Call VoiceBringInstallerChromeToTop
 FunctionEnd
 
 Function VoiceProgressPageLeave
@@ -364,27 +658,27 @@ Function VoiceProgressPageLeave
 FunctionEnd
 
 Function VoiceFinishPageCreate
+  Call VoiceApplyWindowFrame
   nsDialogs::Create 1018
   Pop $VoiceFinishPage
   ${If} $VoiceFinishPage == error
     Abort
   ${EndIf}
+  StrCpy $VoicePage $VoiceFinishPage
+  Call VoiceStretchPage
+  Call VoiceCreateShell
 
-  Call VoiceHideWizardButtons
-
-  ${NSD_CreateLabel} 0u 0u 100u 12u "Voice Assistant"
-  Pop $VoiceBrandLabel
-  SetCtlColors $VoiceBrandLabel ${VOICE_MUTED_COLOR} ${VOICE_BG_COLOR}
-
-  ${NSD_CreateLabel} 92u 78u 116u 30u "安装完成"
+  ${NSD_CreateLabel} 273 242 236 70 "安装完成"
   Pop $VoiceFinishTitle
-  CreateFont $0 "Microsoft YaHei UI" 26 400
+  CreateFont $0 "Microsoft YaHei UI" 40 300
   SendMessage $VoiceFinishTitle ${WM_SETFONT} $0 1
-  SetCtlColors $VoiceFinishTitle ${VOICE_TEXT_COLOR} ${VOICE_BG_COLOR}
+  SetCtlColors $VoiceFinishTitle ${VOICE_TEXT_COLOR} transparent
 
-  ${NSD_CreateButton} 112u 134u 76u 22u "立即体验"
+  ${NSD_CreateBitmap} 283 398 214 64 ""
   Pop $VoiceFinishButton
+  ${NSD_SetImage} $VoiceFinishButton "$PLUGINSDIR\button-experience.bmp" $VoiceFinishButtonImage
   ${NSD_OnClick} $VoiceFinishButton VoiceLaunchAndClose
+  Call VoiceSendBackgroundToBack
 
   nsDialogs::Show
 FunctionEnd
@@ -396,6 +690,14 @@ Function VoiceLaunchAndClose
 FunctionEnd
 
 Function VoiceFinishPageLeave
+FunctionEnd
+
+Function VoiceMinimize
+  ShowWindow $HWNDPARENT ${SW_MINIMIZE}
+FunctionEnd
+
+Function VoiceClose
+  SendMessage $HWNDPARENT ${WM_CLOSE} 0 0
 FunctionEnd
 
 !endif

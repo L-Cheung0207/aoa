@@ -36,7 +36,7 @@
     "copyright": "Copyright © 2026",
     "directories": {
       "output": "dist-electron",
-      "buildResources": "resources"
+      "buildResources": "installer-resources"
     },
     "electronDist": "../../node_modules/electron/dist",
     "electronVersion": "35.7.5",
@@ -74,11 +74,15 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "allowElevation": true,
-      "createDesktopShortcut": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "allowElevation": false,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "Voice Assistant"
+      "shortcutName": "Voice Assistant",
+      "artifactName": "${productName} Setup ${version}.${ext}",
+      "include": "installer.nsh",
+      "runAfterFinish": false
     }
   }
 }
