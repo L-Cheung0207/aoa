@@ -5,17 +5,28 @@ export interface UpdateReadyPayload {
 }
 
 export type UpdateCheckResult =
-  | { status: "checking" }
-  | { status: "disabled" };
+  | { status: "disabled" }
+  | { status: "up-to-date" }
+  | { status: "available"; version?: string }
+  | { status: "error"; message: string };
+
+export interface CheckForUpdatesOptions {
+  allowDevelopmentFakeUpdate?: boolean;
+}
+
+interface AutoUpdaterCheckResult {
+  isUpdateAvailable: boolean;
+  updateInfo?: { version?: string };
+}
 
 export interface UpdateService {
-  checkForUpdates(): Promise<UpdateCheckResult>;
+  checkForUpdates(options?: CheckForUpdatesOptions): Promise<UpdateCheckResult>;
   restartToUpdate(): void;
 }
 
 export interface AutoUpdaterAdapter {
   autoDownload: boolean;
-  checkForUpdates(): Promise<unknown>;
+  checkForUpdates(): Promise<AutoUpdaterCheckResult | null>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
   setFeedURL?(options: string): void;
   on(
@@ -28,10 +39,13 @@ export interface AutoUpdaterAdapter {
 export interface CreateUpdateServiceOptions {
   autoUpdater: AutoUpdaterAdapter;
   isPackaged: boolean;
-  updateFeedUrl?: string;
+  updateFeedUrl?: string | undefined;
   onUpdateReady(payload: UpdateReadyPayload): void;
   onError?(error: Error): void;
 }
+
+const DEVELOPMENT_FAKE_UPDATE_VERSION = "0.1.1-dev";
+const DEVELOPMENT_FAKE_UPDATE_READY_DELAY_MS = 300;
 
 export function shouldCheckForUpdates(isPackaged: boolean): boolean {
   return isPackaged;
@@ -56,18 +70,43 @@ export function createUpdateService(
   });
 
   return {
-    async checkForUpdates(): Promise<UpdateCheckResult> {
+    async checkForUpdates(
+      checkOptions: CheckForUpdatesOptions = {}
+    ): Promise<UpdateCheckResult> {
       if (!shouldCheckForUpdates(isPackaged)) {
+        if (checkOptions.allowDevelopmentFakeUpdate) {
+          setTimeout(() => {
+            onUpdateReady({ version: DEVELOPMENT_FAKE_UPDATE_VERSION });
+          }, DEVELOPMENT_FAKE_UPDATE_READY_DELAY_MS);
+          return {
+            status: "available",
+            version: DEVELOPMENT_FAKE_UPDATE_VERSION
+          };
+        }
         return { status: "disabled" };
       }
       try {
-        await autoUpdater.checkForUpdates();
+        const result = await autoUpdater.checkForUpdates();
+        if (!result) {
+          return { status: "error", message: "更新檢查已取消" };
+        }
+        if (result.isUpdateAvailable) {
+          const version = result.updateInfo?.version;
+          return version
+            ? { status: "available", version }
+            : { status: "available" };
+        }
+        return { status: "up-to-date" };
       } catch (error) {
-        onError?.(error instanceof Error ? error : new Error(String(error)));
+        const message = error instanceof Error ? error.message : String(error);
+        onError?.(error instanceof Error ? error : new Error(message));
+        return { status: "error", message };
       }
-      return { status: "checking" };
     },
     restartToUpdate(): void {
+      if (!isPackaged) {
+        return;
+      }
       autoUpdater.quitAndInstall(false, true);
     }
   };

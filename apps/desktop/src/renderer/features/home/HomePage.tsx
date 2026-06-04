@@ -27,8 +27,113 @@ type EditableShortcutKey =
   | "toggleRecording"
   | "processSelection"
   | "translateDictation";
+type HomePageLanguage = AppSettings["ui"]["language"];
 
 const DEFAULT_VERSION_LABEL = "v0.0.0";
+
+type HomePageText = {
+  welcomeAria: string;
+  title: string;
+  shortcutPrefix: string;
+  shortcutSuffix: string;
+  openGuide: string;
+  guide: string;
+  shortcutsLabel: string;
+  voiceInput: string;
+  smartTranslate: string;
+  smartRewrite: string;
+  overview: string;
+  dictatedDuration: string;
+  dictatedCharacters: string;
+  rewriteCount: string;
+  translationCount: string;
+  charactersUnit: string;
+  timesUnit: string;
+  translationGlyph: string;
+  footer: string;
+  currentVersionPrefix: string;
+  checkUpdates: string;
+  contact: string;
+};
+
+const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
+  "zh-CN": {
+    welcomeAria: "欢迎",
+    title: "欢迎使用 Voice Assistant Service",
+    shortcutPrefix: "轻触一次开始说话。按",
+    shortcutSuffix: "来完成。",
+    openGuide: "打开首次引导",
+    guide: "使用教程",
+    shortcutsLabel: "快捷键说明",
+    voiceInput: "语音输入",
+    smartTranslate: "智能翻译",
+    smartRewrite: "智能改写",
+    overview: "使用概览",
+    dictatedDuration: "累计口述时长",
+    dictatedCharacters: "口述字数",
+    rewriteCount: "改写辅助次数",
+    translationCount: "翻译次数",
+    charactersUnit: "字",
+    timesUnit: "次",
+    translationGlyph: "文",
+    footer: "底部信息",
+    currentVersionPrefix: "当前版本 ",
+    checkUpdates: "检查更新",
+    contact: "联系我们"
+  },
+  "zh-TW": {
+    welcomeAria: "歡迎",
+    title: "歡迎使用 Voice Assistant Service",
+    shortcutPrefix: "輕觸一次開始說話。按",
+    shortcutSuffix: "來完成。",
+    openGuide: "開啟首次引導",
+    guide: "使用教程",
+    shortcutsLabel: "快捷鍵說明",
+    voiceInput: "語音輸入",
+    smartTranslate: "智慧翻譯",
+    smartRewrite: "智慧改寫",
+    overview: "使用概覽",
+    dictatedDuration: "累計口述時長",
+    dictatedCharacters: "口述字元數",
+    rewriteCount: "改寫輔助次數",
+    translationCount: "翻譯次數",
+    charactersUnit: "字元",
+    timesUnit: "次",
+    translationGlyph: "文",
+    footer: "底部資訊",
+    currentVersionPrefix: "當前版本 ",
+    checkUpdates: "檢查更新",
+    contact: "聯絡我們"
+  },
+  "en-US": {
+    welcomeAria: "Welcome",
+    title: "Welcome to Voice Assistant Service",
+    shortcutPrefix: "Tap once to start speaking. Press",
+    shortcutSuffix: "to finish.",
+    openGuide: "Open onboarding guide",
+    guide: "Guide",
+    shortcutsLabel: "Shortcut guide",
+    voiceInput: "Voice Input",
+    smartTranslate: "Smart Translate",
+    smartRewrite: "Smart Rewrite",
+    overview: "Usage Overview",
+    dictatedDuration: "Dictation Time",
+    dictatedCharacters: "Dictated Characters",
+    rewriteCount: "Rewrite Assists",
+    translationCount: "Translations",
+    charactersUnit: "chars",
+    timesUnit: "times",
+    translationGlyph: "A",
+    footer: "Footer",
+    currentVersionPrefix: "Current version ",
+    checkUpdates: "Check for updates",
+    contact: "Contact us"
+  }
+};
+
+function getHomePageText(language: HomePageLanguage | undefined): HomePageText {
+  return HOME_PAGE_TEXT[language ?? "zh-CN"] ?? HOME_PAGE_TEXT["zh-CN"];
+}
 
 export function HomePage({
   initialSettings,
@@ -40,106 +145,110 @@ export function HomePage({
   versionLabel = DEFAULT_VERSION_LABEL,
 }: HomePageProps): React.JSX.Element {
   const displayedSettings = settings ?? initialSettings;
+  const text = getHomePageText(displayedSettings?.ui.language);
 
   return (
     <>
-      <section className="home-hero" aria-label="歡迎">
+      <section className="home-hero" aria-label={text.welcomeAria}>
         <header className="home-hero__header">
           <div className="home-hero__title">
             <span className="home-hero__title-icon" aria-hidden="true">
               <BrandIcon />
             </span>
             <div>
-              <h1>歡迎使用 Voice Assistant Service</h1>
+              <h1>{text.title}</h1>
               <p>
-                輕觸一次開始說話。按{" "}
+                {text.shortcutPrefix}{" "}
                 <kbd>
                   {getShortcutDisplay(displayedSettings, "toggleRecording")}
                 </kbd>{" "}
-                來完成。
+                {text.shortcutSuffix}
               </p>
             </div>
           </div>
           <button
             className="home-hero__help"
             type="button"
-            aria-label="開啟首次引導"
+            aria-label={text.openGuide}
             onClick={onOpenOnboarding}
           >
             <span className="home-hero__help-icon" aria-hidden="true">
               ?
             </span>
-            使用教程
+            {text.guide}
           </button>
         </header>
 
-        <ul className="home-shortcuts" aria-label="快捷鍵說明">
+        <ul className="home-shortcuts" aria-label={text.shortcutsLabel}>
           <ShortcutItem
             dot="blue"
-            label="語音輸入"
+            label={text.voiceInput}
             keys={getShortcutDisplay(displayedSettings, "toggleRecording")}
           />
           <ShortcutItem
             dot="purple"
-            label="智慧翻譯"
+            label={text.smartTranslate}
             keys={getShortcutDisplay(displayedSettings, "translateDictation")}
           />
           <ShortcutItem
             dot="green"
-            label="智慧改寫"
+            label={text.smartRewrite}
             keys={getShortcutDisplay(displayedSettings, "processSelection")}
           />
         </ul>
       </section>
 
-      <section className="home-stats" aria-label="使用概覽">
+      <section className="home-stats" aria-label={text.overview}>
         <MetricCard
           tone="duration"
           icon={<DurationMetricIcon />}
           value={formatInteger(usageStats.durationMinutes)}
           unit="min"
-          label="累計口述時長"
+          label={text.dictatedDuration}
           watermark={<DurationWatermarkIcon />}
         />
         <MetricCard
           tone="characters"
           icon={<CharactersMetricIcon />}
           value={formatInteger(usageStats.dictatedCharacters)}
-          unit="字元"
-          label="口述字元數"
+          unit={text.charactersUnit}
+          label={text.dictatedCharacters}
           watermark={<CharactersWatermarkIcon />}
         />
         <MetricCard
           tone="rewrite"
           icon={<RewriteMetricIcon />}
           value={formatInteger(usageStats.rewriteCount)}
-          unit="次"
-          label="改寫輔助次數"
+          unit={text.timesUnit}
+          label={text.rewriteCount}
           watermark={<RewriteWatermarkIcon />}
         />
         <MetricCard
           tone="translation"
           icon={<TranslationMetricIcon />}
           value={formatInteger(usageStats.translationCount)}
-          unit="次"
-          label="翻譯次數"
-          watermark={<TranslationWatermarkIcon />}
+          unit={text.timesUnit}
+          label={text.translationCount}
+          watermark={<TranslationWatermarkIcon glyph={text.translationGlyph} />}
         />
       </section>
 
-      <footer className="home-footer" aria-label="底部資訊">
+      <footer className="home-footer" aria-label={text.footer}>
         <div className="home-footer__left">
-          <span>當前版本 {versionLabel}</span>
+          <span>
+            {text.currentVersionPrefix}
+            {versionLabel}
+          </span>
           <button
             type="button"
             className="home-footer__link"
             onClick={onCheckUpdates}
           >
-            檢查更新
+            {text.checkUpdates}
           </button>
         </div>
         <button type="button" className="home-footer__link" onClick={onContact}>
-          聯絡我們
+          {text.contact}
         </button>
       </footer>
     </>
@@ -287,14 +396,14 @@ function RewriteWatermarkIcon(): React.JSX.Element {
   );
 }
 
-function TranslationWatermarkIcon(): React.JSX.Element {
+function TranslationWatermarkIcon({ glyph }: { glyph: string }): React.JSX.Element {
   return (
     <svg viewBox="0 0 124 112" fill="none">
       <rect x="24" y="28" width="64" height="64" rx="4" />
       <path d="M36 16h64v64" />
       <path d="M44 50h28M58 39v34M48 72c7-5 12-13 15-22" />
       <text x="62" y="73" textAnchor="middle">
-        文
+        {glyph}
       </text>
     </svg>
   );

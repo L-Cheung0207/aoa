@@ -175,4 +175,106 @@ describe("browser recorder adapter", () => {
 
     await session.stop();
   });
+
+  it("falls back to the default microphone when the saved device id is stale", async () => {
+    vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const constraints: MediaStreamConstraints[] = [];
+    const staleDeviceError = new Error("Requested device is unavailable");
+    staleDeviceError.name = "OverconstrainedError";
+    const audioContext = {
+      sampleRate: 16000,
+      destination: "destination",
+      audioWorklet: {
+        addModule: async () => undefined
+      },
+      createMediaStreamSource: () => ({
+        connect: () => undefined,
+        disconnect: () => undefined
+      }),
+      createGain: () => ({
+        gain: { value: 1 },
+        connect: () => undefined,
+        disconnect: () => undefined
+      }),
+      close: async () => undefined
+    };
+    const adapter = createBrowserRecorderAdapter({
+      mediaDevices: {
+        getUserMedia: async (input) => {
+          constraints.push(input);
+          if (constraints.length === 1) {
+            throw staleDeviceError;
+          }
+          return {
+            getAudioTracks: () => [
+              {
+                label: "Default Mic",
+                stop: () => undefined,
+                getSettings: () => ({ deviceId: "default-mic" })
+              }
+            ],
+            getTracks: () => [
+              {
+                stop: () => undefined
+              }
+            ]
+          } as unknown as MediaStream;
+        }
+      },
+      AudioContextConstructor: class {
+        constructor() {
+          return audioContext;
+        }
+      } as unknown as typeof AudioContext,
+      workletUrl: "worklet.js"
+    });
+
+    try {
+      const session = await adapter.start(
+        {
+          sampleRate: 16000,
+          maxDurationSeconds: 60,
+          inputDeviceId: "stale-mic-id"
+        },
+        {
+          onFrame: () => undefined,
+          onError: () => undefined
+        }
+      );
+
+      expect(constraints).toEqual([
+        {
+          audio: {
+            channelCount: 1,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            deviceId: { exact: "stale-mic-id" }
+          }
+        },
+        {
+          audio: {
+            channelCount: 1,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        }
+      ]);
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining("name=OverconstrainedError"),
+        staleDeviceError
+      );
+      expect(consoleWarn).toHaveBeenCalledWith(
+        "[recorder] selected microphone is unavailable; retrying with the system default microphone"
+      );
+
+      await session.stop();
+    } finally {
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
 });

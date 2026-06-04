@@ -192,7 +192,10 @@ export function createIpcRouteHandlers(
     finishUninstall: () => {
       dependencies.quitApp();
     },
-    checkForUpdates: () => dependencies.updateService.checkForUpdates(),
+    checkForUpdates: () =>
+      dependencies.updateService.checkForUpdates({
+        allowDevelopmentFakeUpdate: true
+      }),
     restartToUpdate: () => {
       dependencies.updateService.restartToUpdate();
     },

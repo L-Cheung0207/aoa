@@ -26,18 +26,7 @@ async function startBrowserRecording(
   options: RecorderOptions,
   handlers: RecorderAdapterHandlers
 ): Promise<RecorderSession> {
-  const audioConstraints: MediaTrackConstraints = {
-    channelCount: 1,
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
-    ...(options.inputDeviceId
-      ? { deviceId: { exact: options.inputDeviceId } }
-      : {})
-  };
-  const stream = await dependencies.mediaDevices.getUserMedia({
-    audio: audioConstraints
-  });
+  const stream = await openMicrophoneStream(dependencies.mediaDevices, options);
   const audioContext = new dependencies.AudioContextConstructor({ sampleRate: options.sampleRate });
   const [track] = stream.getAudioTracks();
   console.log(
@@ -75,4 +64,61 @@ async function startBrowserRecording(
       await audioContext.close();
     }
   };
+}
+
+async function openMicrophoneStream(
+  mediaDevices: Pick<MediaDevices, "getUserMedia">,
+  options: RecorderOptions
+): Promise<MediaStream> {
+  try {
+    return await mediaDevices.getUserMedia({
+      audio: buildRecordingAudioConstraints(options.inputDeviceId)
+    });
+  } catch (error) {
+    logGetUserMediaFailure(error, options.inputDeviceId);
+    if (!options.inputDeviceId || !isStaleSelectedDeviceError(error)) {
+      throw error;
+    }
+    console.warn(
+      "[recorder] selected microphone is unavailable; retrying with the system default microphone"
+    );
+    return mediaDevices.getUserMedia({
+      audio: buildRecordingAudioConstraints("")
+    });
+  }
+}
+
+function buildRecordingAudioConstraints(
+  inputDeviceId: string
+): MediaTrackConstraints {
+  return {
+    channelCount: 1,
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    ...(inputDeviceId
+      ? { deviceId: { exact: inputDeviceId } }
+      : {})
+  };
+}
+
+function isStaleSelectedDeviceError(error: unknown): boolean {
+  const name = getErrorName(error);
+  return name === "OverconstrainedError" || name === "NotFoundError";
+}
+
+function logGetUserMediaFailure(error: unknown, inputDeviceId: string): void {
+  console.error(
+    `[recorder] getUserMedia failed name=${getErrorName(error)} ` +
+      `message="${getErrorMessage(error)}" selectedDevice=${inputDeviceId ? "yes" : "default"}`,
+    error
+  );
+}
+
+function getErrorName(error: unknown): string {
+  return error instanceof Error && error.name ? error.name : "UnknownError";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

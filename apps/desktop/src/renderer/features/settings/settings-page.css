@@ -355,8 +355,8 @@
 }
 
 .settings .settings-waveform-preview .waveform-preview {
-  width: min(138px, 100%);
-  max-width: 138px;
+  width: min(150px, 100%);
+  max-width: 150px;
 }
 
 .settings__btn {

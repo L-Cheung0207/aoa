@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "dist": "node scripts/dist-win.mjs",
     "dist:win": "pnpm run build && electron-builder --win nsis --config electron-builder.yml",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -26,6 +27,58 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
-    "electron-builder": "^26.8.1"
+    "electron": "^35.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.ctm.voice-assistant",
+    "productName": "Voice Assistant",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "resources"
+    },
+    "electronDist": "../../node_modules/electron/dist",
+    "electronVersion": "35.7.5",
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!node_modules/@voice/ai/**",
+      "!node_modules/@voice/shared/**",
+      "!node_modules/@voice/backend-client/**",
+      "!node_modules/@voice/db/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/tray-icon.ico",
+        "to": "tray-icon.ico"
+      },
+      {
+        "from": "../../packages/native-helper/dist/voice_native_helper.node",
+        "to": "voice_native_helper.node"
+      }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/tray-icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Voice Assistant"
+    }
   }
 }

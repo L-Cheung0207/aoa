@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { InterfaceLanguage } from "@voice/shared";
+import {
+  calculateActiveMeterBars,
+  calculateRms,
+  MICROPHONE_METER_ATTACK_SMOOTHING,
+  MICROPHONE_METER_BARS,
+  MICROPHONE_METER_RELEASE_SMOOTHING,
+  MICROPHONE_METER_UPDATE_INTERVAL_MS
+} from "./meterStrategy";
 
 interface MicrophoneDevicePickerProps {
   selectedDeviceId: string;
   onDeviceChange(deviceId: string): void;
+  language?: InterfaceLanguage | undefined;
   variant?: "modal" | "page";
   selectId?: string;
   openSignal?: number;
@@ -12,21 +22,101 @@ interface MicrophoneDevicePickerProps {
 type InputDevice = Pick<MediaDeviceInfo, "deviceId" | "label" | "kind">;
 
 const AUTO_DEVICE_ID = "";
-const METER_BARS = 6;
-const METER_BAR_THRESHOLDS = [0.02, 0.04, 0.064, 0.096, 0.144, 0.224] as const;
-const METER_DROP_MARGIN = 0.012;
-const METER_UPDATE_INTERVAL_MS = 120;
-const METER_ATTACK_SMOOTHING = 0.24;
-const METER_RELEASE_SMOOTHING = 0.08;
+type MicrophonePickerText = {
+  cannotReadDevices: string;
+  deviceListFailedPrefix: string;
+  cannotDetectVolume: string;
+  volumeFailedPrefix: string;
+  autoDevice: string;
+  selectedFallback: string;
+  autoHint: string;
+  microphoneNamePrefix: string;
+  modalLabel: string;
+  closePicker: string;
+  title: string;
+  description: string;
+  noDevices: string;
+  inputVolume: string;
+  audioInputDevice: string;
+  externalMicrophone: string;
+  microphone: string;
+};
+
+const MICROPHONE_PICKER_TEXT: Record<InterfaceLanguage, MicrophonePickerText> = {
+  "zh-CN": {
+    cannotReadDevices: "当前环境无法读取麦克风列表。",
+    deviceListFailedPrefix: "麦克风列表读取失败：",
+    cannotDetectVolume: "当前环境无法检测音量。",
+    volumeFailedPrefix: "音量检测失败：",
+    autoDevice: "自动检测（麦克风）",
+    selectedFallback: "已选择麦克风",
+    autoHint: "使用系统默认麦克风",
+    microphoneNamePrefix: "麦克风",
+    modalLabel: "麦克风",
+    closePicker: "关闭麦克风选择",
+    title: "麦克风",
+    description: "选择能捕捉到您声音的麦克风。如果指示条没有移动，请尝试其他麦克风。",
+    noDevices: "未检测到外部麦克风，当前会使用系统默认设备。",
+    inputVolume: "输入音量",
+    audioInputDevice: "音频输入设备",
+    externalMicrophone: "外部麦克风",
+    microphone: "麦克风"
+  },
+  "zh-TW": {
+    cannotReadDevices: "當前環境無法讀取麥克風列表。",
+    deviceListFailedPrefix: "麥克風列表讀取失敗：",
+    cannotDetectVolume: "當前環境無法檢測音量。",
+    volumeFailedPrefix: "音量檢測失敗：",
+    autoDevice: "自動檢測（麥克風）",
+    selectedFallback: "已選擇麥克風",
+    autoHint: "使用系統預設麥克風",
+    microphoneNamePrefix: "麥克風",
+    modalLabel: "麥克風",
+    closePicker: "關閉麥克風選擇",
+    title: "麥克風",
+    description: "選擇能捕捉到您聲音的麥克風。如果指示條沒有移動，請嘗試其他麥克風。",
+    noDevices: "未檢測到外部麥克風，當前會使用系統預設裝置。",
+    inputVolume: "輸入音量",
+    audioInputDevice: "音訊輸入裝置",
+    externalMicrophone: "外部麥克風",
+    microphone: "麥克風"
+  },
+  "en-US": {
+    cannotReadDevices: "This environment cannot read the microphone list.",
+    deviceListFailedPrefix: "Failed to read microphones: ",
+    cannotDetectVolume: "This environment cannot detect input volume.",
+    volumeFailedPrefix: "Volume detection failed: ",
+    autoDevice: "Auto detect (microphone)",
+    selectedFallback: "Selected microphone",
+    autoHint: "Use the system default microphone",
+    microphoneNamePrefix: "Microphone",
+    modalLabel: "Microphone",
+    closePicker: "Close microphone picker",
+    title: "Microphone",
+    description:
+      "Choose a microphone that can capture your voice. If the meter does not move, try another microphone.",
+    noDevices: "No external microphone detected. The system default device will be used.",
+    inputVolume: "Input volume",
+    audioInputDevice: "Audio input device",
+    externalMicrophone: "External microphone",
+    microphone: "Microphone"
+  }
+};
+
+function getMicrophonePickerText(language: InterfaceLanguage | undefined): MicrophonePickerText {
+  return MICROPHONE_PICKER_TEXT[language ?? "zh-CN"] ?? MICROPHONE_PICKER_TEXT["zh-CN"];
+}
 
 export function MicrophoneDevicePicker({
   selectedDeviceId,
   onDeviceChange,
+  language,
   variant = "modal",
   selectId = "recording-input-device",
   openSignal,
   hideTrigger = false
 }: MicrophoneDevicePickerProps): React.JSX.Element {
+  const text = getMicrophonePickerText(language);
   const [open, setOpen] = useState(() =>
     getMicrophoneDevicePickerInitialOpen(openSignal !== undefined && openSignal > 0)
   );
@@ -36,7 +126,7 @@ export function MicrophoneDevicePicker({
 
   const refreshDevices = useCallback(async (): Promise<void> => {
     if (!canEnumerateDevices()) {
-      setStatus("當前環境無法讀取麥克風列表。");
+      setStatus(text.cannotReadDevices);
       return;
     }
 
@@ -45,9 +135,9 @@ export function MicrophoneDevicePicker({
       setDevices(nextDevices);
       setStatus(undefined);
     } catch (error) {
-      setStatus(`麥克風列表讀取失敗：${formatError(error)}`);
+      setStatus(`${text.deviceListFailedPrefix}${formatError(error)}`);
     }
-  }, []);
+  }, [text]);
 
   useEffect(() => {
     void refreshDevices();
@@ -79,7 +169,7 @@ export function MicrophoneDevicePicker({
           window.AudioContext ??
           (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (!AudioContextConstructor) {
-          setStatus("當前環境無法檢測音量。");
+          setStatus(text.cannotDetectVolume);
           return;
         }
 
@@ -102,11 +192,13 @@ export function MicrophoneDevicePicker({
           analyser.getByteTimeDomainData(samples);
           const rawRms = calculateRms(samples);
           const smoothing =
-            rawRms > smoothedRms ? METER_ATTACK_SMOOTHING : METER_RELEASE_SMOOTHING;
+            rawRms > smoothedRms
+              ? MICROPHONE_METER_ATTACK_SMOOTHING
+              : MICROPHONE_METER_RELEASE_SMOOTHING;
           smoothedRms += (rawRms - smoothedRms) * smoothing;
 
           const now = window.performance.now();
-          if (now - lastMeterUpdateMs >= METER_UPDATE_INTERVAL_MS) {
+          if (now - lastMeterUpdateMs >= MICROPHONE_METER_UPDATE_INTERVAL_MS) {
             lastMeterUpdateMs = now;
             const nextActiveBars = calculateActiveMeterBars(smoothedRms, currentActiveBars);
             if (nextActiveBars !== currentActiveBars) {
@@ -122,7 +214,7 @@ export function MicrophoneDevicePicker({
         tick();
       } catch (error) {
         setActiveBars(0);
-        setStatus(`音量檢測失敗：${formatError(error)}`);
+        setStatus(`${text.volumeFailedPrefix}${formatError(error)}`);
       }
     };
 
@@ -136,29 +228,29 @@ export function MicrophoneDevicePicker({
       stream?.getTracks().forEach((track) => track.stop());
       void audioContext?.close();
     };
-  }, [open, refreshDevices, selectedDeviceId]);
+  }, [open, refreshDevices, selectedDeviceId, text]);
 
   const selectedLabel = useMemo(() => {
     if (!selectedDeviceId) {
-      return "自动检测（麦克风）";
+      return text.autoDevice;
     }
-    return devices.find((device) => device.deviceId === selectedDeviceId)?.label || "已選擇麥克風";
-  }, [devices, selectedDeviceId]);
+    return devices.find((device) => device.deviceId === selectedDeviceId)?.label || text.selectedFallback;
+  }, [devices, selectedDeviceId, text]);
 
   const options = useMemo(
     () => [
       {
         deviceId: AUTO_DEVICE_ID,
-        label: "自动检测（麦克风）",
-        hint: "使用系统默认麦克风"
+        label: text.autoDevice,
+        hint: text.autoHint
       },
       ...devices.map((device, index) => ({
         deviceId: device.deviceId,
-        label: device.label || `麥克風 ${index + 1}`,
-        hint: describeDevice(device.label)
+        label: device.label || `${text.microphoneNamePrefix} ${index + 1}`,
+        hint: describeDevice(device.label, text)
       }))
     ],
-    [devices]
+    [devices, text]
   );
 
   const chooseDevice = (deviceId: string): void => {
@@ -184,25 +276,25 @@ export function MicrophoneDevicePicker({
       )}
 
       {open && (
-        <div className="mic-picker__modal" role="dialog" aria-modal="true" aria-label="麥克風">
+        <div className="mic-picker__modal" role="dialog" aria-modal="true" aria-label={text.modalLabel}>
           <button
             className="mic-picker__backdrop"
             type="button"
-            aria-label="關閉麥克風選擇"
+            aria-label={text.closePicker}
             onClick={() => setOpen(false)}
           />
           <section className="mic-picker__panel">
             <button
               className="mic-picker__close"
               type="button"
-              aria-label="關閉麥克風選擇"
+              aria-label={text.closePicker}
               onClick={() => setOpen(false)}
             >
               ×
             </button>
             <header>
-              <h3>麥克風</h3>
-              <p>選擇能捕捉到您聲音的麥克風。如果指示條沒有移動，請嘗試其他麥克風。</p>
+              <h3>{text.title}</h3>
+              <p>{text.description}</p>
             </header>
 
             <div className="mic-picker__list">
@@ -220,14 +312,18 @@ export function MicrophoneDevicePicker({
                       <strong>{device.label}</strong>
                       <small>{device.hint}</small>
                     </span>
-                    <LevelMeter activeBars={selected ? activeBars : 0} active={selected} />
+                    <MicrophoneLevelMeter
+                      activeBars={selected ? activeBars : 0}
+                      active={selected}
+                      label={text.inputVolume}
+                    />
                   </button>
                 );
               })}
             </div>
 
             {devices.length === 0 && (
-              <p className="mic-picker__status">未檢測到外部麥克風，當前會使用系統預設裝置。</p>
+              <p className="mic-picker__status">{text.noDevices}</p>
             )}
             {status && <p className="mic-picker__status">{status}</p>}
           </section>
@@ -286,28 +382,33 @@ function rankDevice(device: Pick<MediaDeviceInfo, "deviceId">): number {
   return 1;
 }
 
-function LevelMeter({
+export function MicrophoneLevelMeter({
   activeBars,
-  active
+  active,
+  label,
+  barCount = MICROPHONE_METER_BARS
 }: {
   activeBars: number;
   active: boolean;
+  label: string;
+  barCount?: number;
 }): React.JSX.Element {
-  const safeActiveBars = active ? Math.max(0, Math.min(METER_BARS, activeBars)) : 0;
-  const levelPercent = Math.round((safeActiveBars / METER_BARS) * 100);
+  const safeBarCount = Math.max(1, Math.floor(barCount));
+  const safeActiveBars = active ? Math.max(0, Math.min(safeBarCount, activeBars)) : 0;
+  const levelPercent = Math.round((safeActiveBars / safeBarCount) * 100);
 
   return (
     <span
       className="mic-level-meter"
       data-active={active}
       role="progressbar"
-      aria-label="輸入音量"
+      aria-label={label}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={levelPercent}
       style={{ "--mic-level": levelPercent / 100 } as React.CSSProperties}
     >
-      {Array.from({ length: METER_BARS }, (_, index) => {
+      {Array.from({ length: safeBarCount }, (_, index) => {
         const barActive = index < safeActiveBars;
         return (
           <span
@@ -322,31 +423,6 @@ function LevelMeter({
   );
 }
 
-function calculateRms(samples: Uint8Array): number {
-  if (samples.length === 0) {
-    return 0;
-  }
-
-  let sum = 0;
-  for (const sample of samples) {
-    const centered = (sample - 128) / 128;
-    sum += centered * centered;
-  }
-
-  return Math.sqrt(sum / samples.length);
-}
-
-function calculateActiveMeterBars(rms: number, currentActiveBars = 0): number {
-  const nextActiveBars = METER_BAR_THRESHOLDS.filter((threshold) => rms >= threshold).length;
-
-  if (nextActiveBars >= currentActiveBars || currentActiveBars <= 0) {
-    return nextActiveBars;
-  }
-
-  const currentThreshold = METER_BAR_THRESHOLDS[currentActiveBars - 1] ?? 0;
-  return rms >= currentThreshold - METER_DROP_MARGIN ? currentActiveBars : nextActiveBars;
-}
-
 function canEnumerateDevices(): boolean {
   return typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.enumerateDevices);
 }
@@ -359,11 +435,11 @@ function canOpenMicrophone(): boolean {
   );
 }
 
-function describeDevice(label: string): string {
+function describeDevice(label: string, text: MicrophonePickerText): string {
   if (!label) {
-    return "音訊輸入裝置";
+    return text.audioInputDevice;
   }
-  return /usb|ugreen|audio/i.test(label) ? "外部麥克風" : "麥克風";
+  return /usb|ugreen|audio/i.test(label) ? text.externalMicrophone : text.microphone;
 }
 
 function formatError(error: unknown): string {

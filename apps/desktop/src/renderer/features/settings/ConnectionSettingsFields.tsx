@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AppSettings } from "@voice/shared";
+import type { AppSettings, InterfaceLanguage } from "@voice/shared";
 import {
   getPrimaryLlmModel,
   getPrimaryWsServer,
@@ -7,6 +7,7 @@ import {
   readConnectionSettings,
   type EditableConnectionSettings
 } from "./connectionSettings";
+import { getSettingsText, type SettingsText } from "./settingsI18n";
 
 export type ConnectionTestState = "idle" | "testing" | "ok" | "fail";
 
@@ -17,6 +18,7 @@ export interface ConnectionTestStatus {
 
 interface ConnectionSettingsFieldsProps {
   settings: AppSettings;
+  language?: InterfaceLanguage;
   onSettingsChange(next: AppSettings): void;
   layout: "page" | "modal";
   wsTestButton?: ReactNode;
@@ -27,6 +29,7 @@ interface ConnectionSettingsFieldsProps {
 
 export function ConnectionSettingsFields({
   settings,
+  language,
   onSettingsChange,
   layout,
   wsTestButton,
@@ -34,6 +37,7 @@ export function ConnectionSettingsFields({
   wsTestResult,
   llmTestResult
 }: ConnectionSettingsFieldsProps): React.JSX.Element {
+  const text = getSettingsText(language ?? settings.ui.language);
   const connection = readConnectionSettings(settings);
 
   const updateConnection = (patch: Partial<EditableConnectionSettings>): void => {
@@ -46,7 +50,7 @@ export function ConnectionSettingsFields({
         <div className="settings-row settings-row--service">
           <span>
             <strong>ASR WebSocket</strong>
-            <small>語音識別即時轉寫連線地址。</small>
+            <small>{text.connection.asrWebSocketDescription}</small>
           </span>
           <div className="settings-field">
             <div className="settings-service-control">
@@ -61,11 +65,11 @@ export function ConnectionSettingsFields({
             <ConnectionTestResult status={wsTestResult} layout="modal" />
           </div>
         </div>
-        {renderProxyFields("modal", "ws", connection, updateConnection)}
+        {renderProxyFields("modal", "ws", connection, updateConnection, text)}
         <div className="settings-row settings-row--service">
           <span>
-            <strong>後處理 API</strong>
-            <small>潤色、翻譯等 HTTP 後處理服務地址。</small>
+            <strong>{text.connection.postprocessApi}</strong>
+            <small>{text.connection.postprocessApiDescription}</small>
           </span>
           <div className="settings-field">
             <div className="settings-service-control">
@@ -82,8 +86,8 @@ export function ConnectionSettingsFields({
         </div>
         <label className="settings-row">
           <span>
-            <strong>API 顯示名稱</strong>
-            <small>僅用於介面展示，可選。</small>
+            <strong>{text.connection.apiDisplayName}</strong>
+            <small>{text.connection.apiDisplayNameDescription}</small>
           </span>
           <input
             type="text"
@@ -92,7 +96,7 @@ export function ConnectionSettingsFields({
             onChange={(event) => updateConnection({ llmModelName: event.target.value })}
           />
         </label>
-        {renderProxyFields("modal", "llm", connection, updateConnection)}
+        {renderProxyFields("modal", "llm", connection, updateConnection, text)}
       </>
     );
   }
@@ -102,7 +106,7 @@ export function ConnectionSettingsFields({
       <div className="settings-row settings-row--service">
         <div className="settings-row__text">
           <strong>ASR WebSocket</strong>
-          <small>語音識別即時轉寫連線地址。</small>
+          <small>{text.connection.asrWebSocketDescription}</small>
         </div>
         <div className="settings-row__control">
           <div className="settings-field">
@@ -121,12 +125,12 @@ export function ConnectionSettingsFields({
           </div>
         </div>
       </div>
-      {renderProxyFields("page", "ws", connection, updateConnection)}
+      {renderProxyFields("page", "ws", connection, updateConnection, text)}
 
       <div className="settings-row settings-row--service">
         <div className="settings-row__text">
-          <strong>後處理 API</strong>
-          <small>潤色、翻譯等 HTTP 後處理服務地址。</small>
+          <strong>{text.connection.postprocessApi}</strong>
+          <small>{text.connection.postprocessApiDescription}</small>
         </div>
         <div className="settings-row__control">
           <div className="settings-field">
@@ -147,8 +151,8 @@ export function ConnectionSettingsFields({
       </div>
       <div className="settings-row">
         <div className="settings-row__text">
-          <strong>API 顯示名稱</strong>
-          <small>僅用於介面展示，可選。</small>
+          <strong>{text.connection.apiDisplayName}</strong>
+          <small>{text.connection.apiDisplayNameDescription}</small>
         </div>
         <div className="settings-row__control">
           <input
@@ -161,7 +165,7 @@ export function ConnectionSettingsFields({
           />
         </div>
       </div>
-      {renderProxyFields("page", "llm", connection, updateConnection)}
+      {renderProxyFields("page", "llm", connection, updateConnection, text)}
     </>
   );
 }
@@ -203,7 +207,8 @@ function renderProxyFields(
   layout: "page" | "modal",
   target: "ws" | "llm",
   connection: EditableConnectionSettings,
-  updateConnection: (patch: Partial<EditableConnectionSettings>) => void
+  updateConnection: (patch: Partial<EditableConnectionSettings>) => void,
+  text: SettingsText
 ): React.JSX.Element {
   const prefix = target === "ws" ? "ws" : "llm";
   const proxyKey = `${prefix}Proxy` as const;
@@ -215,7 +220,7 @@ function renderProxyFields(
     <>
       {layout === "page" ? (
         <label className="settings__label" htmlFor={`${idPrefix}-proxy`}>
-          代理地址
+          {text.connection.proxyAddress}
         </label>
       ) : null}
       <input
@@ -228,7 +233,7 @@ function renderProxyFields(
       />
       {layout === "page" ? (
         <label className="settings__label" htmlFor={`${idPrefix}-proxy-user`}>
-          代理使用者名稱
+          {text.connection.proxyUsername}
         </label>
       ) : null}
       <input
@@ -236,12 +241,12 @@ function renderProxyFields(
         className={layout === "page" ? "settings__input" : undefined}
         type="text"
         value={connection[usernameKey]}
-        placeholder="使用者名稱"
+        placeholder={text.connection.proxyUsernamePlaceholder}
         onChange={(event) => updateConnection({ [usernameKey]: event.target.value })}
       />
       {layout === "page" ? (
         <label className="settings__label" htmlFor={`${idPrefix}-proxy-pass`}>
-          代理密碼
+          {text.connection.proxyPassword}
         </label>
       ) : null}
       <input
@@ -249,7 +254,7 @@ function renderProxyFields(
         className={layout === "page" ? "settings__input" : undefined}
         type="password"
         value={connection[passwordKey]}
-        placeholder="密碼"
+        placeholder={text.connection.proxyPasswordPlaceholder}
         autoComplete="off"
         onChange={(event) => updateConnection({ [passwordKey]: event.target.value })}
       />
@@ -260,8 +265,10 @@ function renderProxyFields(
     return (
       <div className="settings-row settings-row--proxy">
         <div className="settings-row__text">
-          <strong>{target === "ws" ? "WS 代理（可選）" : "API 代理（可選）"}</strong>
-          <small>留空表示直連。</small>
+          <strong>
+            {target === "ws" ? text.connection.wsProxyOptional : text.connection.apiProxyOptional}
+          </strong>
+          <small>{text.connection.emptyDirect}</small>
         </div>
         <div className="settings-row__control">
           <div className="settings-field settings-field--proxy">
@@ -275,8 +282,8 @@ function renderProxyFields(
   return (
     <div className="settings-row settings-row--proxy">
       <span>
-        <strong>{target === "ws" ? "WS 代理" : "API 代理"}</strong>
-        <small>可選。留空表示直連。</small>
+        <strong>{target === "ws" ? text.connection.wsProxy : text.connection.apiProxy}</strong>
+        <small>{text.connection.optionalEmptyDirect}</small>
       </span>
       <div className="settings-field settings-field--proxy">{fields}</div>
     </div>

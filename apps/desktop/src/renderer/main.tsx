@@ -7,6 +7,11 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { UninstallPage } from "./features/uninstall/UninstallPage";
 import "./styles/app.css";
 
+function resolveInitialTheme(): "dark" | "light" | undefined {
+  const theme = new URLSearchParams(window.location.search).get("theme");
+  return theme === "dark" || theme === "light" ? theme : undefined;
+}
+
 function resolveInitialHomeSection(): "home" | "history" | "settings" | "about" {
   const hash = window.location.hash;
   if (hash.includes("home-history")) {
@@ -26,6 +31,10 @@ function resolveInitialHomeSection(): "home" | "history" | "settings" | "about" 
 // - 首頁窗載入 URL 包含 "home" → 渲染 <HomeShell/>
 // - 設定窗載入 URL 包含 "settings" (開發態 "#/settings"，生產態 "#settings") → 渲染 <SettingsPage/>
 const route = resolveRoute();
+const initialTheme = resolveInitialTheme();
+if (initialTheme) {
+  document.documentElement.dataset.theme = initialTheme;
+}
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

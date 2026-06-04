@@ -19,7 +19,8 @@ describe("SettingsPage", () => {
     expect(html).toContain('value="waveform-candy"');
     expect(html).not.toContain('role="radiogroup"');
     expect(html).not.toContain('role="radio"');
-    expect(html).not.toContain("waveform-preview waveform-preview--");
+    expect(html.match(/class="waveform-preview waveform-preview--/g)).toHaveLength(1);
+    expect(html).toContain("settings-waveform-preview");
     expect(html).toContain("脉冲焰");
     expect(html).toContain("银核灰");
     expect(html).toContain("霓虹糖");

@@ -4,6 +4,7 @@ export interface VolumeMeterProps {
   level: number;
   active: boolean;
   styleName: WaveformStyle;
+  ariaLabel?: string;
   samples?: Int16Array;
 }
 
@@ -28,6 +29,7 @@ export function VolumeMeter({
   level,
   active,
   styleName,
+  ariaLabel = "Microphone volume",
   samples
 }: VolumeMeterProps): React.JSX.Element {
   const normalized = active ? Math.min(1, Math.max(0, level * LEVEL_GAIN)) : 0;
@@ -60,7 +62,7 @@ export function VolumeMeter({
   return (
     <div
       className={className}
-      aria-label="麥克風音量"
+      aria-label={ariaLabel}
       data-active={active}
       data-style={styleName}
       style={{ "--meter-level": normalized.toFixed(3) } as React.CSSProperties}

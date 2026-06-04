@@ -3,26 +3,18 @@ import type {
   AppSettings,
   HistoryRecord,
   HistoryRecordStatus,
-  HistoryRetention
+  HistoryRetention,
+  InterfaceLanguage
 } from "@voice/shared";
 import { retryHistoryRecord } from "./historyRetry";
+import { getHistoryText, type HistoryText } from "./historyI18n";
 
 type HistoryFilter = "all" | "dictation" | "translate" | "rewrite";
-
-const HISTORY_RETENTION_OPTIONS: Array<{
-  value: HistoryRetention;
-  label: string;
-}> = [
-  { value: "never", label: "從不" },
-  { value: "24h", label: "24小時" },
-  { value: "7d", label: "1周" },
-  { value: "30d", label: "1個月" },
-  { value: "forever", label: "永遠" }
-];
 
 export interface HistoryPageProps {
   initialRecords?: HistoryRecord[];
   initialNow?: Date;
+  language?: InterfaceLanguage | undefined;
 }
 
 interface HistoryGroup {
@@ -32,8 +24,10 @@ interface HistoryGroup {
 
 export function HistoryPage({
   initialRecords,
-  initialNow
+  initialNow,
+  language
 }: HistoryPageProps = {}): React.JSX.Element {
+  const text = getHistoryText(language);
   const [records, setRecords] = useState<HistoryRecord[]>(() => initialRecords ?? []);
   const [filter, setFilter] = useState<HistoryFilter>("all");
   const [error, setError] = useState<string | undefined>(undefined);
@@ -113,8 +107,8 @@ export function HistoryPage({
     [filter, records]
   );
   const groups = useMemo(
-    () => groupHistoryRecordsByDay(visibleRecords, now),
-    [now, visibleRecords]
+    () => groupHistoryRecordsByDay(visibleRecords, now, language),
+    [language, now, visibleRecords]
   );
   const selectedRetention = pendingRetention ?? historyRetention;
   const handleConfirmDelete = async (): Promise<void> => {
@@ -168,7 +162,7 @@ export function HistoryPage({
     try {
       const audio = await window.voiceAI.readHistoryAudio(record.id);
       if (!audio) {
-        throw new Error("未找到歷史音訊檔案");
+        throw new Error(text.missingAudioFile);
       }
       triggerHistoryAudioDownload(
         audio.data,
@@ -209,22 +203,22 @@ export function HistoryPage({
     <main className="history-page">
       <header className="history-header">
         <div>
-          <h1>歷史記錄</h1>
-          <p>您的語音口述只儲存在這臺裝置上。</p>
+          <h1>{text.title}</h1>
+          <p>{text.subtitle}</p>
         </div>
-        <button className="history-header__menu" type="button" aria-label="更多">
+        <button className="history-header__menu" type="button" aria-label={text.more}>
           ...
         </button>
       </header>
 
-      <section className="history-privacy" aria-label="儲存歷史">
+      <section className="history-privacy" aria-label={text.storeHistory}>
         <div className="history-privacy__row">
           <div>
-            <strong>儲存歷史</strong>
-            <p>您希望在裝置上儲存口述歷史多久？</p>
+            <strong>{text.storeHistory}</strong>
+            <p>{text.storeHistoryQuestion}</p>
           </div>
           <select
-            aria-label="儲存歷史時長"
+            aria-label={text.storeHistoryDuration}
             disabled={applyingRetention}
             value={selectedRetention}
             onChange={(event) => {
@@ -234,7 +228,7 @@ export function HistoryPage({
               }
             }}
           >
-            {HISTORY_RETENTION_OPTIONS.map((option) => (
+            {text.retentionOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -243,35 +237,35 @@ export function HistoryPage({
         </div>
         <div className="history-privacy__row">
           <div>
-            <strong>您的資料保持私密</strong>
-            <p>您的語音口述是私密的，零資料保留。它們僅儲存在您的裝置上，無法從其他地方訪問。</p>
+            <strong>{text.privacyTitle}</strong>
+            <p>{text.privacyDescription}</p>
           </div>
         </div>
       </section>
 
-      <div className="history-tabs" role="tablist" aria-label="歷史篩選">
+      <div className="history-tabs" role="tablist" aria-label={text.filtersLabel}>
         <HistoryFilterButton filter="all" activeFilter={filter} onChange={setFilter}>
-          全部
+          {text.filters.all}
         </HistoryFilterButton>
         <HistoryFilterButton filter="dictation" activeFilter={filter} onChange={setFilter}>
-          口述
+          {text.filters.dictation}
         </HistoryFilterButton>
         <HistoryFilterButton filter="translate" activeFilter={filter} onChange={setFilter}>
-          翻譯
+          {text.filters.translate}
         </HistoryFilterButton>
         <HistoryFilterButton filter="rewrite" activeFilter={filter} onChange={setFilter}>
-          改寫
+          {text.filters.rewrite}
         </HistoryFilterButton>
       </div>
 
       {error ? <p className="history-error">{error}</p> : null}
       {groups.length === 0 ? (
         <section className="history-empty">
-          <h2>還沒有歷史記錄</h2>
-          <p>完成一次語音輸入後，音訊和文本會出現在這裡。</p>
+          <h2>{text.emptyTitle}</h2>
+          <p>{text.emptyDescription}</p>
         </section>
       ) : (
-        <section className="history-list" aria-label="歷史記錄列表">
+        <section className="history-list" aria-label={text.listLabel}>
           {groups.map((group) => (
             <div className="history-group" key={group.label}>
               <h2>{group.label}</h2>
@@ -283,6 +277,7 @@ export function HistoryPage({
                     deleting={deletingIds.has(record.id)}
                     downloading={downloadingIds.has(record.id)}
                     retrying={retryingIds.has(record.id)}
+                    text={text}
                     onDownload={handleDownload}
                     onRequestDelete={setPendingDeleteRecord}
                     onRetry={handleRetry}
@@ -299,6 +294,7 @@ export function HistoryPage({
         <DeleteHistoryConfirmDialog
           deleting={deletingIds.has(pendingDeleteRecord.id)}
           record={pendingDeleteRecord}
+          text={text}
           onCancel={() => setPendingDeleteRecord(undefined)}
           onConfirm={handleConfirmDelete}
         />
@@ -307,6 +303,7 @@ export function HistoryPage({
         <HistoryRetentionConfirmDialog
           applying={applyingRetention}
           retention={pendingRetention}
+          text={text}
           onCancel={() => setPendingRetention(undefined)}
           onConfirm={handleConfirmRetention}
         />
@@ -314,6 +311,7 @@ export function HistoryPage({
       {answerRecord ? (
         <HistoryAnswerDialog
           record={answerRecord}
+          text={text}
           onClose={() => setAnswerRecord(undefined)}
         />
       ) : null}
@@ -353,7 +351,8 @@ function HistoryRecordRow({
   onRetry,
   onViewAnswer,
   retrying,
-  record
+  record,
+  text
 }: {
   deleting: boolean;
   downloading: boolean;
@@ -363,8 +362,9 @@ function HistoryRecordRow({
   onViewAnswer(record: HistoryRecord): void;
   retrying: boolean;
   record: HistoryRecord;
+  text: HistoryText;
 }): React.JSX.Element {
-  const displayText = getHistoryRecordListText(record);
+  const displayText = getHistoryRecordListText(record, text);
   const answerText = getHistoryRecordAnswerText(record);
   const canViewAnswer = record.mode === "processSelection" && answerText.length > 0;
   const canRetry = record.audio !== undefined;
@@ -384,15 +384,15 @@ function HistoryRecordRow({
             type="button"
             onClick={() => onViewAnswer(record)}
           >
-            檢視答案
+            {text.viewAnswer}
           </button>
         ) : null}
         {record.status !== "completed" ? (
           <button
             className="history-row__icon-button"
             type="button"
-            aria-label={retrying ? "重試中" : canRetry ? "重試" : "沒有音訊，無法重試"}
-            title={retrying ? "重試中" : canRetry ? "重試" : "沒有音訊，無法重試"}
+            aria-label={retrying ? text.retrying : canRetry ? text.retry : text.retryNoAudio}
+            title={retrying ? text.retrying : canRetry ? text.retry : text.retryNoAudio}
             disabled={!canRetry || retrying}
             onClick={() => {
               void onRetry(record);
@@ -405,8 +405,8 @@ function HistoryRecordRow({
           <button
             className="history-row__icon-button"
             type="button"
-            aria-label={downloading ? "下載中" : "下載音訊"}
-            title={downloading ? "下載中" : "下載音訊"}
+            aria-label={downloading ? text.downloading : text.downloadAudio}
+            title={downloading ? text.downloading : text.downloadAudio}
             disabled={downloading}
             onClick={() => {
               void onDownload(record);
@@ -418,12 +418,12 @@ function HistoryRecordRow({
         <button
           className="history-row__icon-button"
           type="button"
-          aria-label={deleting ? "刪除中" : "刪除"}
-          title={deleting ? "刪除中" : "刪除"}
+          aria-label={deleting ? text.deleting : text.delete}
+          title={deleting ? text.deleting : text.delete}
           disabled={deleting}
           onClick={() => onRequestDelete(record)}
         >
-          {deleting ? <span>刪除中</span> : <TrashIcon />}
+          {deleting ? <span>{text.deleting}</span> : <TrashIcon />}
         </button>
       </div>
     </article>
@@ -432,13 +432,15 @@ function HistoryRecordRow({
 
 function HistoryAnswerDialog({
   record,
+  text,
   onClose
 }: {
   record: HistoryRecord;
+  text: HistoryText;
   onClose(): void;
 }): React.JSX.Element {
-  const prompt = getHistoryRecordListText(record);
-  const answer = getHistoryRecordAnswerText(record) || resolveHistoryStatusLabel(record.status);
+  const prompt = getHistoryRecordListText(record, text);
+  const answer = getHistoryRecordAnswerText(record) || text.statusLabels[record.status];
 
   return (
     <div className="history-answer-modal" role="presentation">
@@ -452,14 +454,14 @@ function HistoryAnswerDialog({
         <button
           className="history-answer-dialog__close"
           type="button"
-          aria-label="關閉"
+          aria-label={text.close}
           onClick={onClose}
         >
           ×
         </button>
-        <h2 id="history-answer-title">答案</h2>
+        <h2 id="history-answer-title">{text.answer}</h2>
         <div className="history-answer-dialog__prompt">
-          <span>輸入</span>
+          <span>{text.input}</span>
           <p>{prompt}</p>
         </div>
         <div className="history-answer-dialog__content" id="history-answer-content">
@@ -467,7 +469,7 @@ function HistoryAnswerDialog({
         </div>
         <div className="history-answer-dialog__actions">
           <button type="button" onClick={onClose}>
-            關閉
+            {text.close}
           </button>
         </div>
       </section>
@@ -514,16 +516,16 @@ function RetryIcon(): React.JSX.Element {
   );
 }
 
-function getHistoryRecordListText(record: HistoryRecord): string {
+function getHistoryRecordListText(record: HistoryRecord, text: HistoryText): string {
   if (record.mode === "processSelection") {
     return (
       record.transcript.trim() ||
       record.selectedText?.trim() ||
-      resolveHistoryStatusLabel(record.status)
+      text.statusLabels[record.status]
     );
   }
 
-  return record.finalText.trim() || record.transcript.trim() || resolveHistoryStatusLabel(record.status);
+  return record.finalText.trim() || record.transcript.trim() || text.statusLabels[record.status];
 }
 
 function getHistoryRecordAnswerText(record: HistoryRecord): string {
@@ -533,15 +535,17 @@ function getHistoryRecordAnswerText(record: HistoryRecord): string {
 function DeleteHistoryConfirmDialog({
   deleting,
   record,
+  text,
   onCancel,
   onConfirm
 }: {
   deleting: boolean;
   record: HistoryRecord;
+  text: HistoryText;
   onCancel(): void;
   onConfirm(): Promise<void>;
 }): React.JSX.Element {
-  const preview = record.finalText || record.transcript || resolveHistoryStatusLabel(record.status);
+  const preview = record.finalText || record.transcript || text.statusLabels[record.status];
 
   return (
     <div className="history-delete-modal" role="presentation">
@@ -555,14 +559,14 @@ function DeleteHistoryConfirmDialog({
         <button
           className="history-delete-dialog__close"
           type="button"
-          aria-label="關閉"
+          aria-label={text.close}
           disabled={deleting}
           onClick={onCancel}
         >
           ×
         </button>
-        <h2 id="history-delete-title">刪除此記錄？</h2>
-        <p id="history-delete-description">此轉錄將被永久刪除，無法恢復。</p>
+        <h2 id="history-delete-title">{text.deleteTitle}</h2>
+        <p id="history-delete-description">{text.deleteDescription}</p>
         <p className="history-delete-dialog__preview">{preview}</p>
         <div className="history-delete-dialog__actions">
           <button
@@ -571,7 +575,7 @@ function DeleteHistoryConfirmDialog({
             disabled={deleting}
             onClick={onCancel}
           >
-            取消
+            {text.cancel}
           </button>
           <button
             className="history-delete-dialog__confirm"
@@ -581,7 +585,7 @@ function DeleteHistoryConfirmDialog({
               void onConfirm();
             }}
           >
-            {deleting ? "刪除中" : "刪除"}
+            {deleting ? text.deleting : text.delete}
           </button>
         </div>
       </section>
@@ -592,11 +596,13 @@ function DeleteHistoryConfirmDialog({
 function HistoryRetentionConfirmDialog({
   applying,
   retention,
+  text,
   onCancel,
   onConfirm
 }: {
   applying: boolean;
   retention: HistoryRetention;
+  text: HistoryText;
   onCancel(): void;
   onConfirm(): Promise<void>;
 }): React.JSX.Element {
@@ -614,15 +620,15 @@ function HistoryRetentionConfirmDialog({
         <button
           className="history-delete-dialog__close"
           type="button"
-          aria-label="關閉"
+          aria-label={text.close}
           disabled={applying}
           onClick={onCancel}
         >
           ×
         </button>
-        <h2 id="history-retention-title">刪除舊歷史記錄？</h2>
+        <h2 id="history-retention-title">{text.deleteOldTitle}</h2>
         <p id="history-retention-description">
-          {getHistoryRetentionConfirmDescription(retention)}
+          {getHistoryRetentionConfirmDescription(retention, text)}
         </p>
         <div className="history-delete-dialog__actions">
           <button
@@ -631,7 +637,7 @@ function HistoryRetentionConfirmDialog({
             disabled={applying}
             onClick={onCancel}
           >
-            取消
+            {text.cancel}
           </button>
           <button
             className={isDeleting ? "history-delete-dialog__confirm" : "history-delete-dialog__primary"}
@@ -641,7 +647,7 @@ function HistoryRetentionConfirmDialog({
               void onConfirm();
             }}
           >
-            {applying ? "處理中" : isDeleting ? "刪除" : "確認"}
+            {applying ? text.applying : isDeleting ? text.delete : text.confirm}
           </button>
         </div>
       </section>
@@ -672,20 +678,10 @@ function TrashIcon(): React.JSX.Element {
 }
 
 function getHistoryRetentionConfirmDescription(
-  retention: HistoryRetention
+  retention: HistoryRetention,
+  text: HistoryText
 ): string {
-  switch (retention) {
-    case "never":
-      return "您所有的本地歷史記錄將被永久刪除，且之後不會再儲存新的歷史記錄。";
-    case "24h":
-      return "早於24小時的本地歷史記錄將被永久刪除，無法恢復。";
-    case "7d":
-      return "早於1周的本地歷史記錄將被永久刪除，無法恢復。";
-    case "30d":
-      return "早於1個月的本地歷史記錄將被永久刪除，無法恢復。";
-    case "forever":
-      return "之後會永久保留新的本地歷史記錄，現有記錄不會被刪除。";
-  }
+  return text.retentionDescriptions[retention];
 }
 
 function resolveSettingsHistoryRetention(settings: AppSettings): HistoryRetention {
@@ -716,15 +712,17 @@ function removeHistoryRecordsById(
 
 export function groupHistoryRecordsByDay(
   records: HistoryRecord[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  language?: InterfaceLanguage
 ): HistoryGroup[] {
+  const text = getHistoryText(language);
   const today = toDateKey(now);
   const yesterday = toDateKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
   const groups = new Map<string, HistoryRecord[]>();
 
   for (const record of records) {
     const key = toDateKey(new Date(record.startedAt));
-    const label = key === today ? "今天" : key === yesterday ? "昨天" : key;
+    const label = key === today ? text.today : key === yesterday ? text.yesterday : key;
     const group = groups.get(label) ?? [];
     group.push(record);
     groups.set(label, group);
@@ -736,17 +734,11 @@ export function groupHistoryRecordsByDay(
   }));
 }
 
-export function resolveHistoryStatusLabel(status: HistoryRecordStatus): string {
-  switch (status) {
-    case "cancelled":
-      return "轉錄已被取消。";
-    case "no_audio":
-      return "音訊無聲。";
-    case "error":
-      return "轉錄失敗。";
-    case "completed":
-      return "已完成。";
-  }
+export function resolveHistoryStatusLabel(
+  status: HistoryRecordStatus,
+  language?: InterfaceLanguage
+): string {
+  return getHistoryText(language).statusLabels[status];
 }
 
 function matchesFilter(record: HistoryRecord, filter: HistoryFilter): boolean {

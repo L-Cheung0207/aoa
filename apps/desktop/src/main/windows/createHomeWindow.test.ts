@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electronMock = vi.hoisted(() => {
   const instances: Array<{
@@ -9,7 +9,7 @@ const electronMock = vi.hoisted(() => {
     const instance = {
       options,
       loadFile: vi.fn(),
-      loadURL: vi.fn()
+      loadURL: vi.fn(),
     };
     instances.push(instance);
     return instance;
@@ -19,14 +19,20 @@ const electronMock = vi.hoisted(() => {
 });
 
 vi.mock("electron", () => ({
-  BrowserWindow: electronMock.BrowserWindow
+  BrowserWindow: electronMock.BrowserWindow,
 }));
 
 vi.mock("./shortcutCaptureWindowGuard", () => ({
-  blockHomeWindowAltSpaceMenu: vi.fn()
+  blockHomeWindowAltSpaceMenu: vi.fn(),
 }));
 
 describe("createHomeWindow", () => {
+  beforeEach(() => {
+    electronMock.BrowserWindow.mockClear();
+    electronMock.instances.length = 0;
+    vi.unstubAllEnvs();
+  });
+
   it("creates the home window without the native title bar or menu bar", async () => {
     const { createHomeWindow } = await import("./createHomeWindow");
 
@@ -35,8 +41,19 @@ describe("createHomeWindow", () => {
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         autoHideMenuBar: true,
-        frame: false
-      })
+        frame: false,
+      }),
+    );
+  });
+
+  it("includes the initial theme in the development renderer URL", async () => {
+    vi.stubEnv("ELECTRON_RENDERER_URL", "http://localhost:5173");
+    const { createHomeWindow } = await import("./createHomeWindow");
+
+    createHomeWindow({ section: "settings", theme: "light" });
+
+    expect(electronMock.instances[0]?.loadURL).toHaveBeenCalledWith(
+      "http://localhost:5173?theme=light#/home-settings",
     );
   });
 });

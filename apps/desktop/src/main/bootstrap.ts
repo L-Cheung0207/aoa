@@ -9,12 +9,14 @@ import {
   ipcMain,
   nativeTheme,
   safeStorage,
+  session,
 } from "electron";
 import ElectronStore from "electron-store";
 import electronUpdater from "electron-updater";
 import {
   createDefaultSettings,
   type AppSettings,
+  type InterfaceLanguage,
   type RecordingMode,
 } from "@voice/shared";
 import { createMockBackendClient } from "@voice/backend-client";
@@ -52,6 +54,7 @@ import { createShortcutManager } from "./shortcuts/shortcutManager";
 import { createMainTranscriptionService } from "./transcription/mainTranscriptionService";
 import { createTray } from "./tray/createTray";
 import { createUpdateService } from "./update/updateService";
+import { installMediaPermissionHandlers } from "./permissions/mediaPermission";
 import {
   createUninstallService,
   type UninstallService,
@@ -71,12 +74,37 @@ import {
 } from "./windows/shortcutCaptureWindowGuard";
 import { registerWindowControlIpc } from "./windows/windowControlIpc";
 
+const TRAY_TOOLTIP_TEXT: Record<
+  InterfaceLanguage,
+  { idle: string; listening: string; result: string }
+> = {
+  "zh-CN": {
+    idle: "Voice AI · 空闲",
+    listening: "Voice AI · 录音中",
+    result: "Voice AI · 结果",
+  },
+  "zh-TW": {
+    idle: "Voice AI · 空閒",
+    listening: "Voice AI · 錄音中",
+    result: "Voice AI · 結果",
+  },
+  "en-US": {
+    idle: "Voice AI · Idle",
+    listening: "Voice AI · Recording",
+    result: "Voice AI · Result",
+  },
+};
+
 /** 錄音狀態 → 托盤 tooltip 文案（僅「開啟/關閉」兩態）。 */
-export function formatTrayTooltip(state: string): string {
+export function formatTrayTooltip(
+  state: string,
+  language: InterfaceLanguage = "zh-TW",
+): string {
+  const text = TRAY_TOOLTIP_TEXT[language] ?? TRAY_TOOLTIP_TEXT["zh-TW"];
   if (state === "result") {
-    return "Voice AI · 結果";
+    return text.result;
   }
-  return state === "listening" ? "Voice AI · 錄音中" : "Voice AI · 空閒";
+  return state === "listening" ? text.listening : text.idle;
 }
 
 /**
@@ -184,6 +212,7 @@ export async function bootstrap(): Promise<void> {
     openUninstallWindow();
     return;
   }
+  installMediaPermissionHandlers(session.defaultSession);
   console.log("[bootstrap] 啟動中…");
   const electronStore = new ElectronStore();
   const storeAdapter = createElectronStoreAdapter(electronStore);
@@ -222,6 +251,7 @@ export async function bootstrap(): Promise<void> {
   });
   let insertTargetWindowHandle: string | undefined;
   let lastRecordingState = "idle";
+  let refreshTrayTooltip = (_state: string): void => {};
   const historyStore = createFileHistoryStore({
     rootDir: join(app.getPath("userData"), "history"),
     audioEncryptionKey: getOrCreateHistoryAudioEncryptionKey({
@@ -269,6 +299,7 @@ export async function bootstrap(): Promise<void> {
       applyNativeTheme(settings.ui.theme);
       applyLaunchAtLogin(settings.appBehavior.launchAtLogin);
       configureShortcuts(settings.shortcuts);
+      refreshTrayTooltip(lastRecordingState);
       broadcastSettingsChanged(settings);
     },
     onHistoryRecordCreated: (record) => {
@@ -533,7 +564,10 @@ export async function bootstrap(): Promise<void> {
     versionLabel: `v${app.getVersion()}`,
     iconPath: trayIconPath,
   });
-  tray.setToolTip(formatTrayTooltip("idle"));
+  refreshTrayTooltip = (state) => {
+    tray.setToolTip(formatTrayTooltip(state, configStore.get().ui.language));
+  };
+  refreshTrayTooltip("idle");
 
   // 首頁視窗採用單例模式：托盤雙擊開啟首頁；托盤選單「設定」開啟首頁並喚起設定彈層。
   let homeWindow: import("electron").BrowserWindow | undefined;
@@ -564,9 +598,10 @@ export async function bootstrap(): Promise<void> {
       }
       return;
     }
-    homeWindow = createHomeWindow(
-      options.section ? { section: options.section } : {},
-    );
+    homeWindow = createHomeWindow({
+      ...(options.section ? { section: options.section } : {}),
+      theme: configStore.get().ui.theme,
+    });
     wireShortcutCaptureWindowGuard(homeWindow, () => shortcutCaptureDepth > 0);
     homeWindow.once("ready-to-show", () => {
       homeWindow?.show();
@@ -603,7 +638,7 @@ export async function bootstrap(): Promise<void> {
       if (state !== "idle" && state !== "shortcutHelp") {
         shortcutHelpVisible = false;
       }
-      const tooltip = formatTrayTooltip(state);
+      const tooltip = formatTrayTooltip(state, configStore.get().ui.language);
       const visibility = resolveOverlayVisibility(state);
       console.log(
         `[bootstrap] 收到錄音狀態 state=${state} mode=${update?.mode ?? "無"} → tooltip="${tooltip}" overlay=${visibility}`,

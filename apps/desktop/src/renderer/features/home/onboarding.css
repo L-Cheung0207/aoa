@@ -635,6 +635,20 @@
   line-height: 1.4;
 }
 
+.onboarding-guide__visual > .mic-level-meter {
+  gap: 8px;
+  padding: 18px 22px;
+}
+
+.onboarding-guide__visual > .mic-level-meter .mic-level-meter__bar {
+  width: 10px;
+  height: 46px;
+}
+
+.onboarding-guide__visual > .mic-level-meter .mic-level-meter__bar::after {
+  transition-duration: 180ms;
+}
+
 .onboarding-meter {
   position: relative;
   z-index: 1;
@@ -669,7 +683,20 @@
   background: linear-gradient(180deg, #2d6df7 0%, #1f5fe5 100%);
   border-radius: inherit;
   transform-origin: bottom center;
-  transition: transform 80ms ease-out;
+  opacity: 0;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+.onboarding-meter__bar[data-filled="true"] .onboarding-meter__bar-fill {
+  opacity: 1;
+  transition-duration: 0ms;
+}
+
+.onboarding-meter__bar[data-filled="false"] .onboarding-meter__bar-fill {
+  transition-duration: 120ms;
 }
 
 .onboarding-meter[data-state="unavailable"] .onboarding-meter__bar-fill,

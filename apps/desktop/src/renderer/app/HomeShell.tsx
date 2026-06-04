@@ -6,7 +6,7 @@ import { OnboardingGuide } from "../features/home/components/OnboardingGuide";
 import { buildHomeUsageStats } from "../features/home/homeUsageStats";
 import { normalizeConnectionSettings } from "../features/settings/connectionSettings";
 import { SettingsPage } from "../features/settings/SettingsPage";
-import { UpdateReadyDialog } from "../features/update/MockUpdateDialog";
+import { MockUpdateDialog, UpdateReadyDialog } from "../features/update/MockUpdateDialog";
 import type { UpdateReadyPayload } from "../../preload/voiceApi";
 
 interface HomeShellProps {
@@ -17,9 +17,154 @@ interface HomeShellProps {
 }
 
 type HomeSection = "home" | "history" | "settings" | "about";
+type HomeShellLanguage = AppSettings["ui"]["language"];
 
 const DEFAULT_VERSION_LABEL = "v0.0.0";
-const DEFAULT_DEVICE_NAME = "本機裝置";
+const DEFAULT_DEVICE_NAME = "";
+
+type HomeShellText = {
+  mainNav: string;
+  home: string;
+  history: string;
+  settings: string;
+  openSettings: string;
+  about: string;
+  localDevice: string;
+  userArea: string;
+  exitApp: string;
+  contactPending: string;
+  updateChecking: string;
+  updateUpToDate: string;
+  updateFoundVersionPrefix: string;
+  updateFoundVersionSuffix: string;
+  updateFoundGeneric: string;
+  updateDisabled: string;
+  updateFailed: string;
+  aboutPage: string;
+  aboutActions: string;
+  welcome: string;
+  currentVersionPrefix: string;
+  checkUpdates: string;
+  contact: string;
+  userAgreement: string;
+  privacyPolicy: string;
+  contactPendingToast: string;
+  agreementPendingToast: string;
+  privacyPendingToast: string;
+  windowControls: string;
+  minimize: string;
+  maximize: string;
+  close: string;
+};
+
+const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
+  "zh-CN": {
+    mainNav: "主导航",
+    home: "首页",
+    history: "历史记录",
+    settings: "设置",
+    openSettings: "打开设置",
+    about: "关于",
+    localDevice: "本机设备",
+    userArea: "用户区",
+    exitApp: "退出",
+    contactPending: "联系我们待接入",
+    updateChecking: "正在检查更新...",
+    updateUpToDate: "目前已是最新版本",
+    updateFoundVersionPrefix: "发现新版本 ",
+    updateFoundVersionSuffix: "，正在下载...",
+    updateFoundGeneric: "发现新版本，正在下载...",
+    updateDisabled: "开发模式下无法检查更新",
+    updateFailed: "检查更新失败",
+    aboutPage: "关于页面",
+    aboutActions: "关于页面操作",
+    welcome: "欢迎使用 Voice Assistant Service",
+    currentVersionPrefix: "当前版本 ",
+    checkUpdates: "检查更新",
+    contact: "联系我们",
+    userAgreement: "用户协议",
+    privacyPolicy: "隐私政策",
+    contactPendingToast: "联系我们：功能开发中",
+    agreementPendingToast: "用户协议：功能开发中",
+    privacyPendingToast: "隐私政策：功能开发中",
+    windowControls: "窗口控制",
+    minimize: "最小化",
+    maximize: "最大化",
+    close: "关闭"
+  },
+  "zh-TW": {
+    mainNav: "主導航",
+    home: "首頁",
+    history: "歷史記錄",
+    settings: "設定",
+    openSettings: "開啟設定",
+    about: "關於",
+    localDevice: "本機裝置",
+    userArea: "使用者區",
+    exitApp: "退出",
+    contactPending: "聯絡我們待接入",
+    updateChecking: "正在檢查更新...",
+    updateUpToDate: "目前已是最新版本",
+    updateFoundVersionPrefix: "發現新版本 ",
+    updateFoundVersionSuffix: "，正在下載...",
+    updateFoundGeneric: "發現新版本，正在下載...",
+    updateDisabled: "開發模式下無法檢查更新",
+    updateFailed: "檢查更新失敗",
+    aboutPage: "關於頁面",
+    aboutActions: "關於頁面操作",
+    welcome: "歡迎使用 Voice Assistant Service",
+    currentVersionPrefix: "當前版本 ",
+    checkUpdates: "檢查更新",
+    contact: "聯絡我們",
+    userAgreement: "使用者協議",
+    privacyPolicy: "隱私政策",
+    contactPendingToast: "聯絡我們：功能開發中",
+    agreementPendingToast: "使用者協議：功能開發中",
+    privacyPendingToast: "隱私政策：功能開發中",
+    windowControls: "視窗控制",
+    minimize: "最小化",
+    maximize: "最大化",
+    close: "關閉"
+  },
+  "en-US": {
+    mainNav: "Main navigation",
+    home: "Home",
+    history: "History",
+    settings: "Settings",
+    openSettings: "Open settings",
+    about: "About",
+    localDevice: "Local device",
+    userArea: "User area",
+    exitApp: "Exit",
+    contactPending: "Contact us is not available yet",
+    updateChecking: "Checking for updates...",
+    updateUpToDate: "You're up to date",
+    updateFoundVersionPrefix: "Version ",
+    updateFoundVersionSuffix: " found, downloading...",
+    updateFoundGeneric: "New version found, downloading...",
+    updateDisabled: "Update checks are unavailable in development mode",
+    updateFailed: "Update check failed",
+    aboutPage: "About page",
+    aboutActions: "About page actions",
+    welcome: "Welcome to Voice Assistant Service",
+    currentVersionPrefix: "Current version ",
+    checkUpdates: "Check for updates",
+    contact: "Contact us",
+    userAgreement: "User Agreement",
+    privacyPolicy: "Privacy Policy",
+    contactPendingToast: "Contact us: coming soon",
+    agreementPendingToast: "User Agreement: coming soon",
+    privacyPendingToast: "Privacy Policy: coming soon",
+    windowControls: "Window controls",
+    minimize: "Minimize",
+    maximize: "Maximize",
+    close: "Close"
+  }
+};
+
+function getHomeShellText(language: HomeShellLanguage | undefined): HomeShellText {
+  return HOME_SHELL_TEXT[language ?? "zh-CN"] ?? HOME_SHELL_TEXT["zh-CN"];
+}
 
 export function HomeShell({
   initialSettings,
@@ -39,6 +184,7 @@ export function HomeShell({
   );
   const [toast, setToast] = useState<string | undefined>(undefined);
   const [activeSection, setActiveSection] = useState<HomeSection>(() => initialSection ?? "home");
+  const [showMockUpdatePage, setShowMockUpdatePage] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [updateReady, setUpdateReady] = useState<UpdateReadyPayload | undefined>(undefined);
   const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([]);
@@ -48,20 +194,11 @@ export function HomeShell({
     () => buildHomeUsageStats(historyRecords),
     [historyRecords]
   );
+  const shellText = getHomeShellText(settings?.ui.language);
+
   const openUpdateDialog = useCallback((): void => {
+    setShowMockUpdatePage(true);
     setToast(undefined);
-    void window.voiceAI
-      .checkForUpdates()
-      .then((result) => {
-        if (result.status === "checking") {
-          setToast("更新检查已启动，下载完成后会提示重启");
-        } else if (result.status === "disabled") {
-          setToast("开发模式下不会自动检查更新");
-        }
-      })
-      .catch((error) => {
-        setToast(error instanceof Error ? error.message : String(error));
-      });
   }, []);
 
   const updateSettings = useCallback(
@@ -232,16 +369,16 @@ export function HomeShell({
 
   return (
     <main className="home-page">
-      <WindowControls modalOpen={onboardingOpen} />
+      <WindowControls modalOpen={onboardingOpen} text={shellText} />
       <aside className="home-sidebar">
-        <nav className="home-nav" aria-label="主導航">
+        <nav className="home-nav" aria-label={shellText.mainNav}>
           <button
             className={activeSection === "home" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
             type="button"
             onClick={() => setActiveSection("home")}
           >
             <HomeIcon />
-            首頁
+            {shellText.home}
           </button>
           <button
             className={activeSection === "history" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
@@ -249,39 +386,39 @@ export function HomeShell({
             onClick={() => setActiveSection("history")}
           >
             <HistoryIcon />
-            歷史記錄
+            {shellText.history}
           </button>
           <button
             className={activeSection === "settings" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
             type="button"
-            aria-label="開啟設定"
+            aria-label={shellText.openSettings}
             onClick={() => setActiveSection("settings")}
           >
             <SettingsIcon />
-            設定
+            {shellText.settings}
           </button>
           <button
             className={activeSection === "about" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
             type="button"
-            aria-label="關於"
+            aria-label={shellText.about}
             onClick={() => setActiveSection("about")}
           >
             <InfoIcon />
-            關於
+            {shellText.about}
           </button>
         </nav>
 
-        <div className="home-sidebar__footer" aria-label="使用者區">
+        <div className="home-sidebar__footer" aria-label={shellText.userArea}>
           <div className="home-user">
             <span className="home-user__icon" aria-hidden="true">
               <UserIcon />
             </span>
-            <span className="home-user__name">hi, {deviceName}</span>
+            <span className="home-user__name">hi, {deviceName || shellText.localDevice}</span>
           </div>
           <button
             className="home-power"
             type="button"
-            aria-label="退出"
+            aria-label={shellText.exitApp}
             onClick={() => window.voiceAI.controlHomeWindow("close")}
           >
             <PowerIcon />
@@ -300,10 +437,11 @@ export function HomeShell({
                 : "home-content"
         }
       >
-        {activeSection === "history" ? <HistoryPage /> : null}
+        {activeSection === "history" ? <HistoryPage language={settings?.ui.language} /> : null}
         {activeSection === "settings" ? <SettingsPage initialSettings={settings} /> : null}
         {activeSection === "about" ? (
           <AboutPage
+            text={shellText}
             versionLabel={versionLabel}
             onCheckUpdates={openUpdateDialog}
             onContact={() => { }}
@@ -318,7 +456,7 @@ export function HomeShell({
             versionLabel={versionLabel}
             onOpenOnboarding={() => setOnboardingOpen(true)}
             onCheckUpdates={openUpdateDialog}
-            onContact={() => setToast("聯絡我們待接入")}
+            onContact={() => setToast(shellText.contactPending)}
           />
         ) : null}
       </section>
@@ -349,6 +487,7 @@ export function HomeShell({
       ) : null}
       {updateDialogOpen ? (
         <UpdateReadyDialog
+          language={settings?.ui.language}
           version={updateReady?.version}
           onClose={() => setUpdateDialogOpen(false)}
           onRestart={() => {
@@ -358,17 +497,25 @@ export function HomeShell({
           }}
         />
       ) : null}
+      {showMockUpdatePage ? (
+        <MockUpdateDialog
+          currentVersion={versionLabel}
+          onClose={() => setShowMockUpdatePage(false)}
+        />
+      ) : null}
     </main>
   );
 }
 
 function AboutPage({
+  text,
   versionLabel,
   onCheckUpdates,
   onContact,
   onOpenAgreement,
   onOpenPrivacy
 }: {
+  text: HomeShellText;
   versionLabel: string;
   onCheckUpdates(): void;
   onContact(): void;
@@ -391,8 +538,8 @@ function AboutPage({
   };
 
   return (
-    <div className="about-page" role="region" aria-label="關於頁面">
-      <h1 className="about-page__title">關於</h1>
+    <div className="about-page" role="region" aria-label={text.aboutPage}>
+      <h1 className="about-page__title">{text.about}</h1>
 
       <div className="about-page__content">
         <div className="about-page__brand" aria-hidden="true">
@@ -400,30 +547,33 @@ function AboutPage({
         </div>
 
         <div className="about-page__headline">
-          <p className="about-page__welcome">歡迎使用 Voice Assistant Service</p>
-          <p className="about-page__version">當前版本 {versionLabel}</p>
+          <p className="about-page__welcome">{text.welcome}</p>
+          <p className="about-page__version">
+            {text.currentVersionPrefix}
+            {versionLabel}
+          </p>
         </div>
 
-        <div className="about-page__actions" role="list" aria-label="關於頁面操作">
+        <div className="about-page__actions" role="list" aria-label={text.aboutActions}>
           <AboutActionRow
             icon="refresh"
-            label="檢查更新"
-            onClick={() => runWithToast("檢查更新：功能開發中", onCheckUpdates)}
+            label={text.checkUpdates}
+            onClick={onCheckUpdates}
           />
           <AboutActionRow
             icon="mail"
-            label="聯絡我們"
-            onClick={() => runWithToast("聯絡我們：功能開發中", onContact)}
+            label={text.contact}
+            onClick={() => runWithToast(text.contactPendingToast, onContact)}
           />
           <AboutActionRow
             icon="file"
-            label="使用者協議"
-            onClick={() => runWithToast("使用者協議：功能開發中", onOpenAgreement)}
+            label={text.userAgreement}
+            onClick={() => runWithToast(text.agreementPendingToast, onOpenAgreement)}
           />
           <AboutActionRow
             icon="shield"
-            label="隱私政策"
-            onClick={() => runWithToast("隱私政策：功能開發中", onOpenPrivacy)}
+            label={text.privacyPolicy}
+            onClick={() => runWithToast(text.privacyPendingToast, onOpenPrivacy)}
           />
         </div>
       </div>
@@ -459,16 +609,22 @@ function AboutActionRow({
   );
 }
 
-function WindowControls({ modalOpen }: { modalOpen: boolean }): React.JSX.Element {
+function WindowControls({
+  modalOpen,
+  text
+}: {
+  modalOpen: boolean;
+  text: HomeShellText;
+}): React.JSX.Element {
   return (
     <div
       className={`home-window-controls${modalOpen ? " home-window-controls--modal" : ""}`}
-      aria-label="視窗控制"
+      aria-label={text.windowControls}
     >
       <button
         className="home-window-controls__button"
         type="button"
-        aria-label="最小化"
+        aria-label={text.minimize}
         onClick={() => window.voiceAI.controlHomeWindow("minimize")}
       >
         <span className="home-window-controls__icon home-window-controls__icon--minimize" />
@@ -476,7 +632,7 @@ function WindowControls({ modalOpen }: { modalOpen: boolean }): React.JSX.Elemen
       <button
         className="home-window-controls__button"
         type="button"
-        aria-label="最大化"
+        aria-label={text.maximize}
         onClick={() => window.voiceAI.controlHomeWindow("toggleMaximize")}
       >
         <span className="home-window-controls__icon home-window-controls__icon--maximize" />
@@ -484,7 +640,7 @@ function WindowControls({ modalOpen }: { modalOpen: boolean }): React.JSX.Elemen
       <button
         className="home-window-controls__button home-window-controls__button--close"
         type="button"
-        aria-label="關閉"
+        aria-label={text.close}
         onClick={() => window.voiceAI.controlHomeWindow("close")}
       >
         <span className="home-window-controls__icon home-window-controls__icon--close" />

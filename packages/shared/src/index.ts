@@ -12,6 +12,7 @@ export type {
   BackendMode,
   HistoryRetention,
   InsertStrategy,
+  InterfaceLanguage,
   LlmModelConfig,
   PostprocessMode,
   PostprocessStyle,

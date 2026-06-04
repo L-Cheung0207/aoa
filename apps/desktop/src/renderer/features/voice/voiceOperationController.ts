@@ -29,7 +29,6 @@ import type {
   HistoryRecordStatus,
 } from "@voice/shared";
 
-const THINKING_STATE_PREVIEW_DELAY_MS = 5000;
 const MAX_PENDING_TRANSCRIPTION_FRAMES = 30;
 const RECORDING_LIMIT_TIMER_FUZZ_MS = 25;
 
@@ -159,17 +158,6 @@ export function createVoiceOperationController(
         console.error("[voice] automatic recording stop failed", error);
       });
     }, remainingMs + RECORDING_LIMIT_TIMER_FUZZ_MS);
-  };
-
-  const waitForThinkingPreview = async (
-    session: ActiveSession,
-  ): Promise<boolean> => {
-    if (typeof window !== "undefined") {
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, THINKING_STATE_PREVIEW_DELAY_MS),
-      );
-    }
-    return activeSession === session;
   };
 
   const requestAbortDuringStart = (): void => {
@@ -392,10 +380,6 @@ export function createVoiceOperationController(
         return;
       }
       console.log("[voice] 停止會話：錄音階段完成");
-      if (!(await waitForThinkingPreview(session))) {
-        console.warn("[voice] 停止會話：思考中預覽期間會話已取消，靜默退出");
-        return;
-      }
       stage = "transcription";
       if (session.transcriptionUnavailable) {
         throw new Error("Transcription session is unavailable");

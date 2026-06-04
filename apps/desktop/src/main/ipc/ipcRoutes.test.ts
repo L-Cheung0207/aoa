@@ -549,13 +549,13 @@ describe("ipc route handlers", () => {
   });
 
   it("starts update checks through the update service", async () => {
-    const checkCalls: string[] = [];
+    const checkCalls: unknown[] = [];
     const handlers = createIpcRouteHandlers(
       createDeps({
         updateService: {
-          checkForUpdates: async () => {
-            checkCalls.push("check");
-            return { status: "checking" };
+          checkForUpdates: async (options) => {
+            checkCalls.push(options);
+            return { status: "up-to-date" };
           },
           restartToUpdate: () => undefined
         }
@@ -563,9 +563,9 @@ describe("ipc route handlers", () => {
     );
 
     await expect(handlers.checkForUpdates()).resolves.toEqual({
-      status: "checking"
+      status: "up-to-date"
     });
-    expect(checkCalls).toEqual(["check"]);
+    expect(checkCalls).toEqual([{ allowDevelopmentFakeUpdate: true }]);
   });
 
   it("routes history create, list, and delete through the history store", async () => {

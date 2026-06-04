@@ -17,54 +17,8 @@ import {
 import { MicrophoneDevicePicker } from "../../shared/ui/MicrophoneDevicePicker";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import { useAutoSaveSettings } from "./useAutoSaveSettings";
-
-interface LanguageOption {
-  key: string;
-  value: RecordingLanguage;
-}
-
-interface InterfaceLanguageOption {
-  key: string;
-  value: InterfaceLanguage;
-}
-
-interface WaveformOption {
-  key: string;
-  value: WaveformStyle;
-}
-
-const INTERFACE_LANGUAGE_OPTIONS: InterfaceLanguageOption[] = [
-  { key: "简体中文（中国大陆）", value: "zh-CN" },
-  { key: "繁體中文（香港/澳門）", value: "zh-TW" },
-  { key: "English (United States)", value: "en-US" }
-];
-
-const LANGUAGE_OPTIONS: LanguageOption[] = [
-  { key: "自動 (Auto)", value: "auto" },
-  { key: "廣東話 (Cantonese)", value: "cantonese" },
-  { key: "普通話 (Mandarin)", value: "mandarin" },
-  { key: "韓語 (Korean)", value: "korean" },
-  { key: "英文 (English)", value: "english" },
-  { key: "葡文 (Portuguese)", value: "portuguese" },
-  { key: "日文 (Japanese)", value: "japanese" },
-  { key: "泰文 (Thai)", value: "thai" },
-  { key: "印地文 (Hindi)", value: "hindi" },
-  { key: "印尼文 (Indonesia)", value: "indonesia" }
-];
-
-const WAVEFORM_OPTIONS: WaveformOption[] = [
-  { key: "脉冲焰", value: "waveform-sunset" },
-  { key: "银核灰", value: "waveform-mono" },
-  { key: "霓虹糖", value: "waveform-candy" }
-];
-
-const TRANSLATION_TARGET_OPTIONS: Array<{
-  key: string;
-  value: AppSettings["translation"]["targetLanguage"];
-}> = [
-  { key: "英语（英国）", value: "en-US" },
-  { key: "简体中文（中国大陆）", value: "zh-CN" }
-];
+import { WaveformPreview } from "./WaveformPreview";
+import { getSettingsText, type SettingsText } from "./settingsI18n";
 
 function updateWaveformStyle(current: AppSettings, waveformStyle: WaveformStyle): AppSettings {
   return {
@@ -80,17 +34,21 @@ interface SettingsPageProps {
   initialSettings?: AppSettings | undefined;
 }
 
-function formatConnectivityMessage(
+function formatLocalizedConnectivityMessage(
   label: string,
-  result: { ok: boolean; message: string; elapsedMs?: number }
+  result: { ok: boolean; message: string; elapsedMs?: number },
+  text: SettingsText
 ): string {
   if (result.ok) {
-    return `${label}連線成功${result.elapsedMs ? `（${result.elapsedMs}ms）` : ""}`;
+    return `${label}${text.connection.connectionSucceeded}${
+      result.elapsedMs ? ` (${result.elapsedMs}ms)` : ""
+    }`;
   }
-  return `${label}連線失敗：${result.message}`;
+  return `${label}${text.connection.connectionFailed}${result.message}`;
 }
 
 export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React.JSX.Element {
+  const fallbackText = getSettingsText(initialSettings?.ui.language);
   const [settings, setSettings] = useState<AppSettings | undefined>(initialSettings);
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const [wsTest, setWsTest] = useState<ConnectionTestStatus>({ state: "idle" });
@@ -153,7 +111,10 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
   if (loadError !== undefined) {
     return (
       <main className="settings">
-        <div className="settings__error">載入配置失敗：{loadError}</div>
+        <div className="settings__error">
+          {fallbackText.common.loadFailed}
+          {loadError}
+        </div>
       </main>
     );
   }
@@ -161,31 +122,34 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
   if (!settings) {
     return (
       <main className="settings">
-        <div className="settings__loading">載入中…</div>
+        <div className="settings__loading">{fallbackText.common.loading}</div>
       </main>
     );
   }
 
+  const text = getSettingsText(settings.ui.language);
   const connectionError = validateConnectionSettings(settings);
 
   const handleTestWs = async (): Promise<void> => {
     const { wsServer } = getConnectionTargets(settings);
     if (!wsServer?.url.trim()) {
-      setWsTest({ state: "fail", message: "請先填寫 WebSocket 地址。" });
+      setWsTest({ state: "fail", message: text.connection.wsMissing });
       return;
     }
 
-    setWsTest({ state: "testing", message: "正在測試 WS 服務..." });
+    setWsTest({ state: "testing", message: text.connection.testingWs });
     try {
       const result = await window.voiceAI.testWebSocket(wsServer);
       setWsTest({
         state: result.ok ? "ok" : "fail",
-        message: formatConnectivityMessage("WS 服務", result)
+        message: formatLocalizedConnectivityMessage(text.connection.wsService, result, text)
       });
     } catch (error) {
       setWsTest({
         state: "fail",
-        message: `WS 服務連線異常：${error instanceof Error ? error.message : String(error)}`
+        message: `${text.connection.wsService}${text.connection.connectionException}${
+          error instanceof Error ? error.message : String(error)
+        }`
       });
     }
   };
@@ -193,21 +157,23 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
   const handleTestLlm = async (): Promise<void> => {
     const { llmModel } = getConnectionTargets(settings);
     if (!llmModel?.baseUrl.trim()) {
-      setLlmTest({ state: "fail", message: "請先填寫後處理 API 地址。" });
+      setLlmTest({ state: "fail", message: text.connection.apiMissing });
       return;
     }
 
-    setLlmTest({ state: "testing", message: "正在測試後處理 API..." });
+    setLlmTest({ state: "testing", message: text.connection.testingApi });
     try {
       const result = await window.voiceAI.testLlm(llmModel);
       setLlmTest({
         state: result.ok ? "ok" : "fail",
-        message: formatConnectivityMessage("後處理 API", result)
+        message: formatLocalizedConnectivityMessage(text.connection.apiService, result, text)
       });
     } catch (error) {
       setLlmTest({
         state: "fail",
-        message: `後處理 API 連線異常：${error instanceof Error ? error.message : String(error)}`
+        message: `${text.connection.apiService}${text.connection.connectionException}${
+          error instanceof Error ? error.message : String(error)
+        }`
       });
     }
   };
@@ -216,15 +182,15 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
     <main className="settings">
       <header className="settings-header">
         <div className="settings-header__left">
-          <h1 className="settings-header__title">設定</h1>
+          <h1 className="settings-header__title">{text.header.title}</h1>
           <p className="settings-header__subtitle">
-            配置會儲存在你的裝置上，不會上傳到雲端。
+            {text.header.subtitle}
           </p>
         </div>
       </header>
 
-      <section className="settings__section settings__section--plain" aria-label="外觀">
-        <h2 className="settings-group-header" aria-label="外觀分組">
+      <section className="settings__section settings__section--plain" aria-label={text.sections.appearance}>
+        <h2 className="settings-group-header" aria-label={text.sections.appearance}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -243,12 +209,12 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">外觀</span>
+          <span className="settings-group-header__label">{text.sections.appearance}</span>
         </h2>
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>主題</strong>
-            <small>預設使用深色主題；淺色主題更適合白天。</small>
+            <strong>{text.appearance.theme}</strong>
+            <small>{text.appearance.themeDescription}</small>
           </div>
           <div className="settings-row__control">
             <select
@@ -271,20 +237,20 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                 });
                 void window.voiceAI.updateSettings({ ui: { theme } }).catch((error) => {
                   setSaveError(
-                    `儲存失敗：${error instanceof Error ? error.message : String(error)}`
+                    `${text.common.saveFailed}${error instanceof Error ? error.message : String(error)}`
                   );
                 });
               }}
             >
-              <option value="dark">深色（預設）</option>
-              <option value="light">淺色（白色）</option>
+              <option value="dark">{text.appearance.darkTheme}</option>
+              <option value="light">{text.appearance.lightTheme}</option>
             </select>
           </div>
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label="快捷鍵">
-        <h2 className="settings-group-header" aria-label="快捷鍵分組">
+      <section className="settings__section settings__section--plain" aria-label={text.sections.shortcuts}>
+        <h2 className="settings-group-header" aria-label={text.sections.shortcuts}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -303,15 +269,16 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">快捷鍵</span>
+          <span className="settings-group-header__label">{text.sections.shortcuts}</span>
         </h2>
         <div className="settings-row settings-row--shortcut">
           <div className="settings-row__text">
-            <strong>語音輸入</strong>
-            <small>開始與停止語音輸入。</small>
+            <strong>{text.shortcuts.voiceInput}</strong>
+            <small>{text.shortcuts.voiceInputDescription}</small>
           </div>
           <div className="settings-row__control">
             <ShortcutRecorder
+              language={settings.ui.language}
               value={settings.shortcuts.toggleRecording}
               onChange={(value) =>
                 updateSettings((current) => ({
@@ -328,11 +295,12 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row settings-row--shortcut">
           <div className="settings-row__text">
-            <strong>智慧改寫</strong>
-            <small>結合選區與語音指令進行處理。</small>
+            <strong>{text.shortcuts.smartRewrite}</strong>
+            <small>{text.shortcuts.smartRewriteDescription}</small>
           </div>
           <div className="settings-row__control">
             <ShortcutRecorder
+              language={settings.ui.language}
               value={settings.shortcuts.processSelection}
               onChange={(value) =>
                 updateSettings((current) => ({
@@ -349,11 +317,12 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row settings-row--shortcut">
           <div className="settings-row__text">
-            <strong>翻譯</strong>
-            <small>開始與停止翻譯模式。</small>
+            <strong>{text.shortcuts.translate}</strong>
+            <small>{text.shortcuts.translateDescription}</small>
           </div>
           <div className="settings-row__control">
             <ShortcutRecorder
+              language={settings.ui.language}
               value={settings.shortcuts.translateDictation}
               onChange={(value) =>
                 updateSettings((current) => ({
@@ -369,8 +338,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label="语言">
-        <h2 className="settings-group-header" aria-label="语言分组">
+      <section className="settings__section settings__section--plain" aria-label={text.sections.language}>
+        <h2 className="settings-group-header" aria-label={text.sections.language}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -388,13 +357,13 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">语言</span>
+          <span className="settings-group-header__label">{text.sections.language}</span>
         </h2>
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>界面语言</strong>
-            <small>选择用户界面使用的语言。</small>
+            <strong>{text.language.interfaceLanguage}</strong>
+            <small>{text.language.interfaceLanguageDescription}</small>
           </div>
           <div className="settings-row__control">
             <select
@@ -411,7 +380,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                 }))
               }
             >
-              {INTERFACE_LANGUAGE_OPTIONS.map((option) => (
+              {text.options.interfaceLanguages.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.key}
                 </option>
@@ -422,8 +391,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>翻译目标</strong>
-            <small>选择翻译模式下的听写目标语言。</small>
+            <strong>{text.language.translationTarget}</strong>
+            <small>{text.language.translationTargetDescription}</small>
           </div>
           <div className="settings-row__control">
             <select
@@ -440,7 +409,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                 }))
               }
             >
-              {TRANSLATION_TARGET_OPTIONS.map((option) => (
+              {text.options.translationTargets.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.key}
                 </option>
@@ -450,8 +419,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label="音频">
-        <h2 className="settings-group-header" aria-label="音频分组">
+      <section className="settings__section settings__section--plain" aria-label={text.sections.audio}>
+        <h2 className="settings-group-header" aria-label={text.sections.audio}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -469,17 +438,18 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">音频</span>
+          <span className="settings-group-header__label">{text.sections.audio}</span>
         </h2>
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>麦克风</strong>
-            <small>选择您首选的麦克风，以便 Typeless 捕捉您的声音。</small>
+            <strong>{text.audio.microphone}</strong>
+            <small>{text.audio.microphoneDescription}</small>
           </div>
           <div className="settings-row__control">
             <MicrophoneDevicePicker
               variant="page"
+              language={settings.ui.language}
               selectedDeviceId={settings.recording.inputDeviceId}
               onDeviceChange={(deviceId) =>
                 updateSettings((current) => ({
@@ -496,13 +466,13 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>交互声音</strong>
-            <small>为开始/停止等关键操作播放声音。</small>
+            <strong>{text.audio.interactionSounds}</strong>
+            <small>{text.audio.interactionSoundsDescription}</small>
           </div>
           <div className="settings-row__control">
             <SettingsSwitch
               checked={settings.audio.interactionSounds}
-              label="交互声音"
+              label={text.audio.interactionSounds}
               onChange={(checked) =>
                 updateSettings((current) => ({
                   ...current,
@@ -518,13 +488,13 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>语音输入时静音</strong>
-            <small>在语音输入时自动静音其他活动音频。</small>
+            <strong>{text.audio.muteDuringVoiceInput}</strong>
+            <small>{text.audio.muteDuringVoiceInputDescription}</small>
           </div>
           <div className="settings-row__control">
             <SettingsSwitch
               checked={settings.audio.muteOtherAudioDuringRecording}
-              label="语音输入时静音"
+              label={text.audio.muteDuringVoiceInput}
               onChange={(checked) =>
                 updateSettings((current) => ({
                   ...current,
@@ -540,8 +510,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>语音识别语言</strong>
-            <small>影响语音识别的语言提示。</small>
+            <strong>{text.audio.recognitionLanguage}</strong>
+            <small>{text.audio.recognitionLanguageDescription}</small>
           </div>
           <div className="settings-row__control">
             <select
@@ -558,7 +528,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                 }))
               }
             >
-              {LANGUAGE_OPTIONS.map((option) => (
+              {text.options.recordingLanguages.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.key}
                 </option>
@@ -569,32 +539,45 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>聲波效果</strong>
-            <small>選擇懸浮窗的波形風格。</small>
+            <strong>{text.audio.waveformEffect}</strong>
+            <small>{text.audio.waveformEffectDescription}</small>
           </div>
           <div className="settings-row__control">
-            <select
-              id="recording-waveform"
-              className="settings__select"
-              value={settings.recording.waveformStyle}
-              onChange={(event) =>
-                updateSettings((current) =>
-                  updateWaveformStyle(current, event.target.value as WaveformStyle)
-                )
-              }
-            >
-              {WAVEFORM_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.key}
-                </option>
-              ))}
-            </select>
+            <div className="settings-waveform-control">
+              <select
+                id="recording-waveform"
+                className="settings__select"
+                value={settings.recording.waveformStyle}
+                onChange={(event) =>
+                  updateSettings((current) =>
+                    updateWaveformStyle(current, event.target.value as WaveformStyle)
+                  )
+                }
+              >
+                {text.options.waveforms.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.key}
+                  </option>
+                ))}
+              </select>
+              <div className="settings-waveform-preview" aria-label={text.audio.waveformPreview}>
+                <WaveformPreview
+                  styleName={settings.recording.waveformStyle}
+                  label={
+                    text.options.waveforms.find(
+                      (option) => option.value === settings.recording.waveformStyle
+                    )?.key ?? text.audio.waveformPreview
+                  }
+                  compact
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label="应用行为">
-        <h2 className="settings-group-header" aria-label="应用行为分组">
+      <section className="settings__section settings__section--plain" aria-label={text.sections.appBehavior}>
+        <h2 className="settings-group-header" aria-label={text.sections.appBehavior}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -614,18 +597,18 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">应用行为</span>
+          <span className="settings-group-header__label">{text.sections.appBehavior}</span>
         </h2>
 
         <div className="settings-row">
           <div className="settings-row__text">
-            <strong>登录时启动应用</strong>
-            <small>当您的计算机启动时，自动打开 Typeless。</small>
+            <strong>{text.appBehavior.launchAtLogin}</strong>
+            <small>{text.appBehavior.launchAtLoginDescription}</small>
           </div>
           <div className="settings-row__control">
             <SettingsSwitch
               checked={settings.appBehavior.launchAtLogin}
-              label="登录时启动应用"
+              label={text.appBehavior.launchAtLogin}
               onChange={(checked) =>
                 updateSettings((current) => ({
                   ...current,
@@ -640,8 +623,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label="連線">
-        <h2 className="settings-group-header" aria-label="連線分組">
+      <section className="settings__section settings__section--plain" aria-label={text.sections.connection}>
+        <h2 className="settings-group-header" aria-label={text.sections.connection}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -660,11 +643,12 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">連線</span>
+          <span className="settings-group-header__label">{text.sections.connection}</span>
         </h2>
         <ConnectionSettingsFields
           layout="page"
           settings={settings}
+          language={settings.ui.language}
           onSettingsChange={updateSettings}
           wsTestResult={wsTest}
           llmTestResult={llmTest}
@@ -675,7 +659,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               disabled={wsTest.state === "testing" || Boolean(connectionError)}
               onClick={() => void handleTestWs()}
             >
-              {renderTestLabel("WS測試", wsTest.state)}
+              {renderLocalizedTestLabel(text.connection.wsTest, wsTest.state, text)}
             </button>
           }
           llmTestButton={
@@ -685,7 +669,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               disabled={llmTest.state === "testing" || Boolean(connectionError)}
               onClick={() => void handleTestLlm()}
             >
-              {renderTestLabel("API測試", llmTest.state)}
+              {renderLocalizedTestLabel(text.connection.apiTest, llmTest.state, text)}
             </button>
           }
         />
@@ -697,14 +681,18 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
   );
 }
 
-function renderTestLabel(base: string, state: ConnectionTestStatus["state"]): string {
+function renderLocalizedTestLabel(
+  base: string,
+  state: ConnectionTestStatus["state"],
+  text: SettingsText
+): string {
   switch (state) {
     case "testing":
-      return "測試中...";
+      return text.common.testing;
     case "ok":
-      return `${base} ✓`;
+      return `${base}${text.common.testOkSuffix}`;
     case "fail":
-      return `${base} ✗`;
+      return `${base}${text.common.testFailSuffix}`;
     default:
       return base;
   }

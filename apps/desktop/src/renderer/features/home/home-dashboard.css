@@ -3,22 +3,18 @@
   box-sizing: border-box;
   width: min(860px, 100%);
   margin: 0 auto;
-  padding: 28px 32px 22px;
-  border-radius: 18px;
-  background: rgba(3, 6, 23, 0.74);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 32px 90px rgba(0, 0, 0, 0.48);
-  backdrop-filter: blur(18px);
+  padding: 28px 10px 22px;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 :root[data-theme="light"] .home-hero {
-  background: rgba(255, 255, 255, 0.78);
-  border-color: rgba(15, 23, 42, 0.1);
-  box-shadow:
-    0 0 0 1px rgba(15, 23, 42, 0.03) inset,
-    0 32px 90px rgba(15, 23, 42, 0.14);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .home-hero__header {
@@ -42,14 +38,11 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  background: rgba(148, 163, 184, 0.12);
-  color: rgba(248, 250, 252, 0.92);
+  color: #60a5fa;
 }
 
 :root[data-theme="light"] .home-hero__title-icon {
-  background: rgba(15, 23, 42, 0.06);
-  color: rgba(15, 23, 42, 0.86);
+  color: #2f7ef7;
 }
 
 .home-hero h1 {
@@ -58,7 +51,7 @@
   font-size: 27px;
   line-height: 1.15;
   font-weight: 900;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 :root[data-theme="light"] .home-hero h1 {

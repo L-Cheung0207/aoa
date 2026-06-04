@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { RecordingMode, WaveformStyle } from "@voice/shared";
+import type { InterfaceLanguage, RecordingMode, WaveformStyle } from "@voice/shared";
 import type {
   RecordingState,
   ShortcutHelpPayload,
@@ -15,6 +15,7 @@ interface OverlayWindowProps {
   /** bootstrap 初始化失敗的原始錯誤文案 */
   error?: string;
   mode?: RecordingMode;
+  language?: InterfaceLanguage;
   modeHintLabel?: string;
   modeHintVisible?: boolean;
   shortcutHelp?: ShortcutHelpPayload;
@@ -43,35 +44,248 @@ export interface ResultOverlayContent {
   warnings: string[];
 }
 
-const STATE_LABELS: Record<RecordingState, string> = {
-  idle: "準備就緒（單擊 Right ALT）",
-  listening: "錄音中…再次單擊 Right ALT 結束",
-  canceled: "已取消",
-  processing: "轉寫中…",
-  inserting: "正在插入文本…",
-  result: "AI 回答",
-  success: "已插入",
-  error: "出錯了，請重試",
+type OverlayText = {
+  states: Record<RecordingState, string>;
+  errors: Record<VoiceErrorReason, string>;
+  initFailedPrefix: string;
+  copied: string;
+  copy: string;
+  undoCancel: string;
+  undo: string;
+  thinking: string;
+  cancelRecording: string;
+  cancel: string;
+  confirmEndRecording: string;
+  confirm: string;
+  shortcutHelpTitle: string;
+  shortcutHelpSummaryPrefix: string;
+  shortcutHelpSummarySuffix: string;
+  shortcutHelpList: string;
+  shortcutHelpModes: Record<RecordingMode, string>;
+  networkTitle: string;
+  closeHint: string;
+  close: string;
+  networkMessage: string;
+  retry: string;
+  busyTitle: string;
+  busyMessage: string;
+  limitTitle: string;
+  limitMessage: string;
+  resultAria: string;
+  brand: string;
+  closeAnswer: string;
+  voiceInput: string;
+  selectedText: string;
+  answer: string;
+  copyAnswer: string;
+  volumeMeter: string;
+  canceled: Record<RecordingMode, string>;
 };
 
-const ERROR_REASON_LABELS: Record<VoiceErrorReason, string> = {
-  mic: "麥克風無法啟用，請檢查許可權",
-  transcription: "轉寫失敗，請重試",
-  postprocess: "AI 處理失敗，請重試",
-  insertion: "文本插入失敗，請檢查目標應用",
-  no_selection: "未檢測到選中文本，無法處理",
-  shortcut_conflict: "快捷键注册失败，请更换快捷键",
+const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
+  "zh-CN": {
+    states: {
+      idle: "准备就绪（单击 Right ALT）",
+      listening: "录音中...再次单击 Right ALT 结束",
+      canceled: "已取消",
+      processing: "转写中...",
+      inserting: "正在插入文本...",
+      result: "AI 回答",
+      success: "已插入",
+      error: "出错了，请重试"
+    },
+    errors: {
+      mic: "麦克风无法启用，请检查权限",
+      transcription: "转写失败，请重试",
+      postprocess: "AI 处理失败，请重试",
+      insertion: "文本插入失败，请检查目标应用",
+      no_selection: "未检测到选中文本，无法处理",
+      shortcut_conflict: "快捷键注册失败，请更换快捷键"
+    },
+    initFailedPrefix: "初始化失败：",
+    copied: "已复制",
+    copy: "复制",
+    undoCancel: "撤销取消",
+    undo: "撤销",
+    thinking: "思考中",
+    cancelRecording: "取消录音",
+    cancel: "取消",
+    confirmEndRecording: "确认结束录音",
+    confirm: "确认",
+    shortcutHelpTitle: "AOA 快捷键",
+    shortcutHelpSummaryPrefix: "轻触一次开始说话。按 ",
+    shortcutHelpSummarySuffix: " 来完成。",
+    shortcutHelpList: "模式快捷键",
+    shortcutHelpModes: {
+      direct: "语音输入模式",
+      translate: "翻译模式",
+      processSelection: "智能改写模式"
+    },
+    networkTitle: "网络连接不稳定",
+    closeHint: "关闭提示",
+    close: "关闭",
+    networkMessage: "未能完成转录。请重试。",
+    retry: "重试",
+    busyTitle: "Voice Assistant 仍在处理您的上一个转录",
+    busyMessage: "如果您想取消上一个转录，请按 Esc 或点击下面。",
+    limitTitle: "转录会话将在不到 1 分钟内结束",
+    limitMessage: "当前每个会话支持最多 5 分钟的转写。请开始一个新会话以继续。",
+    resultAria: "AI 回答",
+    brand: "妙音",
+    closeAnswer: "关闭回答",
+    voiceInput: "语音输入",
+    selectedText: "选中文本",
+    answer: "回答",
+    copyAnswer: "复制回答",
+    volumeMeter: "麦克风音量",
+    canceled: {
+      direct: "语音转录已取消",
+      translate: "语音翻译已取消",
+      processSelection: "智能改写已取消"
+    }
+  },
+  "zh-TW": {
+    states: {
+      idle: "準備就緒（單擊 Right ALT）",
+      listening: "錄音中...再次單擊 Right ALT 結束",
+      canceled: "已取消",
+      processing: "轉寫中...",
+      inserting: "正在插入文本...",
+      result: "AI 回答",
+      success: "已插入",
+      error: "出錯了，請重試"
+    },
+    errors: {
+      mic: "麥克風無法啟用，請檢查許可權",
+      transcription: "轉寫失敗，請重試",
+      postprocess: "AI 處理失敗，請重試",
+      insertion: "文本插入失敗，請檢查目標應用",
+      no_selection: "未檢測到選中文本，無法處理",
+      shortcut_conflict: "快捷鍵註冊失敗，請更換快捷鍵"
+    },
+    initFailedPrefix: "初始化失敗：",
+    copied: "已複製",
+    copy: "複製",
+    undoCancel: "撤銷取消",
+    undo: "撤銷",
+    thinking: "思考中",
+    cancelRecording: "取消錄音",
+    cancel: "取消",
+    confirmEndRecording: "確認結束錄音",
+    confirm: "確認",
+    shortcutHelpTitle: "AOA 快捷鍵",
+    shortcutHelpSummaryPrefix: "輕觸一次開始說話。按 ",
+    shortcutHelpSummarySuffix: " 來完成。",
+    shortcutHelpList: "模式快捷鍵",
+    shortcutHelpModes: {
+      direct: "語音輸入模式",
+      translate: "翻譯模式",
+      processSelection: "智慧改寫模式"
+    },
+    networkTitle: "網路連線不穩定",
+    closeHint: "關閉提示",
+    close: "關閉",
+    networkMessage: "未能完成轉錄。請重試。",
+    retry: "重試",
+    busyTitle: "Voice Assistant 仍在處理您的上一個轉錄",
+    busyMessage: "如果您想取消上一個轉錄，請按 Esc 或點擊下面。",
+    limitTitle: "轉錄會話將在不到 1 分鐘內結束",
+    limitMessage: "目前每個會話支援最多 5 分鐘的轉寫。請開始一個新會話以繼續。",
+    resultAria: "AI 回答",
+    brand: "妙音",
+    closeAnswer: "關閉回答",
+    voiceInput: "語音輸入",
+    selectedText: "選中文本",
+    answer: "回答",
+    copyAnswer: "複製回答",
+    volumeMeter: "麥克風音量",
+    canceled: {
+      direct: "語音轉錄已取消",
+      translate: "語音翻譯已取消",
+      processSelection: "智慧改寫已取消"
+    }
+  },
+  "en-US": {
+    states: {
+      idle: "Ready (tap Right Alt)",
+      listening: "Recording... tap Right Alt again to finish",
+      canceled: "Canceled",
+      processing: "Transcribing...",
+      inserting: "Inserting text...",
+      result: "AI Answer",
+      success: "Inserted",
+      error: "Something went wrong. Please try again"
+    },
+    errors: {
+      mic: "Microphone unavailable. Check permissions",
+      transcription: "Transcription failed. Please try again",
+      postprocess: "AI processing failed. Please try again",
+      insertion: "Text insertion failed. Check the target app",
+      no_selection: "No selected text detected",
+      shortcut_conflict: "Shortcut registration failed. Choose another shortcut"
+    },
+    initFailedPrefix: "Initialization failed: ",
+    copied: "Copied",
+    copy: "Copy",
+    undoCancel: "Undo cancel",
+    undo: "Undo",
+    thinking: "Thinking",
+    cancelRecording: "Cancel recording",
+    cancel: "Cancel",
+    confirmEndRecording: "Finish recording",
+    confirm: "Confirm",
+    shortcutHelpTitle: "AOA Shortcuts",
+    shortcutHelpSummaryPrefix: "Tap once to start speaking. Press ",
+    shortcutHelpSummarySuffix: " to finish.",
+    shortcutHelpList: "Mode shortcuts",
+    shortcutHelpModes: {
+      direct: "Voice Input",
+      translate: "Translate",
+      processSelection: "Smart Rewrite"
+    },
+    networkTitle: "Network connection is unstable",
+    closeHint: "Close hint",
+    close: "Close",
+    networkMessage: "Transcription could not be completed. Please try again.",
+    retry: "Retry",
+    busyTitle: "Voice Assistant is still processing your previous transcription",
+    busyMessage: "To cancel the previous transcription, press Esc or click below.",
+    limitTitle: "This transcription session will end in less than 1 minute",
+    limitMessage: "Each session supports up to 5 minutes of transcription. Start a new session to continue.",
+    resultAria: "AI Answer",
+    brand: "Voice Assistant",
+    closeAnswer: "Close answer",
+    voiceInput: "Voice Input",
+    selectedText: "Selected Text",
+    answer: "Answer",
+    copyAnswer: "Copy answer",
+    volumeMeter: "Microphone volume",
+    canceled: {
+      direct: "Voice transcription canceled",
+      translate: "Voice translation canceled",
+      processSelection: "Smart rewrite canceled"
+    }
+  }
 };
+
+function getOverlayText(language: InterfaceLanguage | undefined): OverlayText {
+  return OVERLAY_TEXT[language ?? "zh-CN"] ?? OVERLAY_TEXT["zh-CN"];
+}
 
 const COPY_FEEDBACK_RESET_MS = 1400;
 
-export function getCopyTooltipLabel(copied: boolean): string {
-  return copied ? "已複製" : "複製";
+export function getCopyTooltipLabel(
+  copied: boolean,
+  language?: InterfaceLanguage
+): string {
+  const text = getOverlayText(language);
+  return copied ? text.copied : text.copy;
 }
 
 export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
   const state: RecordingState = props.state ?? "idle";
-  const label = computeLabel(state, props.reason, props.error);
+  const text = getOverlayText(props.language);
+  const label = computeLabel(state, props.reason, props.error, text);
   const level = state === "listening" ? (props.level ?? 0) : 0;
   const overlayHintLabel = props.modeHintLabel?.trim();
   const isThinking = state === "processing" || state === "inserting";
@@ -86,7 +300,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
     !showBusyHint;
 
   if (props.shortcutHelp) {
-    return <ShortcutHelpPanel shortcuts={props.shortcutHelp} />;
+    return <ShortcutHelpPanel shortcuts={props.shortcutHelp} text={text} />;
   }
 
   if (state === "idle" || state === "success") {
@@ -97,6 +311,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
     return (
       <ResultOverlay
         result={props.result}
+        text={text}
         {...(props.onDismissResult ? { onDismiss: props.onDismissResult } : {})}
       />
     );
@@ -108,6 +323,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
   ) {
     return (
       <NetworkErrorHint
+        text={text}
         {...(props.onDismissNetworkError
           ? { onDismiss: props.onDismissNetworkError }
           : {})}
@@ -119,7 +335,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
   }
 
   if (state === "canceled") {
-    const canceledLabel = getCanceledLabel(props.mode);
+    const canceledLabel = getCanceledLabel(props.mode, text);
     return (
       <main
         className="overlay overlay--canceled"
@@ -132,8 +348,8 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
           <button
             type="button"
             className="overlay__btn overlay__btn--undo"
-            aria-label="撤销取消"
-            title="撤销"
+            aria-label={text.undoCancel}
+            title={text.undo}
             onClick={props.onUndoCancel}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -173,7 +389,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         aria-label={label}
       >
         <span className="overlay__spinner" aria-hidden="true" />
-        <span className="overlay__thinking-text">{"\u601d\u8003\u4e2d"}</span>
+        <span className="overlay__thinking-text">{text.thinking}</span>
       </main>
     );
 
@@ -187,6 +403,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         {...(props.onDismissBusyHint
           ? { onDismissBusyHint: props.onDismissBusyHint }
           : {})}
+        text={text}
       >
         {thinkingOverlay}
       </OverlayShell>
@@ -206,8 +423,8 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         <button
           type="button"
           className="overlay__btn overlay__btn--cancel"
-          aria-label="取消錄音"
-          title="取消"
+            aria-label={text.cancelRecording}
+            title={text.cancel}
           onClick={props.onCancel}
           disabled={!cancelEnabled}
         >
@@ -226,6 +443,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         level={level}
         active={state === "listening"}
         styleName={props.waveformStyle ?? "waveform-sunset"}
+        ariaLabel={text.volumeMeter}
         {...(props.waveformSamples !== undefined
           ? { samples: props.waveformSamples }
           : {})}
@@ -234,8 +452,8 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         <button
           type="button"
           className="overlay__btn overlay__btn--confirm"
-          aria-label="確認結束錄音"
-          title="確認"
+          aria-label={text.confirmEndRecording}
+          title={text.confirm}
           onClick={props.onConfirm}
           disabled={!confirmEnabled}
         >
@@ -268,6 +486,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
           }
         : {})}
       {...(props.mode !== undefined ? { mode: props.mode } : {})}
+      text={text}
     >
       {pillOverlay}
     </OverlayShell>
@@ -277,25 +496,28 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
 }
 
 interface NetworkErrorHintProps {
+  text: OverlayText;
   onDismiss?(): void;
   onRetry?(): void;
 }
 
 function ShortcutHelpPanel({
   shortcuts,
+  text,
 }: {
   shortcuts: ShortcutHelpPayload;
+  text: OverlayText;
 }): React.JSX.Element {
   const items: Array<{
     mode: RecordingMode;
     label: string;
     shortcut: string;
   }> = [
-    { mode: "direct", label: "语音输入模式", shortcut: shortcuts.direct },
-    { mode: "translate", label: "翻译模式", shortcut: shortcuts.translate },
+    { mode: "direct", label: text.shortcutHelpModes.direct, shortcut: shortcuts.direct },
+    { mode: "translate", label: text.shortcutHelpModes.translate, shortcut: shortcuts.translate },
     {
       mode: "processSelection",
-      label: "智能改写模式",
+      label: text.shortcutHelpModes.processSelection,
       shortcut: shortcuts.processSelection,
     },
   ];
@@ -327,12 +549,14 @@ function ShortcutHelpPanel({
               />
             </svg>
           </span>
-          <strong>AOA 快捷键</strong>
+          <strong>{text.shortcutHelpTitle}</strong>
         </header>
         <p className="shortcut-help-panel__summary">
-          轻触一次开始说话。按 <kbd>{shortcuts.direct}</kbd> 来完成。
+          {text.shortcutHelpSummaryPrefix}
+          <kbd>{shortcuts.direct}</kbd>
+          {text.shortcutHelpSummarySuffix}
         </p>
-        <ul className="shortcut-help-panel__list" aria-label="模式快捷键">
+        <ul className="shortcut-help-panel__list" aria-label={text.shortcutHelpList}>
           {items.map((item) => (
             <li key={item.mode} data-mode={item.mode}>
               <span className="shortcut-help-panel__dot" aria-hidden="true" />
@@ -347,6 +571,7 @@ function ShortcutHelpPanel({
 }
 
 function NetworkErrorHint({
+  text,
   onDismiss,
   onRetry,
 }: NetworkErrorHintProps): React.JSX.Element {
@@ -382,13 +607,13 @@ function NetworkErrorHint({
               />
             </svg>
           </span>
-          <strong>网络连接不稳定</strong>
+          <strong>{text.networkTitle}</strong>
           {onDismiss ? (
             <button
               type="button"
               className="network-error-hint__close"
-              aria-label="关闭提示"
-              title="关闭"
+              aria-label={text.closeHint}
+              title={text.close}
               onClick={onDismiss}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -403,14 +628,14 @@ function NetworkErrorHint({
             </button>
           ) : null}
         </header>
-        <p>未能完成转录。请重试。</p>
+        <p>{text.networkMessage}</p>
         {onRetry ? (
           <button
             type="button"
             className="network-error-hint__retry"
             onClick={onRetry}
           >
-            重试
+            {text.retry}
           </button>
         ) : null}
       </section>
@@ -421,6 +646,7 @@ function NetworkErrorHint({
 interface OverlayShellProps {
   label: string;
   visible: boolean;
+  text: OverlayText;
   mode?: RecordingMode;
   busyHintVisible?: boolean;
   recordingRemainingSeconds?: number;
@@ -433,6 +659,7 @@ interface OverlayShellProps {
 function OverlayShell({
   label,
   visible,
+  text,
   mode,
   busyHintVisible = false,
   recordingRemainingSeconds,
@@ -445,11 +672,13 @@ function OverlayShell({
     <div className="overlay-shell">
       {busyHintVisible ? (
         <BusyHint
+          text={text}
           {...(onCancel ? { onCancel } : {})}
           {...(onDismissBusyHint ? { onDismiss: onDismissBusyHint } : {})}
         />
       ) : recordingRemainingSeconds !== undefined ? (
         <RecordingLimitWarning
+          text={text}
           remainingSeconds={recordingRemainingSeconds}
           {...(onDismissRecordingLimitWarning
             ? { onDismiss: onDismissRecordingLimitWarning }
@@ -473,24 +702,25 @@ function OverlayShell({
 }
 
 interface BusyHintProps {
+  text: OverlayText;
   onCancel?(): void;
   onDismiss?(): void;
 }
 
-function BusyHint({ onCancel, onDismiss }: BusyHintProps): React.JSX.Element {
+function BusyHint({ text, onCancel, onDismiss }: BusyHintProps): React.JSX.Element {
   return (
     <section className="overlay-busy-hint" role="status" aria-live="polite">
       <header className="overlay-busy-hint__header">
         <span className="overlay-busy-hint__icon" aria-hidden="true">
           !
         </span>
-        <strong>Voice Assistant仍在处理您的上一个转录</strong>
+        <strong>{text.busyTitle}</strong>
         {onDismiss ? (
           <button
             type="button"
             className="overlay-busy-hint__close"
-            aria-label="关闭提示"
-            title="关闭"
+            aria-label={text.closeHint}
+            title={text.close}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -505,14 +735,14 @@ function BusyHint({ onCancel, onDismiss }: BusyHintProps): React.JSX.Element {
           </button>
         ) : null}
       </header>
-      <p>如果您想取消上一个转录，请按 Esc 或点击下面。</p>
+      <p>{text.busyMessage}</p>
       {onCancel ? (
         <button
           type="button"
           className="overlay-busy-hint__cancel"
           onClick={onCancel}
         >
-          取消
+          {text.cancel}
         </button>
       ) : null}
     </section>
@@ -520,9 +750,11 @@ function BusyHint({ onCancel, onDismiss }: BusyHintProps): React.JSX.Element {
 }
 
 function RecordingLimitWarning({
+  text,
   remainingSeconds,
   onDismiss,
 }: {
+  text: OverlayText;
   remainingSeconds: number;
   onDismiss?(): void;
 }): React.JSX.Element {
@@ -552,13 +784,13 @@ function RecordingLimitWarning({
             />
           </svg>
         </span>
-        <strong>{"\u8f6c\u5f55\u4f1a\u8bdd\u5c06\u5728\u4e0d\u52301\u5206\u949f\u5185\u7ed3\u675f"}</strong>
+        <strong>{text.limitTitle}</strong>
         {onDismiss ? (
           <button
             type="button"
             className="recording-limit-warning__close"
-            aria-label={"\u5173\u95ed\u63d0\u793a"}
-            title={"\u5173\u95ed"}
+            aria-label={text.closeHint}
+            title={text.close}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -573,11 +805,7 @@ function RecordingLimitWarning({
           </button>
         ) : null}
       </header>
-      <p>
-        {
-          "\u5f53\u524d\u6bcf\u4e2a\u4f1a\u8bdd\u652f\u6301\u6700\u591a5\u5206\u949f\u7684\u8f6c\u5199\u3002\u8bf7\u5f00\u59cb\u4e00\u4e2a\u65b0\u4f1a\u8bdd\u4ee5\u7ee7\u7eed"
-        }
-      </p>
+      <p>{text.limitMessage}</p>
       <span className="recording-limit-warning__timer">
         {formatCountdown(remainingSeconds)}
       </span>
@@ -587,11 +815,13 @@ function RecordingLimitWarning({
 
 interface ResultOverlayProps {
   result: ResultOverlayContent;
+  text: OverlayText;
   onDismiss?(): void;
 }
 
 function ResultOverlay({
   result,
+  text,
   onDismiss,
 }: ResultOverlayProps): React.JSX.Element {
   const [copied, setCopied] = useState(false);
@@ -625,7 +855,7 @@ function ResultOverlay({
   };
 
   return (
-    <main className="result-overlay" role="dialog" aria-label="AI 回答">
+    <main className="result-overlay" role="dialog" aria-label={text.resultAria}>
       <section className="result-panel">
         <header className="result-panel__header">
           <span className="result-panel__brand" aria-hidden="true">
@@ -641,12 +871,12 @@ function ResultOverlay({
               />
             </svg>
           </span>
-          <strong>妙音</strong>
+          <strong>{text.brand}</strong>
           <button
             type="button"
             className="result-panel__icon-btn"
-            aria-label="關閉回答"
-            title="關閉"
+            aria-label={text.closeAnswer}
+            title={text.close}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -661,10 +891,10 @@ function ResultOverlay({
         </header>
 
         <div className="result-panel__body">
-          <ResultPrompt label="語音輸入" value={result.rawText} icon="voice" />
+          <ResultPrompt label={text.voiceInput} value={result.rawText} icon="voice" />
           {result.selectedText ? (
             <ResultPrompt
-              label="選中文本"
+              label={text.selectedText}
               value={result.selectedText}
               compact
             />
@@ -679,7 +909,7 @@ function ResultOverlay({
                     fill="currentColor"
                   />
                 </svg>
-                回答
+                {text.answer}
               </span>
               <span
                 className="result-copy-control"
@@ -688,7 +918,7 @@ function ResultOverlay({
                 <button
                   type="button"
                   className="result-panel__icon-btn"
-                  aria-label={copied ? "已複製" : "複製回答"}
+                  aria-label={copied ? text.copied : text.copyAnswer}
                   onClick={copyAnswer}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -716,7 +946,7 @@ function ResultOverlay({
                   role="status"
                   aria-live="polite"
                 >
-                  {getCopyTooltipLabel(copied)}
+                  {copied ? text.copied : text.copy}
                 </span>
               </span>
             </div>
@@ -787,14 +1017,15 @@ function computeLabel(
   state: RecordingState,
   reason: VoiceErrorReason | undefined,
   error: string | undefined,
+  text: OverlayText,
 ): string {
   if (error) {
-    return `初始化失敗：${error}`;
+    return `${text.initFailedPrefix}${error}`;
   }
   if (state === "error" && reason) {
-    return ERROR_REASON_LABELS[reason];
+    return text.errors[reason];
   }
-  return STATE_LABELS[state];
+  return text.states[state];
 }
 
 function formatCountdown(seconds: number): string {
@@ -804,14 +1035,9 @@ function formatCountdown(seconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-function getCanceledLabel(mode: RecordingMode | undefined): string {
-  switch (mode) {
-    case "processSelection":
-      return "\u667a\u80fd\u6539\u5199\u5df2\u53d6\u6d88";
-    case "translate":
-      return "\u8bed\u97f3\u7ffb\u8bd1\u5df2\u53d6\u6d88";
-    case "direct":
-    default:
-      return "\u8bed\u97f3\u8f6c\u5f55\u5df2\u53d6\u6d88";
-  }
+function getCanceledLabel(
+  mode: RecordingMode | undefined,
+  text: OverlayText,
+): string {
+  return text.canceled[mode ?? "direct"];
 }

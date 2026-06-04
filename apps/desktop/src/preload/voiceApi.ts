@@ -92,8 +92,10 @@ export interface UpdateReadyPayload {
 }
 
 export type UpdateCheckResult =
-  | { status: "checking" }
-  | { status: "disabled" };
+  | { status: "disabled" }
+  | { status: "up-to-date" }
+  | { status: "available"; version?: string }
+  | { status: "error"; message: string };
 
 export interface VoiceAIAPI {
   getAppInfo(): Promise<AppInfo>;

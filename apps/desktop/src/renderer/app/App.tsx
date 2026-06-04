@@ -6,6 +6,7 @@ import type {
 } from "@voice/backend-client";
 import type {
   AppSettings,
+  InterfaceLanguage,
   RecordingLanguage,
   RecordingMode,
   WaveformStyle,
@@ -75,6 +76,7 @@ export function App(): React.JSX.Element {
   >(undefined);
   const [waveformStyle, setWaveformStyle] =
     useState<WaveformStyle>("waveform-sunset");
+  const [uiLanguage, setUiLanguage] = useState<InterfaceLanguage>("zh-CN");
   const [settingsRevision, setSettingsRevision] = useState(0);
   // 將 bundle 提到元件作用域的 ref，便於 onCancel / onConfirm 回撥訪問 controller。
   const bundleRef = useRef<ControllerBundle | undefined>(undefined);
@@ -201,8 +203,9 @@ export function App(): React.JSX.Element {
   }, [showModeHint]);
 
   useEffect(() => {
-    return window.voiceAI.onSettingsChanged(() => {
+    return window.voiceAI.onSettingsChanged((settings) => {
       console.log("[voice] 收到 settings-changed，重新載入語音控制器配置");
+      setUiLanguage(settings.ui.language);
       setSettingsRevision((current) => current + 1);
     });
   }, []);
@@ -219,6 +222,7 @@ export function App(): React.JSX.Element {
           return;
         }
         setWaveformStyle(settings.recording.waveformStyle);
+        setUiLanguage(settings.ui.language);
         bundle = buildController({
           installationId: bootstrapResponse.installationId,
           language: settings.recording.language,
@@ -472,10 +476,11 @@ export function App(): React.JSX.Element {
         : {})}
       {...(waveformSamples !== undefined ? { waveformSamples } : {})}
       waveformStyle={waveformStyle}
+      language={uiLanguage}
       {...(activeMode !== undefined ? { mode: activeMode } : {})}
       {...(activeMode !== undefined
         ? {
-            modeHintLabel: getModeHintLabel(activeMode),
+            modeHintLabel: getModeHintLabel(activeMode, uiLanguage),
             modeHintVisible: showModeHint,
           }
         : {})}
@@ -532,14 +537,34 @@ interface BuildControllerInput {
   onTranscriptionUnavailable(): void;
 }
 
-function getModeHintLabel(mode: RecordingMode): string {
+function getModeHintLabel(mode: RecordingMode, language: InterfaceLanguage): string {
+  if (language === "en-US") {
+    switch (mode) {
+      case "direct":
+        return "Voice Input";
+      case "processSelection":
+        return "Smart Rewrite";
+      case "translate":
+        return "Translate";
+    }
+  }
+  if (language === "zh-TW") {
+    switch (mode) {
+      case "direct":
+        return "語音輸入模式";
+      case "processSelection":
+        return "智慧改寫模式";
+      case "translate":
+        return "翻譯模式";
+    }
+  }
   switch (mode) {
     case "direct":
-      return "\u8bed\u97f3\u8f93\u5165\u6a21\u5f0f";
+      return "语音输入模式";
     case "processSelection":
-      return "\u667a\u80fd\u6539\u5199\u6a21\u5f0f";
+      return "智能改写模式";
     case "translate":
-      return "\u7ffb\u8bd1\u6a21\u5f0f";
+      return "翻译模式";
   }
 }
 

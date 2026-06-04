@@ -209,11 +209,18 @@ function getAddon(addon: NativeAddonBinding | undefined): NativeAddonBinding {
 }
 
 export function getNativeAddonCandidatePaths(packageRoot: string): string[] {
-  return [
+  const paths: string[] = [];
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  if (resourcesPath) {
+    paths.push(join(resourcesPath, "voice_native_helper.node"));
+  }
+
+  paths.push(
     join(packageRoot, "dist", "voice_native_helper.node"),
     join(packageRoot, "target", "debug", "voice_native_helper.node"),
     join(packageRoot, "target", "debug", "voice_native_helper.dll")
-  ];
+  );
+  return paths;
 }
 
 export function createNativeAddonLoader(
