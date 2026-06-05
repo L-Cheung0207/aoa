@@ -1,34 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 type UninstallState = "ready" | "running" | "done" | "error";
 
-const PROGRESS_TICK_MS = 90;
-
 export function UninstallPage(): React.JSX.Element {
   const [state, setState] = useState<UninstallState>("ready");
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
-  const uninstallStartedRef = useRef(false);
   const runningRef = useRef(false);
 
-  useEffect(() => {
-    if (state !== "running") {
+  const startUninstall = (): void => {
+    if (runningRef.current) {
       return;
     }
-    const handle = window.setInterval(() => {
-      setProgress((current) => Math.min(100, current + 3));
-    }, PROGRESS_TICK_MS);
-    return () => window.clearInterval(handle);
-  }, [state]);
+    runningRef.current = true;
+    setError(undefined);
+    setState("running");
 
-  useEffect(() => {
-    if (state !== "running" || progress < 100) {
-      return;
-    }
-    if (uninstallStartedRef.current) {
-      return;
-    }
-    uninstallStartedRef.current = true;
     void window.voiceAI
       .performUninstall()
       .then(() => {
@@ -37,7 +23,6 @@ export function UninstallPage(): React.JSX.Element {
       })
       .catch((uninstallError: unknown) => {
         runningRef.current = false;
-        uninstallStartedRef.current = false;
         setError(
           uninstallError instanceof Error
             ? uninstallError.message
@@ -45,31 +30,6 @@ export function UninstallPage(): React.JSX.Element {
         );
         setState("error");
       });
-  }, [progress, state]);
-
-  const statusText = useMemo(() => {
-    if (state !== "running") {
-      return "";
-    }
-    return `正在卸载 ${Math.round(progress)}%`;
-  }, [progress, state]);
-
-  const startUninstall = (): void => {
-    if (runningRef.current) {
-      return;
-    }
-    runningRef.current = true;
-    uninstallStartedRef.current = false;
-    setError(undefined);
-    setProgress(0);
-    setState("running");
-  };
-
-  const cancelUninstall = (): void => {
-    runningRef.current = false;
-    uninstallStartedRef.current = false;
-    setProgress(0);
-    setState("ready");
   };
 
   const closeWindow = (): void => {
@@ -87,7 +47,7 @@ export function UninstallPage(): React.JSX.Element {
         {state === "ready" || state === "error" ? (
           <>
             <AssistantMark />
-            <h1 className="uninstall-title">准备卸载</h1>
+            <h1 className="uninstall-title">{"准备卸载"}</h1>
             {error ? <p className="uninstall-error">{error}</p> : null}
             <div className="uninstall-actions">
               <button
@@ -95,14 +55,14 @@ export function UninstallPage(): React.JSX.Element {
                 type="button"
                 onClick={startUninstall}
               >
-                开始卸载
+                {"开始卸载"}
               </button>
               <button
                 className="uninstall-button uninstall-button--primary"
                 type="button"
                 onClick={closeWindow}
               >
-                点错了
+                {"点错了"}
               </button>
             </div>
           </>
@@ -111,37 +71,28 @@ export function UninstallPage(): React.JSX.Element {
         {state === "running" ? (
           <div className="uninstall-progress-panel">
             <div
-              className="uninstall-progress"
+              className="uninstall-progress uninstall-progress--indeterminate"
               role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(progress)}
+              aria-label="uninstalling"
             >
-              <div
-                className="uninstall-progress__fill"
-                style={{ width: `${progress}%` }}
-              />
+              <div className="uninstall-progress__fill uninstall-progress__fill--indeterminate" />
             </div>
-            <p className="uninstall-progress__label">{statusText}</p>
-            <button
-              className="uninstall-button uninstall-button--secondary uninstall-button--cancel"
-              type="button"
-              onClick={cancelUninstall}
-            >
-              取消
-            </button>
+            <p className="uninstall-progress__label">{"正在卸载，请稍候..."}</p>
           </div>
         ) : null}
 
         {state === "done" ? (
           <div className="uninstall-done">
-            <h1 className="uninstall-done__title">期待再见</h1>
+            <h1 className="uninstall-done__title">{"期待再见"}</h1>
+            <p className="uninstall-progress__label uninstall-done__hint">
+              {"点击“卸载完成”后，将关闭窗口并继续完成最后清理。"}
+            </p>
             <button
               className="uninstall-button uninstall-button--secondary"
               type="button"
               onClick={finishUninstall}
             >
-              卸载完成
+              {"卸载完成"}
             </button>
           </div>
         ) : null}

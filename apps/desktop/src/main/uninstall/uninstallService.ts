@@ -1,5 +1,5 @@
 import { mkdir, writeFile as writeFileFs } from "node:fs/promises";
-import { dirname, join, normalize, resolve } from "node:path";
+import { dirname, join, normalize, parse, resolve } from "node:path";
 import { spawn, type SpawnOptions } from "node:child_process";
 
 export interface UninstallResult {
@@ -67,6 +67,11 @@ export function createUninstallService(
 
       const installDir = dirname(options.executablePath);
       assertSafeInstallDirectory(installDir);
+      const executableName = parse(options.executablePath).name;
+      const uninstallerPath = join(
+        installDir,
+        `Uninstall ${executableName}.exe`,
+      );
       const cleanupPaths = uniquePaths([
         installDir,
         options.app.getPath("userData"),
@@ -81,9 +86,7 @@ export function createUninstallService(
         scriptPath,
         buildWindowsCleanupScript({
           pid: options.pid,
-          installDir,
-          cleanupPaths,
-          scriptPath,
+          uninstallerPath,
         }),
       );
       const spawnDetached = options.spawnDetached ?? defaultSpawnDetached;
@@ -100,6 +103,7 @@ export function createUninstallService(
         ],
         {
           detached: true,
+          cwd: options.tempDir,
           stdio: "ignore",
           windowsHide: true,
         },
@@ -160,20 +164,11 @@ function assertSafeInstallDirectory(path: string): void {
 
 function buildWindowsCleanupScript(options: {
   pid: number;
-  installDir: string;
-  cleanupPaths: string[];
-  scriptPath: string;
+  uninstallerPath: string;
 }): string {
-  const cleanupPaths = options.cleanupPaths
-    .map((path) => `  ${toPowerShellString(path)}`)
-    .join(",\n");
-
   return `\
 $ErrorActionPreference = "SilentlyContinue"
-$InstallDir = ${toPowerShellString(options.installDir)}
-$CleanupPaths = @(
-${cleanupPaths}
-)
+$UninstallerPath = ${toPowerShellString(options.uninstallerPath)}
 
 try {
   Wait-Process -Id ${options.pid} -Timeout 30
@@ -181,16 +176,11 @@ try {
 
 Start-Sleep -Milliseconds 600
 
-foreach ($Path in $CleanupPaths) {
-  if ([string]::IsNullOrWhiteSpace($Path)) {
-    continue
-  }
-  if (Test-Path -LiteralPath $Path) {
-    Remove-Item -LiteralPath $Path -Recurse -Force
-  }
+if (Test-Path -LiteralPath $UninstallerPath) {
+  Start-Process -FilePath $UninstallerPath -ArgumentList @('/currentuser', '/S', '--delete-app-data') -Wait -WindowStyle Hidden
 }
 
-Remove-Item -LiteralPath ${toPowerShellString(options.scriptPath)} -Force
+Remove-Item -LiteralPath $PSCommandPath -Force
 `;
 }
 

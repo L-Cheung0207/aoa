@@ -80,6 +80,58 @@
 !define VOICE_BLUE_COLOR 0x2F80ED
 !define VOICE_BG_COLOR 0xF2F3F5
 
+!macro customCheckAppRunning
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+
+  DetailPrint "Closing running ${PRODUCT_NAME}..."
+  StrCpy $0 "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
+  IfFileExists "$0" 0 voice_check_taskkill
+
+  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_INSTALL_DIR", t"$INSTDIR")'
+  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_EXE_NAME", t"${APP_EXECUTABLE_FILENAME}")'
+  nsExec::ExecToStack `"$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='SilentlyContinue'; $$d=[IO.Path]::GetFullPath($$env:VOICE_INSTALL_DIR).TrimEnd('\'); $$n=$$env:VOICE_EXE_NAME; function vp { @(Get-CimInstance Win32_Process | Where-Object { $$_.ProcessId -ne $$PID -and (($$_.Name -ieq $$n) -or ($$_.ExecutablePath -and [IO.Path]::GetFullPath($$_.ExecutablePath).StartsWith($$d,[StringComparison]::OrdinalIgnoreCase))) }) }; $$deadline=(Get-Date).AddSeconds(8); while((Get-Date) -lt $$deadline){ $$ps=vp; if($$ps.Count -eq 0){ exit 0 }; foreach($$proc in $$ps){ $$p=Get-Process -Id $$proc.ProcessId; if($$p -and $$p.MainWindowHandle -ne 0){ [void]$$p.CloseMainWindow() } }; Start-Sleep -Milliseconds 500 }; $$deadline=(Get-Date).AddSeconds(25); while((Get-Date) -lt $$deadline){ $$ps=vp; if($$ps.Count -eq 0){ exit 0 }; foreach($$proc in $$ps){ Stop-Process -Id $$proc.ProcessId -Force }; Start-Sleep -Milliseconds 500 }; if((vp).Count -eq 0){ exit 0 }; exit 1"`
+  Pop $1
+  Pop $2
+  ${If} $1 == 0
+    Goto voice_check_done
+  ${EndIf}
+
+voice_check_taskkill:
+  StrCpy $3 0
+
+voice_check_taskkill_loop:
+  IntOp $3 $3 + 1
+  nsExec::ExecToStack `"$SYSDIR\cmd.exe" /C taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"`
+  Pop $1
+  Pop $2
+  Sleep 1000
+  nsExec::ExecToStack `"$SYSDIR\cmd.exe" /C tasklist /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FO CSV | "$SYSDIR\find.exe" "${APP_EXECUTABLE_FILENAME}"`
+  Pop $1
+  Pop $2
+  ${If} $1 != 0
+    Goto voice_check_done
+  ${EndIf}
+  ${If} $3 < 20
+    Goto voice_check_taskkill_loop
+  ${EndIf}
+
+  ${If} $1 == 0
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Voice Assistant could not be closed automatically. Exit it from the tray or Task Manager, then click Retry." IDRETRY voice_check_taskkill
+    Quit
+  ${EndIf}
+
+voice_check_done:
+  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_INSTALL_DIR", p0)'
+  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_EXE_NAME", p0)'
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
 !ifndef BUILD_UNINSTALLER
 Var VoiceMode
 Var VoiceAgreeState
@@ -119,10 +171,11 @@ Var VoiceBackArrowButton
 Var VoiceBackArrowImage
 Var VoiceProgressStatus
 Var VoiceProgressBar
+Var VoiceProgressValue
+Var VoiceProgressAdvanceRequested
 Var VoiceProgressTrack
 Var VoiceProgressTrackImage
 Var VoiceProgressFill
-Var VoiceProgressFillImage
 Var VoiceFinishTitle
 Var VoiceFinishButton
 Var VoiceFinishButtonImage
@@ -152,6 +205,8 @@ Var VoiceFinishButtonImage
   StrCpy $VoiceDesktopState ${BST_CHECKED}
   StrCpy $VoiceQuickLaunchState ${BST_UNCHECKED}
   StrCpy $VoiceStartupState ${BST_CHECKED}
+  StrCpy $VoiceProgressValue 0
+  StrCpy $VoiceProgressAdvanceRequested 0
 !macroend
 
 !macro customInstallMode
@@ -191,8 +246,18 @@ Var VoiceFinishButtonImage
     CreateShortCut "$SMSTARTUP\${SHORTCUT_NAME}.lnk" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
     ClearErrors
   ${EndIf}
+
+  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$appExe" --uninstall'
 !macroend
 !endif
+
+!macro customUnInit
+  ${IfNot} ${Silent}
+    IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 +3
+      Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall'
+      Quit
+  ${EndIf}
+!macroend
 
 !macro customUnInstall
   Delete "$newDesktopLink"
@@ -317,33 +382,33 @@ Function VoiceCreateBrandHero
 FunctionEnd
 
 Function VoiceCreateProgressShell
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i0,i0,i${VOICE_WIN_W},i${VOICE_WIN_H},p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i0,i0,i${VOICE_WIN_W},i${VOICE_WIN_H},p$VoiceProgressPage,p0,p0,p0)p.r0'
   StrCpy $VoiceBackground $0
   ${NSD_SetImage} $VoiceBackground "$PLUGINSDIR\installer-bg.bmp" $VoiceBackgroundImage
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"Voice Assistant",i${WS_CHILD}|${WS_VISIBLE},i26,i22,i180,i24,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"Voice Assistant",i${WS_CHILD}|${WS_VISIBLE},i26,i22,i180,i24,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceBrandLabel $0
   CreateFont $0 "Microsoft YaHei UI" 10 600
   SendMessage $VoiceBrandLabel ${WM_SETFONT} $0 1
   SetCtlColors $VoiceBrandLabel ${VOICE_MUTED_COLOR} transparent
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"−",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i690,i14,i32,i32,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"−",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i690,i14,i32,i32,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceMinimizeButton $0
   CreateFont $0 "Microsoft YaHei UI" 20 400
   SendMessage $VoiceMinimizeButton ${WM_SETFONT} $0 1
   SetCtlColors $VoiceMinimizeButton ${VOICE_MUTED_COLOR} transparent
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"×",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i744,i13,i32,i32,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"×",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i744,i13,i32,i32,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceCloseButton $0
   CreateFont $0 "Microsoft YaHei UI" 22 400
   SendMessage $VoiceCloseButton ${WM_SETFONT} $0 1
   SetCtlColors $VoiceCloseButton ${VOICE_MUTED_COLOR} transparent
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i334,i168,i112,i82,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i334,i168,i112,i82,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceLogo $0
   ${NSD_SetImage} $VoiceLogo "$PLUGINSDIR\installer-logo.bmp" $VoiceLogoImage
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"欢迎使用 Voice Assistant Service",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i200,i281,i380,i34,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"欢迎使用 Voice Assistant Service",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i200,i281,i380,i34,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceTitleLabel $0
   CreateFont $0 "Microsoft YaHei UI" 18 700
   SendMessage $VoiceTitleLabel ${WM_SETFONT} $0 1
@@ -351,15 +416,16 @@ Function VoiceCreateProgressShell
 FunctionEnd
 
 Function VoiceCreateProgressControls
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i70,i426,i660,i16,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i70,i426,i660,i16,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceProgressTrack $0
   ${NSD_SetImage} $VoiceProgressTrack "$PLUGINSDIR\progress-track.bmp" $VoiceProgressTrackImage
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"",i${WS_CHILD}|${WS_VISIBLE}|${SS_BITMAP},i70,i426,i1,i16,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t" ",i${WS_CHILD}|${WS_VISIBLE},i70,i426,i1,i16,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceProgressFill $0
-  ${NSD_SetImage} $VoiceProgressFill "$PLUGINSDIR\progress-fill.bmp" $VoiceProgressFillImage
+  SetCtlColors $VoiceProgressFill ${VOICE_BLUE_COLOR} ${VOICE_BLUE_COLOR}
+  ShowWindow $VoiceProgressFill ${SW_HIDE}
 
-  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"正在安装 0%",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i330,i474,i140,i28,p$HWNDPARENT,p0,p0,p0)p.r0'
+  System::Call 'user32::CreateWindowEx(i0,t"STATIC",t"正在安装...",i${WS_CHILD}|${WS_VISIBLE}|${SS_CENTER},i330,i474,i140,i28,p$VoiceBackground,p0,p0,p0)p.r0'
   StrCpy $VoiceProgressStatus $0
   CreateFont $0 "Microsoft YaHei UI" 11 400
   SendMessage $VoiceProgressStatus ${WM_SETFONT} $0 1
@@ -570,10 +636,13 @@ FunctionEnd
 Function VoiceHideWizardChrome
   GetDlgItem $0 $HWNDPARENT 1
   ShowWindow $0 ${SW_HIDE}
+  System::Call "user32::SetWindowPos(p$0,p0,i-2000,i-2000,i1,i1,i${SWP_NOZORDER}|${SWP_NOACTIVATE})"
   GetDlgItem $0 $HWNDPARENT 2
   ShowWindow $0 ${SW_HIDE}
+  System::Call "user32::SetWindowPos(p$0,p0,i-2000,i-2000,i1,i1,i${SWP_NOZORDER}|${SWP_NOACTIVATE})"
   GetDlgItem $0 $HWNDPARENT 3
   ShowWindow $0 ${SW_HIDE}
+  System::Call "user32::SetWindowPos(p$0,p0,i-2000,i-2000,i1,i1,i${SWP_NOZORDER}|${SWP_NOACTIVATE})"
   GetDlgItem $0 $HWNDPARENT 1028
   ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $HWNDPARENT 1034
@@ -606,8 +675,11 @@ Function VoiceHideProgressNativeChrome
   ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $VoiceProgressPage 1027
   ShowWindow $0 ${SW_HIDE}
-  ShowWindow $VoiceProgressBar ${SW_HIDE}
-  System::Call "user32::SetWindowPos(p$VoiceProgressPage,p1,i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE})"
+  ${If} $VoiceProgressBar != ""
+  ${AndIf} $VoiceProgressBar != 0
+    System::Call "user32::SetWindowPos(p$VoiceProgressBar,p${HWND_TOP},i70,i426,i660,i16,i${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+    ShowWindow $VoiceProgressBar ${SW_SHOW}
+  ${EndIf}
 FunctionEnd
 
 Function VoiceProgressPageShow
@@ -615,6 +687,8 @@ Function VoiceProgressPageShow
   Call VoiceFindProgressPage
   Call VoiceStretchProgressPage
   Call VoiceHideProgressNativeChrome
+  StrCpy $VoiceProgressValue 0
+  StrCpy $VoiceProgressAdvanceRequested 0
 
   Call VoiceCreateProgressShell
   Call VoiceCreateProgressControls
@@ -637,24 +711,52 @@ Function VoiceProgressTick
     ${If} $0 > 100
       StrCpy $0 "100"
     ${EndIf}
+
+    ${If} $0 > $VoiceProgressValue
+      StrCpy $VoiceProgressValue $0
+    ${EndIf}
+
+    StrCpy $0 $VoiceProgressValue
     IntOp $1 $0 * 660
     IntOp $1 $1 / 100
-    ${If} $1 < 6
+    ${If} $0 == 0
+      StrCpy $1 0
+    ${ElseIf} $1 < 6
       StrCpy $1 6
     ${EndIf}
     System::Call "user32::SetWindowPos(p$VoiceProgressFill,p0,i70,i426,i$1,i16,i${SWP_NOZORDER}|${SWP_SHOWWINDOW})"
-    SendMessage $VoiceProgressStatus ${WM_SETTEXT} 0 "STR:正在安装 $0%"
+    ${If} $0 > 0
+      SendMessage $VoiceProgressStatus ${WM_SETTEXT} 0 "STR:正在安装 $0%"
+    ${Else}
+      SendMessage $VoiceProgressStatus ${WM_SETTEXT} 0 "STR:正在安装..."
+    ${EndIf}
+
+    ${If} $0 >= 100
+    ${AndIf} $VoiceProgressAdvanceRequested == 0
+      StrCpy $VoiceProgressAdvanceRequested 1
+      SendMessage $VoiceProgressStatus ${WM_SETTEXT} 0 "STR:安装完成"
+      ${NSD_CreateTimer} VoiceProgressAdvance 500
+    ${EndIf}
   ${EndIf}
 
   System::Call "user32::SetWindowPos(p$VoiceBackground,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
   System::Call "user32::SetWindowPos(p$VoiceProgressTrack,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
-  System::Call "user32::SetWindowPos(p$VoiceProgressFill,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  System::Call "user32::SetWindowPos(p$VoiceProgressFill,p0,i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE})"
+  ${If} $VoiceProgressBar != ""
+  ${AndIf} $VoiceProgressBar != 0
+    System::Call "user32::SetWindowPos(p$VoiceProgressBar,p${HWND_TOP},i70,i426,i660,i16,i${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
+  ${EndIf}
   System::Call "user32::SetWindowPos(p$VoiceProgressStatus,p${HWND_TOP},i0,i0,i0,i0,i${SWP_NOMOVE}|${SWP_NOSIZE}|${SWP_NOACTIVATE}|${SWP_SHOWWINDOW})"
   Call VoiceBringInstallerChromeToTop
 FunctionEnd
 
 Function VoiceProgressPageLeave
   ${NSD_KillTimer} VoiceProgressTick
+  ${NSD_KillTimer} VoiceProgressAdvance
+FunctionEnd
+
+Function VoiceProgressAdvance
+  SendMessage $HWNDPARENT ${WM_COMMAND} 1 0
 FunctionEnd
 
 Function VoiceFinishPageCreate

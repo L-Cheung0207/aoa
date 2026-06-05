@@ -218,7 +218,7 @@ interface AosoApiRequest {
 function buildAosoRequest(request: PostprocessRequest): AosoApiRequest {
   if (request.mode === "translate") {
     return {
-      path: "/aoaapi_ctm/translate",
+      path: "/aoa_api/voice/translate",
       body: {
         text: request.rawText,
         language: toAosoTargetLanguage(request.targetLanguage),

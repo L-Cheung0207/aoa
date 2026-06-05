@@ -407,7 +407,7 @@ describe("AOSO postprocess client", () => {
 
     expect(result.text).toBe("Hello world.");
     const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url).toBe("http://172.30.21.67:9066/aoaapi_ctm/translate");
+    expect(url).toBe("http://172.30.21.67:9066/aoa_api/voice/translate");
     expect(JSON.parse(String(init?.body))).toEqual({
       text: "你好世界",
       language: "英語",

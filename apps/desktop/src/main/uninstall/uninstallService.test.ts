@@ -14,7 +14,8 @@ function createOptions(
       setLoginItemSettings: vi.fn(),
       quit: vi.fn(),
     },
-    executablePath: "D:\\workspace\\voice-electron\\new\\node_modules\\electron\\dist\\electron.exe",
+    executablePath:
+      "D:\\workspace\\voice-electron\\new\\node_modules\\electron\\dist\\electron.exe",
     pid: 1234,
     platform: "win32",
     tempDir: "C:\\Users\\Alex\\AppData\\Local\\Temp",
@@ -46,7 +47,7 @@ describe("uninstall service", () => {
     });
   });
 
-  it("writes and launches a hidden cleanup script for a packaged Windows app", async () => {
+  it("writes and launches a hidden cleanup script for the packaged Windows uninstaller", async () => {
     const options = createOptions({
       app: {
         isPackaged: true,
@@ -67,13 +68,19 @@ describe("uninstall service", () => {
     const [scriptPath, scriptContent] = vi.mocked(options.writeFile).mock
       .calls[0] as [string, string];
     expect(scriptPath).toContain("voice-assistant-uninstall-1234.ps1");
-    expect(scriptContent).toContain("$InstallDir");
-    expect(scriptContent).toContain("Remove-Item");
+    expect(scriptContent).toContain(
+      "$UninstallerPath = 'C:\\Program Files\\Voice Assistant\\Uninstall Voice Assistant.exe'",
+    );
+    expect(scriptContent).toContain("Start-Process");
+    expect(scriptContent).toContain("/currentuser");
+    expect(scriptContent).toContain("--delete-app-data");
+    expect(scriptContent).toContain("Remove-Item -LiteralPath $PSCommandPath");
     expect(options.spawnDetached).toHaveBeenCalledWith(
       "powershell.exe",
       expect.arrayContaining(["-File", scriptPath]),
       expect.objectContaining({
         detached: true,
+        cwd: options.tempDir,
         stdio: "ignore",
         windowsHide: true,
       }),
