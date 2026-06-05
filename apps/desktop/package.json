@@ -8,7 +8,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "node scripts/dist-win.mjs",
-    "dist:win": "pnpm run build && electron-builder --win nsis --config electron-builder.yml",
+    "dist:payload": "electron-builder --win nsis --config electron-builder.yml",
+    "dist:installer-shell": "node scripts/dist-win.mjs --installer-shell",
+    "dist:win": "pnpm run dist",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -50,8 +52,12 @@
     ],
     "extraResources": [
       {
-        "from": "resources/tray-icon.ico",
-        "to": "tray-icon.ico"
+        "from": "resources/app-icon.ico",
+        "to": "app-icon.ico"
+      },
+      {
+        "from": "src/renderer/public/config.json",
+        "to": "config.json"
       },
       {
         "from": "../../packages/native-helper/dist/voice_native_helper.node",
@@ -69,7 +75,7 @@
           ]
         }
       ],
-      "icon": "resources/tray-icon.ico",
+      "icon": "resources/app-icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {

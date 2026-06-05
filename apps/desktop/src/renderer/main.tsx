@@ -4,6 +4,7 @@ import { App } from "./app/App";
 import { HomeShell } from "./app/HomeShell";
 import { resolveRoute } from "./app/routes";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { InstallerPage } from "./features/installer/InstallerPage";
 import { UninstallPage } from "./features/uninstall/UninstallPage";
 import "./styles/app.css";
 
@@ -42,6 +43,8 @@ createRoot(document.getElementById("root") as HTMLElement).render(
       <HomeShell initialSection={resolveInitialHomeSection()} />
     ) : route === "settings" ? (
       <SettingsPage />
+    ) : route === "installer" ? (
+      <InstallerPage />
     ) : route === "uninstall" ? (
       <UninstallPage />
     ) : (

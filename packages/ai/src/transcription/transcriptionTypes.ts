@@ -1,9 +1,19 @@
-import type { AudioFrame, RecordingLanguage } from "@voice/shared";
+import type {
+  AudioFrame,
+  RecordingLanguage,
+  RecordingMode,
+} from "@voice/shared";
+import type { AppContext, PostprocessMode } from "@voice/backend-client";
 
 export interface TranscriptionStartInput {
   installationId: string;
   language: RecordingLanguage;
   sampleRate: 16000;
+  mode?: RecordingMode;
+  selectedText?: string;
+  targetLanguage?: "zh-CN" | "en-US";
+  postprocessMode?: PostprocessMode;
+  appContext?: AppContext;
 }
 
 export type TranscriptionEvent =

@@ -13,26 +13,28 @@ export interface UseAutoSaveSettingsOptions {
 
 function buildPersistPatch(
   settings: AppSettings,
-  scope: SettingsPersistScope
+  scope: SettingsPersistScope,
 ): AppSettingsPatch {
   const normalized = normalizeConnectionSettings(settings);
   if (scope === "home") {
     return {
       ui: normalized.ui,
+      developer: normalized.developer,
       shortcuts: normalized.shortcuts,
       translation: normalized.translation,
       recording: normalized.recording,
       ws: normalized.ws,
-      llm: normalized.llm
+      llm: normalized.llm,
     };
   }
   return {
     ui: normalized.ui,
+    developer: normalized.developer,
     shortcuts: normalized.shortcuts,
     translation: normalized.translation,
     ws: normalized.ws,
     llm: normalized.llm,
-    recording: normalized.recording
+    recording: normalized.recording,
   };
 }
 
@@ -52,23 +54,27 @@ export function useAutoSaveSettings(options: UseAutoSaveSettingsOptions) {
 
       try {
         skipPersistRef.current = true;
-        const next = await window.voiceAI.updateSettings(buildPersistPatch(draft, options.scope));
+        const next = await window.voiceAI.updateSettings(
+          buildPersistPatch(draft, options.scope),
+        );
         const normalized = normalizeConnectionSettings(next);
         latestDraftRef.current = normalized;
         return normalized;
       } catch (error) {
         options.onError?.(
-          `儲存失敗：${error instanceof Error ? error.message : String(error)}`
+          `儲存失敗：${error instanceof Error ? error.message : String(error)}`,
         );
         return undefined;
       } finally {
         skipPersistRef.current = false;
       }
     },
-    [options.scope, options.validate, options.onError]
+    [options.scope, options.validate, options.onError],
   );
 
-  const flushPersist = useCallback(async (): Promise<AppSettings | undefined> => {
+  const flushPersist = useCallback(async (): Promise<
+    AppSettings | undefined
+  > => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = undefined;
@@ -94,7 +100,7 @@ export function useAutoSaveSettings(options: UseAutoSaveSettingsOptions) {
         void persistDraft(draft);
       }, debounceMs);
     },
-    [debounceMs, persistDraft]
+    [debounceMs, persistDraft],
   );
 
   const applyRemoteSettings = useCallback((next: AppSettings): AppSettings => {
@@ -112,7 +118,7 @@ export function useAutoSaveSettings(options: UseAutoSaveSettingsOptions) {
   const commitSettings = useCallback(
     (
       current: AppSettings | undefined,
-      updater: AppSettings | ((draft: AppSettings) => AppSettings)
+      updater: AppSettings | ((draft: AppSettings) => AppSettings),
     ): AppSettings | undefined => {
       if (!current) {
         return current;
@@ -125,7 +131,7 @@ export function useAutoSaveSettings(options: UseAutoSaveSettingsOptions) {
       schedulePersist(next);
       return next;
     },
-    [schedulePersist]
+    [schedulePersist],
   );
 
   useEffect(() => {
@@ -145,8 +151,8 @@ export function useAutoSaveSettings(options: UseAutoSaveSettingsOptions) {
       commitSettings,
       applyRemoteSettings,
       flushPersist,
-      setLatestDraft
+      setLatestDraft,
     }),
-    [applyRemoteSettings, commitSettings, flushPersist, setLatestDraft]
+    [applyRemoteSettings, commitSettings, flushPersist, setLatestDraft],
   );
 }

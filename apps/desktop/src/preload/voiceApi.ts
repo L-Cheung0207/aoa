@@ -9,6 +9,7 @@ import type {
   HistoryRetention,
   LlmModelConfig,
   RecordingMode,
+  UpdateHistoryRecordInput,
   WsServerConfig
 } from "@voice/shared";
 import type {
@@ -24,6 +25,11 @@ import type {
 import type { TranscriptionStartInput } from "@voice/ai";
 import type { SerializedTranscriptionEvent, TranscriptionStopResult } from "../renderer/app/ipcTranscriptionProvider";
 import type { UninstallResult } from "../main/uninstall/uninstallService";
+import type {
+  InstallerShellDefaults,
+  InstallerShellInstallInput,
+  InstallerShellInstallResult,
+} from "../main/installer/installerService";
 
 export type RecordingState =
   | "idle"
@@ -97,8 +103,13 @@ export type UpdateCheckResult =
   | { status: "available"; version?: string }
   | { status: "error"; message: string };
 
+export type InstallerSelectDirectoryResult =
+  | { canceled: true }
+  | { canceled: false; installDir: string };
+
 export interface VoiceAIAPI {
   getAppInfo(): Promise<AppInfo>;
+  getAppConfig(): Promise<unknown>;
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: AppSettingsPatch): Promise<AppSettings>;
   startRecording(input: StartRecordingInput): Promise<void>;
@@ -129,9 +140,14 @@ export interface VoiceAIAPI {
   cancelTranscription(): Promise<void>;
   performUninstall(): Promise<UninstallResult>;
   finishUninstall(): Promise<void>;
+  getInstallerDefaults(): Promise<InstallerShellDefaults>;
+  selectInstallerDirectory(defaultPath: string): Promise<InstallerSelectDirectoryResult>;
+  installFromShell(input: InstallerShellInstallInput): Promise<InstallerShellInstallResult>;
+  launchInstalledApp(installDir: string): Promise<void>;
   checkForUpdates(): Promise<UpdateCheckResult>;
   restartToUpdate(): Promise<void>;
   createHistoryRecord(input: CreateHistoryRecordInput): Promise<HistoryRecord>;
+  updateHistoryRecord(input: UpdateHistoryRecordInput): Promise<HistoryRecord>;
   listHistoryRecords(): Promise<HistoryRecord[]>;
   readHistoryAudio(id: string): Promise<HistoryAudioData | undefined>;
   deleteHistoryRecord(id: string): Promise<{ deleted: boolean }>;
@@ -174,6 +190,7 @@ export interface VoiceAIAPI {
 
 export const voiceAI: VoiceAIAPI = {
   getAppInfo: () => ipcRenderer.invoke("voice:get-app-info"),
+  getAppConfig: () => ipcRenderer.invoke("voice:get-app-config"),
   getSettings: () => ipcRenderer.invoke("voice:get-settings"),
   updateSettings: (patch) => ipcRenderer.invoke("voice:update-settings", patch),
   startRecording: (input) => ipcRenderer.invoke("voice:start-recording", input),
@@ -203,10 +220,18 @@ export const voiceAI: VoiceAIAPI = {
   cancelTranscription: () => ipcRenderer.invoke("voice:cancel-transcription"),
   performUninstall: () => ipcRenderer.invoke("voice:perform-uninstall"),
   finishUninstall: () => ipcRenderer.invoke("voice:finish-uninstall"),
+  getInstallerDefaults: () => ipcRenderer.invoke("voice:installer-get-defaults"),
+  selectInstallerDirectory: (defaultPath) =>
+    ipcRenderer.invoke("voice:installer-select-directory", { defaultPath }),
+  installFromShell: (input) => ipcRenderer.invoke("voice:installer-install", input),
+  launchInstalledApp: (installDir) =>
+    ipcRenderer.invoke("voice:installer-launch", { installDir }),
   checkForUpdates: () => ipcRenderer.invoke("voice:check-for-updates"),
   restartToUpdate: () => ipcRenderer.invoke("voice:restart-to-update"),
   createHistoryRecord: (input) =>
     ipcRenderer.invoke("voice:create-history-record", input),
+  updateHistoryRecord: (input) =>
+    ipcRenderer.invoke("voice:update-history-record", input),
   listHistoryRecords: () => ipcRenderer.invoke("voice:list-history-records"),
   readHistoryAudio: (id) =>
     ipcRenderer.invoke("voice:read-history-audio", { id }),

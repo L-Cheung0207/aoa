@@ -6,7 +6,10 @@ import { OnboardingGuide } from "../features/home/components/OnboardingGuide";
 import { buildHomeUsageStats } from "../features/home/homeUsageStats";
 import { normalizeConnectionSettings } from "../features/settings/connectionSettings";
 import { SettingsPage } from "../features/settings/SettingsPage";
-import { MockUpdateDialog, UpdateReadyDialog } from "../features/update/MockUpdateDialog";
+import {
+  MockUpdateDialog,
+  UpdateReadyDialog,
+} from "../features/update/MockUpdateDialog";
 import type { UpdateReadyPayload } from "../../preload/voiceApi";
 
 interface HomeShellProps {
@@ -90,7 +93,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     windowControls: "窗口控制",
     minimize: "最小化",
     maximize: "最大化",
-    close: "关闭"
+    close: "关闭",
   },
   "zh-TW": {
     mainNav: "主導航",
@@ -124,7 +127,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     windowControls: "視窗控制",
     minimize: "最小化",
     maximize: "最大化",
-    close: "關閉"
+    close: "關閉",
   },
   "en-US": {
     mainNav: "Main navigation",
@@ -158,11 +161,13 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     windowControls: "Window controls",
     minimize: "Minimize",
     maximize: "Maximize",
-    close: "Close"
-  }
+    close: "Close",
+  },
 };
 
-function getHomeShellText(language: HomeShellLanguage | undefined): HomeShellText {
+function getHomeShellText(
+  language: HomeShellLanguage | undefined,
+): HomeShellText {
   return HOME_SHELL_TEXT[language ?? "zh-CN"] ?? HOME_SHELL_TEXT["zh-CN"];
 }
 
@@ -170,7 +175,7 @@ export function HomeShell({
   initialSettings,
   initialSection,
   initialOnboardingOpen,
-  initialOnboardingStep
+  initialOnboardingStep,
 }: HomeShellProps): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | undefined>(() => {
     if (!initialSettings) {
@@ -180,19 +185,23 @@ export function HomeShell({
   });
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const [onboardingOpen, setOnboardingOpen] = useState<boolean>(
-    () => initialOnboardingOpen ?? false
+    () => initialOnboardingOpen ?? false,
   );
   const [toast, setToast] = useState<string | undefined>(undefined);
-  const [activeSection, setActiveSection] = useState<HomeSection>(() => initialSection ?? "home");
+  const [activeSection, setActiveSection] = useState<HomeSection>(
+    () => initialSection ?? "home",
+  );
   const [showMockUpdatePage, setShowMockUpdatePage] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [updateReady, setUpdateReady] = useState<UpdateReadyPayload | undefined>(undefined);
+  const [updateReady, setUpdateReady] = useState<
+    UpdateReadyPayload | undefined
+  >(undefined);
   const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([]);
   const [versionLabel, setVersionLabel] = useState(DEFAULT_VERSION_LABEL);
   const [deviceName, setDeviceName] = useState(DEFAULT_DEVICE_NAME);
   const usageStats = useMemo(
     () => buildHomeUsageStats(historyRecords),
-    [historyRecords]
+    [historyRecords],
   );
   const shellText = getHomeShellText(settings?.ui.language);
 
@@ -214,10 +223,11 @@ export function HomeShell({
         void window.voiceAI
           .updateSettings({
             shortcuts: next.shortcuts,
+            developer: next.developer,
             translation: next.translation,
             recording: next.recording,
             ws: next.ws,
-            llm: next.llm
+            llm: next.llm,
           })
           .then((persisted) => {
             setSettings(normalizeConnectionSettings(persisted));
@@ -228,7 +238,7 @@ export function HomeShell({
         return next;
       });
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -312,9 +322,11 @@ export function HomeShell({
     const unsubscribeOpenSettings = window.voiceAI.onOpenSettingsPanel(() => {
       setActiveSection("settings");
     });
-    const unsubscribeOpenHomeSection = window.voiceAI.onOpenHomeSection((section) => {
-      setActiveSection(section);
-    });
+    const unsubscribeOpenHomeSection = window.voiceAI.onOpenHomeSection(
+      (section) => {
+        setActiveSection(section);
+      },
+    );
     const unsubscribeOpenUpdateDialog =
       window.voiceAI.onOpenUpdateDialog(openUpdateDialog);
     const unsubscribeUpdateReady = window.voiceAI.onUpdateReady((payload) => {
@@ -322,21 +334,21 @@ export function HomeShell({
       setUpdateDialogOpen(true);
       setToast(undefined);
     });
-    const unsubscribeSettingsChanged = window.voiceAI.onSettingsChanged((next) => {
-      setSettings(normalizeConnectionSettings(next));
-    });
-    const unsubscribeHistoryRecordCreated = window.voiceAI.onHistoryRecordCreated(
-      (record) => {
+    const unsubscribeSettingsChanged = window.voiceAI.onSettingsChanged(
+      (next) => {
+        setSettings(normalizeConnectionSettings(next));
+      },
+    );
+    const unsubscribeHistoryRecordCreated =
+      window.voiceAI.onHistoryRecordCreated((record) => {
         setHistoryRecords((current) => upsertHistoryRecord(current, record));
-      }
-    );
-    const unsubscribeHistoryRecordDeleted = window.voiceAI.onHistoryRecordDeleted(
-      ({ id }) => {
+      });
+    const unsubscribeHistoryRecordDeleted =
+      window.voiceAI.onHistoryRecordDeleted(({ id }) => {
         setHistoryRecords((current) =>
-          current.filter((record) => record.id !== id)
+          current.filter((record) => record.id !== id),
         );
-      }
-    );
+      });
     return () => {
       unsubscribeOpenSettings();
       unsubscribeOpenHomeSection();
@@ -373,7 +385,11 @@ export function HomeShell({
       <aside className="home-sidebar">
         <nav className="home-nav" aria-label={shellText.mainNav}>
           <button
-            className={activeSection === "home" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
+            className={
+              activeSection === "home"
+                ? "home-nav__item home-nav__item--active"
+                : "home-nav__item"
+            }
             type="button"
             onClick={() => setActiveSection("home")}
           >
@@ -381,7 +397,11 @@ export function HomeShell({
             {shellText.home}
           </button>
           <button
-            className={activeSection === "history" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
+            className={
+              activeSection === "history"
+                ? "home-nav__item home-nav__item--active"
+                : "home-nav__item"
+            }
             type="button"
             onClick={() => setActiveSection("history")}
           >
@@ -389,7 +409,11 @@ export function HomeShell({
             {shellText.history}
           </button>
           <button
-            className={activeSection === "settings" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
+            className={
+              activeSection === "settings"
+                ? "home-nav__item home-nav__item--active"
+                : "home-nav__item"
+            }
             type="button"
             aria-label={shellText.openSettings}
             onClick={() => setActiveSection("settings")}
@@ -398,7 +422,11 @@ export function HomeShell({
             {shellText.settings}
           </button>
           <button
-            className={activeSection === "about" ? "home-nav__item home-nav__item--active" : "home-nav__item"}
+            className={
+              activeSection === "about"
+                ? "home-nav__item home-nav__item--active"
+                : "home-nav__item"
+            }
             type="button"
             aria-label={shellText.about}
             onClick={() => setActiveSection("about")}
@@ -413,7 +441,9 @@ export function HomeShell({
             <span className="home-user__icon" aria-hidden="true">
               <UserIcon />
             </span>
-            <span className="home-user__name">hi, {deviceName || shellText.localDevice}</span>
+            <span className="home-user__name">
+              hi, {deviceName || shellText.localDevice}
+            </span>
           </div>
           <button
             className="home-power"
@@ -437,16 +467,20 @@ export function HomeShell({
                 : "home-content"
         }
       >
-        {activeSection === "history" ? <HistoryPage language={settings?.ui.language} /> : null}
-        {activeSection === "settings" ? <SettingsPage initialSettings={settings} /> : null}
+        {activeSection === "history" ? (
+          <HistoryPage language={settings?.ui.language} />
+        ) : null}
+        {activeSection === "settings" ? (
+          <SettingsPage initialSettings={settings} />
+        ) : null}
         {activeSection === "about" ? (
           <AboutPage
             text={shellText}
             versionLabel={versionLabel}
             onCheckUpdates={openUpdateDialog}
-            onContact={() => { }}
-            onOpenAgreement={() => { }}
-            onOpenPrivacy={() => { }}
+            onContact={() => {}}
+            onOpenAgreement={() => {}}
+            onOpenPrivacy={() => {}}
           />
         ) : null}
         {activeSection === "home" ? (
@@ -513,7 +547,7 @@ function AboutPage({
   onCheckUpdates,
   onContact,
   onOpenAgreement,
-  onOpenPrivacy
+  onOpenPrivacy,
 }: {
   text: HomeShellText;
   versionLabel: string;
@@ -554,7 +588,11 @@ function AboutPage({
           </p>
         </div>
 
-        <div className="about-page__actions" role="list" aria-label={text.aboutActions}>
+        <div
+          className="about-page__actions"
+          role="list"
+          aria-label={text.aboutActions}
+        >
           <AboutActionRow
             icon="refresh"
             label={text.checkUpdates}
@@ -568,12 +606,16 @@ function AboutPage({
           <AboutActionRow
             icon="file"
             label={text.userAgreement}
-            onClick={() => runWithToast(text.agreementPendingToast, onOpenAgreement)}
+            onClick={() =>
+              runWithToast(text.agreementPendingToast, onOpenAgreement)
+            }
           />
           <AboutActionRow
             icon="shield"
             label={text.privacyPolicy}
-            onClick={() => runWithToast(text.privacyPendingToast, onOpenPrivacy)}
+            onClick={() =>
+              runWithToast(text.privacyPendingToast, onOpenPrivacy)
+            }
           />
         </div>
       </div>
@@ -590,14 +632,19 @@ function AboutPage({
 function AboutActionRow({
   icon,
   label,
-  onClick
+  onClick,
 }: {
   icon: "refresh" | "mail" | "file" | "shield";
   label: string;
   onClick(): void;
 }): React.JSX.Element {
   return (
-    <button type="button" className="about-row" role="listitem" onClick={onClick}>
+    <button
+      type="button"
+      className="about-row"
+      role="listitem"
+      onClick={onClick}
+    >
       <span className="about-row__icon" aria-hidden="true">
         {icon === "refresh" ? <RefreshIcon /> : null}
         {icon === "mail" ? <MailIcon /> : null}
@@ -611,7 +658,7 @@ function AboutActionRow({
 
 function WindowControls({
   modalOpen,
-  text
+  text,
 }: {
   modalOpen: boolean;
   text: HomeShellText;
@@ -651,11 +698,11 @@ function WindowControls({
 
 function upsertHistoryRecord(
   records: HistoryRecord[],
-  nextRecord: HistoryRecord
+  nextRecord: HistoryRecord,
 ): HistoryRecord[] {
   const withoutRecord = records.filter((record) => record.id !== nextRecord.id);
   return [nextRecord, ...withoutRecord].sort((left, right) =>
-    right.startedAt.localeCompare(left.startedAt)
+    right.startedAt.localeCompare(left.startedAt),
   );
 }
 
@@ -669,7 +716,17 @@ function formatVersionLabel(appVersion: string): string {
 
 function HomeIcon(): React.JSX.Element {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <polyline points="9 22 9 12 15 12 15 22" />
     </svg>
@@ -678,7 +735,17 @@ function HomeIcon(): React.JSX.Element {
 
 function HistoryIcon(): React.JSX.Element {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
     </svg>
@@ -687,7 +754,17 @@ function HistoryIcon(): React.JSX.Element {
 
 function SettingsIcon(): React.JSX.Element {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
@@ -696,7 +773,17 @@ function SettingsIcon(): React.JSX.Element {
 
 function InfoIcon(): React.JSX.Element {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="16" x2="12" y2="12" />
       <line x1="12" y1="8" x2="12.01" y2="8" />
@@ -706,7 +793,16 @@ function InfoIcon(): React.JSX.Element {
 
 function UserIcon(): React.JSX.Element {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="12" cy="8" r="4" />
       <path d="M20 21a8 8 0 1 0-16 0" />
     </svg>
@@ -715,7 +811,17 @@ function UserIcon(): React.JSX.Element {
 
 function PowerIcon(): React.JSX.Element {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M12 2v10" />
       <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
     </svg>
@@ -724,7 +830,16 @@ function PowerIcon(): React.JSX.Element {
 
 function BrandIcon(): React.JSX.Element {
   return (
-    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="64"
+      height="64"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
       <path d="M8 9h8" />
       <path d="M8 13h5" />
@@ -734,7 +849,16 @@ function BrandIcon(): React.JSX.Element {
 
 function RefreshIcon(): React.JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
       <polyline points="21 3 21 9 15 9" />
     </svg>
@@ -743,7 +867,16 @@ function RefreshIcon(): React.JSX.Element {
 
 function MailIcon(): React.JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M4 4h16v16H4z" />
       <path d="M22 6l-10 7L2 6" />
     </svg>
@@ -752,7 +885,16 @@ function MailIcon(): React.JSX.Element {
 
 function FileIcon(): React.JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <path d="M14 2v6h6" />
     </svg>
@@ -761,7 +903,16 @@ function FileIcon(): React.JSX.Element {
 
 function ShieldIcon(): React.JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
   );

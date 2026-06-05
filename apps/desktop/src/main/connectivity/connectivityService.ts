@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { ProxyAgent, Agent, fetch as undiciFetch } from "undici";
 import type { LlmModelConfig, WsServerConfig } from "@voice/shared";
+import { logHttpRequest } from "../log/requestLog";
 
 /**
  * 連通性測試結果。對齊 old SettingsDialog 的「成功 / 失敗 + 文案」返回形態。
@@ -17,6 +18,7 @@ export interface ConnectivityTestResult {
 
 const WS_TEST_TIMEOUT_MS = 5_000;
 const LLM_TEST_TIMEOUT_MS = 30_000;
+const AOSO_VOICE_PATH = "/aoa_api/voice";
 
 /**
  * 將 old/main.py 裡 `_get_ws_proxy_kwargs` 的行為對齊到 Node：
@@ -115,7 +117,7 @@ function buildAosoUrl(baseUrl: string, path: string): string {
 }
 
 /**
- * 後處理 API 連通性測試：按 AOSO 文件向 /aoaapi_ctm/rewrite 傳送最小請求，
+ * 後處理 API 連通性測試：按 AOSO 文件向 /aoa_api/voice 傳送最小請求，
  * 拿到 rewritten_text 即判定成功。支援 HTTP 代理 + Basic Auth + 忽略自籤 TLS。
  */
 export async function testLlm(config: LlmModelConfig): Promise<ConnectivityTestResult> {
@@ -125,7 +127,11 @@ export async function testLlm(config: LlmModelConfig): Promise<ConnectivityTestR
     return { ok: false, message: "後處理 API 配置不完整：baseUrl 必填" };
   }
 
-  const url = buildAosoUrl(baseUrl, "/aoaapi_ctm/rewrite");
+  const url = buildAosoUrl(baseUrl, AOSO_VOICE_PATH);
+  const body = {
+    text: "連線測試",
+    stream: false
+  };
   const proxyUrl = buildProxyUrl(config);
   // undici 允許通過 dispatcher 同時指定代理 + 忽略 TLS 校驗
   const dispatcher = proxyUrl
@@ -140,15 +146,13 @@ export async function testLlm(config: LlmModelConfig): Promise<ConnectivityTestR
   const startedAt = Date.now();
 
   try {
+    logHttpRequest(url, body);
     const response = await undiciFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        text: "連線測試",
-        stream: false
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
       dispatcher
     });

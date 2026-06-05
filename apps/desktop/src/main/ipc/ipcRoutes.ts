@@ -30,6 +30,7 @@ import {
   parseCreateHistoryRecordInput,
   parseCreateTranscriptionSessionInput,
   parseDeleteHistoryRecordInput,
+  parseUpdateHistoryRecordInput,
   parseTranscriptionStartInput,
   parseInsertTextInput,
   parsePostprocessInput,
@@ -58,6 +59,7 @@ export interface IpcRouteDependencies {
   historyStore: HistoryStore;
   installationId: string;
   appInfo: IpcAppInfo;
+  getAppConfig?: () => Promise<unknown>;
   getInsertTargetWindowHandle?: () => string | undefined;
   onSettingsUpdated?(settings: ReturnType<ConfigStore["get"]>): void;
   onHistoryRecordCreated?(record: Awaited<ReturnType<HistoryStore["create"]>>): void;
@@ -70,6 +72,7 @@ export interface BootstrapClientResponse extends ClientBootstrapSnapshot {
 
 export interface IpcRouteHandlers {
   getAppInfo(): IpcAppInfo;
+  getAppConfig(): Promise<unknown>;
   getSettings(): ReturnType<ConfigStore["get"]>;
   updateSettings(input: unknown): ReturnType<ConfigStore["update"]>;
   copyText(input: unknown): void;
@@ -92,6 +95,7 @@ export interface IpcRouteHandlers {
   checkForUpdates(): Promise<UpdateCheckResult>;
   restartToUpdate(): void;
   createHistoryRecord(input: unknown): ReturnType<HistoryStore["create"]>;
+  updateHistoryRecord(input: unknown): ReturnType<HistoryStore["update"]>;
   listHistoryRecords(): ReturnType<HistoryStore["list"]>;
   readHistoryAudio(input: unknown): ReturnType<HistoryStore["readAudio"]>;
   deleteHistoryRecord(input: unknown): Promise<{ deleted: boolean }>;
@@ -106,6 +110,7 @@ export function createIpcRouteHandlers(
 ): IpcRouteHandlers {
   return {
     getAppInfo: () => dependencies.appInfo,
+    getAppConfig: async () => dependencies.getAppConfig?.(),
     getSettings: () => dependencies.configStore.get(),
     updateSettings: (input) => {
       const settings = dependencies.configStore.update(parseSettingsPatchInput(input));
@@ -207,6 +212,13 @@ export function createIpcRouteHandlers(
       await pruneExpiredHistoryRecords(dependencies);
       return record;
     },
+    updateHistoryRecord: async (input) => {
+      const { id, ...recordInput } = parseUpdateHistoryRecordInput(input);
+      const record = await dependencies.historyStore.update(id, recordInput);
+      dependencies.onHistoryRecordCreated?.(record);
+      await pruneExpiredHistoryRecords(dependencies);
+      return record;
+    },
     listHistoryRecords: async () => {
       await pruneExpiredHistoryRecords(dependencies);
       return dependencies.historyStore.list();
@@ -251,6 +263,7 @@ export function registerIpcRoutes(
   const handlers = createIpcRouteHandlers(dependencies);
 
   ipcMain.handle("voice:get-app-info", () => handlers.getAppInfo());
+  ipcMain.handle("voice:get-app-config", () => handlers.getAppConfig());
   ipcMain.handle("voice:get-settings", () => handlers.getSettings());
   ipcMain.handle("voice:update-settings", (_event, input: unknown) => {
     return handlers.updateSettings(input);
@@ -312,6 +325,9 @@ export function registerIpcRoutes(
   });
   ipcMain.handle("voice:create-history-record", (_event, input: unknown) => {
     return handlers.createHistoryRecord(input);
+  });
+  ipcMain.handle("voice:update-history-record", (_event, input: unknown) => {
+    return handlers.updateHistoryRecord(input);
   });
   ipcMain.handle("voice:list-history-records", () => handlers.listHistoryRecords());
   ipcMain.handle("voice:read-history-audio", (_event, input: unknown) => {

@@ -58,6 +58,7 @@ export interface CreateVoiceOperationControllerOptions {
   settings: VoiceOperationSettings;
   getAppContext(): Promise<AppContext>;
   onPostprocessResult?(event: VoicePostprocessResultEvent): void;
+  finalResultBehavior?: "client_postprocess" | "respect_service_action";
   onCancel?(mode: RecordingMode): void;
   onTranscriptionUnavailable?(): void;
   onHistoryRecord?(input: CreateHistoryRecordInput): void;
@@ -114,12 +115,13 @@ export function createVoiceOperationController(
   let pendingCancelAfterStart = false;
   /**
    * 啟動階段是否已經開始開啟麥克風。provider.start 期間尚未開麥，取消時不需要碰 recorder。
-  */
+   */
   let recorderStartRequested = false;
   const getNow = options.now ?? (() => new Date());
   const recordingMaxDurationSeconds = Math.max(
     1,
-    options.settings.maxDurationSeconds ?? DEFAULT_RECORDER_MAX_DURATION_SECONDS,
+    options.settings.maxDurationSeconds ??
+      DEFAULT_RECORDER_MAX_DURATION_SECONDS,
   );
   let recordingLimitTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -136,7 +138,10 @@ export function createVoiceOperationController(
       return undefined;
     }
 
-    const elapsedMs = Math.max(0, getNow().getTime() - activeSession.startedAtMs);
+    const elapsedMs = Math.max(
+      0,
+      getNow().getTime() - activeSession.startedAtMs,
+    );
     const remainingMs = recordingMaxDurationSeconds * 1000 - elapsedMs;
     return Math.max(0, Math.ceil(remainingMs / 1000));
   };
@@ -150,10 +155,15 @@ export function createVoiceOperationController(
     );
     recordingLimitTimer = setTimeout(() => {
       recordingLimitTimer = undefined;
-      if (activeSession !== session || machine.getSnapshot().state !== "listening") {
+      if (
+        activeSession !== session ||
+        machine.getSnapshot().state !== "listening"
+      ) {
         return;
       }
-      console.log("[voice] recording limit reached; stopping session automatically");
+      console.log(
+        "[voice] recording limit reached; stopping session automatically",
+      );
       void stopSession().catch((error) => {
         console.error("[voice] automatic recording stop failed", error);
       });
@@ -248,6 +258,11 @@ export function createVoiceOperationController(
         installationId: options.settings.installationId,
         language: options.settings.language,
         sampleRate: options.settings.sampleRate,
+        mode: session.mode,
+        selectedText: session.selectedText,
+        targetLanguage: resolveSessionTargetLanguage(options, session),
+        postprocessMode: resolveSessionPostprocessMode(options, session),
+        appContext: await options.getAppContext(),
       });
       if (activeSession !== session) {
         return false;
@@ -326,7 +341,14 @@ export function createVoiceOperationController(
         return;
       }
       stage = "transcription";
-      await startTranscriptionForSession(activeSession);
+      const transcriptionStarted =
+        await startTranscriptionForSession(activeSession);
+      if (
+        !transcriptionStarted &&
+        options.finalResultBehavior === "respect_service_action"
+      ) {
+        throw new Error("Transcription session is unavailable");
+      }
       console.log("[voice] 會話啟動完成：錄音器已就緒");
     } catch (error) {
       console.error(`[voice] 會話啟動失敗 stage=${stage}`, error);
@@ -539,7 +561,7 @@ export function createVoiceOperationController(
       }
 
       if (snapshot.state === "listening") {
-        if (mode !== "direct") {
+        if (mode !== "direct" && mode !== snapshot.mode) {
           console.log(
             `[voice] handleToggle：忽略非當前模式收尾 mode=${mode} active=${snapshot.mode ?? "none"}`,
           );
@@ -673,6 +695,32 @@ async function applyFinalText(
   rawText: string,
   setStage: (stage: "postprocess" | "insertion") => void,
 ): Promise<string> {
+  if (options.finalResultBehavior === "respect_service_action") {
+    setStage("postprocess");
+    const result = await options.postProcessService.process(
+      await createPostProcessInput(options, session, rawText),
+    );
+    if (!result.finalText.trim()) {
+      console.log("[voice] 服務端最終文本為空，跳過插入與展示");
+      return "";
+    }
+    if (
+      session.mode === "processSelection" &&
+      result.action === "show_result"
+    ) {
+      options.onPostprocessResult?.({
+        mode: "processSelection",
+        rawText,
+        selectedText: session.selectedText,
+        result,
+      });
+    } else {
+      setStage("insertion");
+      await applyPostProcessResult(options.textTarget, session, result);
+    }
+    return result.finalText;
+  }
+
   // 靜音會話兜底：ASR 可能返回空串（old 裡對應"未聽清或無聲音..."）。
   // 此時 insert-text IPC 的 schema 會以 "Insert text is required" 拒絕空串，
   // postprocess 也會拿到空 raw 浪費 LLM 呼叫。統一在入口跳過，讓流程靜默走到 success。
@@ -717,21 +765,33 @@ async function createPostProcessInput(
     rawText,
     selectedText: session.selectedText,
     appContext: await options.getAppContext(),
-    mode:
-      session.mode === "translate"
-        ? "translate"
-        : options.settings.postprocessMode,
+    mode: resolveSessionPostprocessMode(options, session),
     language: toBackendLanguage(options.settings.language),
     style: options.settings.postprocessStyle,
-    targetLanguage:
-      session.mode === "translate"
-        ? resolveTranslateTargetLanguage(
-            options.settings.language,
-            options.settings.targetLanguage,
-          )
-        : options.settings.targetLanguage,
+    targetLanguage: resolveSessionTargetLanguage(options, session),
     dictionaryTerms: options.settings.dictionaryTerms,
   };
+}
+
+function resolveSessionPostprocessMode(
+  options: CreateVoiceOperationControllerOptions,
+  session: ActiveSession,
+): PostprocessMode {
+  return session.mode === "translate"
+    ? "translate"
+    : options.settings.postprocessMode;
+}
+
+function resolveSessionTargetLanguage(
+  options: CreateVoiceOperationControllerOptions,
+  session: ActiveSession,
+): VoiceOperationSettings["targetLanguage"] {
+  return session.mode === "translate"
+    ? resolveTranslateTargetLanguage(
+        options.settings.language,
+        options.settings.targetLanguage,
+      )
+    : options.settings.targetLanguage;
 }
 
 async function applyPostProcessResult(

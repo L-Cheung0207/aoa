@@ -7,12 +7,18 @@ import type {
   HistoryAudioData,
   HistoryAudioFile,
   HistoryRecord,
+  UpdateHistoryRecordInput,
 } from "@voice/shared";
 
-export type { CreateHistoryRecordInput, HistoryRecord } from "@voice/shared";
+export type {
+  CreateHistoryRecordInput,
+  HistoryRecord,
+  UpdateHistoryRecordInput,
+} from "@voice/shared";
 
 export interface HistoryStore {
   create(input: CreateHistoryRecordInput): Promise<HistoryRecord>;
+  update(id: string, input: CreateHistoryRecordInput): Promise<HistoryRecord>;
   list(): Promise<HistoryRecord[]>;
   readAudio(id: string): Promise<HistoryAudioData | undefined>;
   delete(id: string): Promise<boolean>;
@@ -73,41 +79,75 @@ export function createFileHistoryStore(
     await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`, "utf8");
   };
 
+  const buildRecord = async (
+    input: CreateHistoryRecordInput | UpdateHistoryRecordInput,
+    identity: Pick<HistoryRecord, "id" | "createdAt" | "startedAt">,
+  ): Promise<HistoryRecord> => {
+    const audio = input.audio
+      ? await writeAudioFile(
+          options.rootDir,
+          identity.id,
+          input.audio.pcm,
+          input.audio.sampleRate,
+          audioEncryptionKey,
+        )
+      : undefined;
+    const record: HistoryRecord = {
+      id: identity.id,
+      createdAt: identity.createdAt,
+      startedAt: identity.startedAt,
+      durationMs: input.durationMs,
+      mode: input.mode,
+      status: input.status,
+      transcript: input.transcript,
+      finalText: input.finalText,
+    };
+    if (input.selectedText !== undefined) {
+      record.selectedText = input.selectedText;
+    }
+    if (input.errorMessage !== undefined) {
+      record.errorMessage = input.errorMessage;
+    }
+    if (audio !== undefined) {
+      record.audio = audio;
+    }
+    return record;
+  };
+
   return {
     create: async (input) => {
       const index = await readIndex();
       const id = ensureUniqueId(createId(), index.records);
-      const audio = input.audio
-        ? await writeAudioFile(
-            options.rootDir,
-            id,
-            input.audio.pcm,
-            input.audio.sampleRate,
-            audioEncryptionKey,
-          )
-        : undefined;
-      const record: HistoryRecord = {
+      const record = await buildRecord(input, {
         id,
         createdAt: now().toISOString(),
         startedAt: input.startedAt,
-        durationMs: input.durationMs,
-        mode: input.mode,
-        status: input.status,
-        transcript: input.transcript,
-        finalText: input.finalText,
-      };
-      if (input.selectedText !== undefined) {
-        record.selectedText = input.selectedText;
-      }
-      if (input.errorMessage !== undefined) {
-        record.errorMessage = input.errorMessage;
-      }
-      if (audio !== undefined) {
-        record.audio = audio;
-      }
+      });
 
       index.records = [record, ...index.records]
         .slice()
+        .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+      await writeIndex(index);
+      return record;
+    },
+    update: async (id, input) => {
+      const index = await readIndex();
+      const existingIndex = index.records.findIndex((record) => record.id === id);
+      if (existingIndex === -1) {
+        throw new Error("History record not found");
+      }
+
+      const existing = index.records[existingIndex] as HistoryRecord;
+      const record = await buildRecord(input, {
+        id: existing.id,
+        createdAt: existing.createdAt,
+        startedAt: existing.startedAt,
+      });
+      if (existing.audio && existing.audio.path !== record.audio?.path) {
+        await rm(existing.audio.path, { force: true });
+      }
+      index.records = index.records
+        .map((item) => (item.id === id ? record : item))
         .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
       await writeIndex(index);
       return record;

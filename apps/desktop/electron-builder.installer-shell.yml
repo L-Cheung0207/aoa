@@ -1,0 +1,37 @@
+appId: com.ctm.voice-assistant.installer
+productName: Voice Assistant Installer
+electronVersion: 35.7.5
+copyright: Copyright (c) 2026 Voice Assistant
+
+directories:
+  buildResources: installer-resources
+  output: dist-electron
+
+electronDist: ../../node_modules/electron/dist
+asar: true
+npmRebuild: false
+
+files:
+  - out/**/*
+  - package.json
+  - "!node_modules/@voice/ai/**"
+  - "!node_modules/@voice/shared/**"
+  - "!node_modules/@voice/backend-client/**"
+  - "!node_modules/@voice/db/**"
+
+extraResources:
+  - from: resources/app-icon.ico
+    to: app-icon.ico
+  - from: dist-installer-shell-payload
+    to: installer-shell-payload
+
+win:
+  signAndEditExecutable: false
+  target:
+    - target: portable
+      arch:
+        - x64
+  icon: resources/app-icon.ico
+
+portable:
+  artifactName: "${productName} ${version}.${ext}"

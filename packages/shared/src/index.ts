@@ -4,7 +4,8 @@ export type {
   HistoryAudioFile,
   HistoryAudioInput,
   HistoryRecord,
-  HistoryRecordStatus
+  HistoryRecordStatus,
+  UpdateHistoryRecordInput,
 } from "./types/history";
 export type {
   AppSettings,
@@ -19,20 +20,24 @@ export type {
   RecordingLanguage,
   RecordingMode,
   WaveformStyle,
-  WsServerConfig
+  WsServerConfig,
 } from "./types/settings";
 export type { AudioFrame } from "./types/audio";
 export {
   AOSO_HTTP_BASE_URL,
   BUNDLED_ASR_WS_URL,
+  JAVA_VOICE_WS_URL,
   MISCONFIGURED_AOSO_ASR_WS_URL,
   createDefaultSettings,
   isAppSettings,
-  mergeSettingsPatch
+  mergeSettingsPatch,
 } from "./validation/settingsSchema";
-export type { ShortcutValidationReason, ShortcutValidationResult } from "./shortcuts/reservedShortcutPolicy";
+export type {
+  ShortcutValidationReason,
+  ShortcutValidationResult,
+} from "./shortcuts/reservedShortcutPolicy";
 export {
   isReservedShortcut,
   normalizeShortcut,
-  validateShortcut
+  validateShortcut,
 } from "./shortcuts/reservedShortcutPolicy";

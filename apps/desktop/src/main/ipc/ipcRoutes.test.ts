@@ -145,7 +145,18 @@ function createDeps(overrides: Partial<Parameters<typeof createIpcRouteHandlers>
         transcript: input.transcript,
         finalText: input.finalText
       }),
+      update: async (id, input) => ({
+        id,
+        createdAt: "2026-05-27T08:00:00.000Z",
+        startedAt: input.startedAt,
+        durationMs: input.durationMs,
+        mode: input.mode,
+        status: input.status,
+        transcript: input.transcript,
+        finalText: input.finalText
+      }),
       list: async () => [],
+      readAudio: async () => undefined,
       delete: async () => false
     },
     installationId: "install-abc",
@@ -587,9 +598,17 @@ describe("ipc route handlers", () => {
         calls.push(["create", input]);
         return records[0] as HistoryRecord;
       },
+      update: async (id: string, input: CreateHistoryRecordInput) => {
+        calls.push(["update", id, input]);
+        return { ...records[0], ...input, id } as HistoryRecord;
+      },
       list: async () => {
         calls.push(["list"]);
         return records;
+      },
+      readAudio: async (id: string) => {
+        calls.push(["readAudio", id]);
+        return undefined;
       },
       delete: async (id: string) => {
         calls.push(["delete", id]);
@@ -610,10 +629,25 @@ describe("ipc route handlers", () => {
         sampleRate: 16000
       }
     });
+    const updated = await handlers.updateHistoryRecord({
+      id: "history-1",
+      startedAt: "2026-05-27T07:59:00.000Z",
+      durationMs: 1200,
+      mode: "direct",
+      status: "completed",
+      transcript: "retry hello",
+      finalText: "retry hello"
+    });
     const listed = await handlers.listHistoryRecords();
     const deleted = await handlers.deleteHistoryRecord({ id: "history-1" });
 
     expect(created).toBe(records[0]);
+    expect(updated).toMatchObject({
+      id: "history-1",
+      durationMs: 1200,
+      transcript: "retry hello",
+      finalText: "retry hello"
+    });
     expect(listed).toBe(records);
     expect(deleted).toEqual({ deleted: true });
     expect(calls).toEqual([
@@ -630,6 +664,18 @@ describe("ipc route handlers", () => {
             pcm: new Int16Array([1, -1]),
             sampleRate: 16000
           }
+        }
+      ],
+      [
+        "update",
+        "history-1",
+        {
+          startedAt: "2026-05-27T07:59:00.000Z",
+          durationMs: 1200,
+          mode: "direct",
+          status: "completed",
+          transcript: "retry hello",
+          finalText: "retry hello"
         }
       ],
       ["list"],
@@ -653,7 +699,9 @@ describe("ipc route handlers", () => {
     const notifications: HistoryRecord[] = [];
     const historyStore: HistoryStore = {
       create: async () => records[0] as HistoryRecord,
+      update: async () => records[0] as HistoryRecord,
       list: async () => records,
+      readAudio: async () => undefined,
       delete: async () => false
     };
     const handlers = createIpcRouteHandlers(
@@ -693,6 +741,9 @@ describe("ipc route handlers", () => {
         },
         historyStore: {
           create: async () => {
+            throw new Error("not used");
+          },
+          update: async () => {
             throw new Error("not used");
           },
           list: async () => [],

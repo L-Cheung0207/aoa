@@ -46,3 +46,7 @@ export interface CreateHistoryRecordInput {
   errorMessage?: string;
   audio?: HistoryAudioInput;
 }
+
+export interface UpdateHistoryRecordInput extends CreateHistoryRecordInput {
+  id: string;
+}

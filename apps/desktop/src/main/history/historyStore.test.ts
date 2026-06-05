@@ -97,6 +97,53 @@ describe("file history store", () => {
     await expect(store.delete(record.id)).resolves.toBe(false);
   });
 
+  it("updates an existing record in place instead of creating a duplicate", async () => {
+    const rootDir = await createTempRoot();
+    const store = createFileHistoryStore({
+      rootDir,
+      now: () => new Date("2026-05-27T08:00:00.000Z"),
+      createId: () => "retry-me"
+    });
+    const original = await store.create({
+      startedAt: "2026-05-27T07:59:00.000Z",
+      durationMs: 500,
+      mode: "direct",
+      status: "no_audio",
+      transcript: "",
+      finalText: "",
+      audio: {
+        pcm: new Int16Array([1, 2]),
+        sampleRate: 16000
+      }
+    });
+
+    const updated = await store.update(original.id, {
+      startedAt: "2026-05-27T09:00:00.000Z",
+      durationMs: 700,
+      mode: "direct",
+      status: "completed",
+      transcript: "retry transcript",
+      finalText: "retry transcript",
+      audio: {
+        pcm: new Int16Array([3, 4, 5]),
+        sampleRate: 16000
+      }
+    });
+
+    expect(updated).toMatchObject({
+      id: original.id,
+      createdAt: original.createdAt,
+      startedAt: original.startedAt,
+      durationMs: 700,
+      status: "completed",
+      transcript: "retry transcript",
+      finalText: "retry transcript"
+    });
+    await expect(store.list()).resolves.toEqual([updated]);
+    expect(updated.audio?.path).toBe(original.audio?.path);
+    await expect(stat(original.audio?.path ?? "")).resolves.toMatchObject({ size: 50 });
+  });
+
   it("clears all history records and audio files", async () => {
     const rootDir = await createTempRoot();
     const store = createFileHistoryStore({

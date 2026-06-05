@@ -353,7 +353,7 @@ describe("LLM postprocess service", () => {
 });
 
 describe("AOSO postprocess client", () => {
-  it("posts clean dictation to the rewrite endpoint", async () => {
+  it("posts clean dictation to the voice endpoint", async () => {
     const fetch = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -379,14 +379,14 @@ describe("AOSO postprocess client", () => {
       warnings: ["Rewrite warning"]
     });
     const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url).toBe("http://172.30.21.67:9066/aoaapi_ctm/rewrite");
+    expect(url).toBe("http://172.30.21.67:9066/aoa_api/voice");
     expect(JSON.parse(String(init?.body))).toEqual({
       text: "嗯...我想去那个...北京，然后就是天气天气很不错。",
       stream: false
     });
   });
 
-  it("posts translation requests to the translate endpoint with the documented language names", async () => {
+  it("posts translation requests to the voice endpoint with the documented language names", async () => {
     const fetch = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -407,7 +407,7 @@ describe("AOSO postprocess client", () => {
 
     expect(result.text).toBe("Hello world.");
     const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url).toBe("http://172.30.21.67:9066/aoa_api/voice/translate");
+    expect(url).toBe("http://172.30.21.67:9066/aoa_api/voice");
     expect(JSON.parse(String(init?.body))).toEqual({
       text: "你好世界",
       language: "英語",
@@ -434,7 +434,7 @@ describe("AOSO postprocess client", () => {
     });
 
     const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url).toBe("http://172.30.21.67:9066/aoaapi_ctm/rewrite_by_templete");
+    expect(url).toBe("http://172.30.21.67:9066/aoa_api/voice");
     expect(JSON.parse(String(init?.body))).toEqual({
       text: "帮我写一封正式的商务邮件给客户",
       text_to_rewrite: "张总您好，关于项目进度想跟您确认一下。",

@@ -85,7 +85,7 @@ export interface PostprocessRequest {
 }
 
 export interface PostprocessResult {
-  action: "insert" | "replace_selection";
+  action: "insert" | "replace_selection" | "show_result";
   finalText: string;
   confidence: number;
   usedDictionaryTermIds: string[];
@@ -96,7 +96,7 @@ export interface BackendClient {
   bootstrap(request: ClientBootstrapRequest): Promise<ClientBootstrapSnapshot>;
   getServiceStatus(installationId: string): Promise<ServiceStatusSnapshot>;
   createTranscriptionSession(
-    request: TranscriptionSessionRequest
+    request: TranscriptionSessionRequest,
   ): Promise<TranscriptionSession>;
   postprocess(request: PostprocessRequest): Promise<PostprocessResult>;
 }

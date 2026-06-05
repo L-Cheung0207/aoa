@@ -3,16 +3,16 @@ import type {
   AppSettings,
   InterfaceLanguage,
   RecordingLanguage,
-  WaveformStyle
+  WaveformStyle,
 } from "@voice/shared";
 import {
   ConnectionSettingsFields,
   getConnectionTargets,
-  type ConnectionTestStatus
+  type ConnectionTestStatus,
 } from "./ConnectionSettingsFields";
 import {
   normalizeConnectionSettings,
-  validateConnectionSettings
+  validateConnectionSettings,
 } from "./connectionSettings";
 import { MicrophoneDevicePicker } from "../../shared/ui/MicrophoneDevicePicker";
 import { ShortcutRecorder } from "./ShortcutRecorder";
@@ -20,13 +20,16 @@ import { useAutoSaveSettings } from "./useAutoSaveSettings";
 import { WaveformPreview } from "./WaveformPreview";
 import { getSettingsText, type SettingsText } from "./settingsI18n";
 
-function updateWaveformStyle(current: AppSettings, waveformStyle: WaveformStyle): AppSettings {
+function updateWaveformStyle(
+  current: AppSettings,
+  waveformStyle: WaveformStyle,
+): AppSettings {
   return {
     ...current,
     recording: {
       ...current.recording,
-      waveformStyle
-    }
+      waveformStyle,
+    },
   };
 }
 
@@ -37,7 +40,7 @@ interface SettingsPageProps {
 function formatLocalizedConnectivityMessage(
   label: string,
   result: { ok: boolean; message: string; elapsedMs?: number },
-  text: SettingsText
+  text: SettingsText,
 ): string {
   if (result.ok) {
     return `${label}${text.connection.connectionSucceeded}${
@@ -47,27 +50,35 @@ function formatLocalizedConnectivityMessage(
   return `${label}${text.connection.connectionFailed}${result.message}`;
 }
 
-export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React.JSX.Element {
+export function SettingsPage({
+  initialSettings,
+}: SettingsPageProps = {}): React.JSX.Element {
   const fallbackText = getSettingsText(initialSettings?.ui.language);
-  const [settings, setSettings] = useState<AppSettings | undefined>(initialSettings);
+  const [settings, setSettings] = useState<AppSettings | undefined>(
+    initialSettings,
+  );
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const [wsTest, setWsTest] = useState<ConnectionTestStatus>({ state: "idle" });
-  const [llmTest, setLlmTest] = useState<ConnectionTestStatus>({ state: "idle" });
+  const [llmTest, setLlmTest] = useState<ConnectionTestStatus>({
+    state: "idle",
+  });
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
 
   const autoSave = useAutoSaveSettings({
     scope: "page",
     validate: validateConnectionSettings,
-    onError: (message) => setSaveError(message)
+    onError: (message) => setSaveError(message),
   });
 
   const updateSettings = useCallback(
     (updater: AppSettings | ((draft: AppSettings) => AppSettings)): void => {
       setWsTest({ state: "idle" });
       setLlmTest({ state: "idle" });
-      setSettings((current) => autoSave.commitSettings(current, updater) ?? current);
+      setSettings(
+        (current) => autoSave.commitSettings(current, updater) ?? current,
+      );
     },
-    [autoSave]
+    [autoSave],
   );
 
   useEffect(() => {
@@ -128,6 +139,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
   }
 
   const text = getSettingsText(settings.ui.language);
+  const developerModeEnabled = settings.developer.enabled;
   const connectionError = validateConnectionSettings(settings);
 
   const handleTestWs = async (): Promise<void> => {
@@ -142,14 +154,18 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
       const result = await window.voiceAI.testWebSocket(wsServer);
       setWsTest({
         state: result.ok ? "ok" : "fail",
-        message: formatLocalizedConnectivityMessage(text.connection.wsService, result, text)
+        message: formatLocalizedConnectivityMessage(
+          text.connection.wsService,
+          result,
+          text,
+        ),
       });
     } catch (error) {
       setWsTest({
         state: "fail",
         message: `${text.connection.wsService}${text.connection.connectionException}${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       });
     }
   };
@@ -166,14 +182,18 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
       const result = await window.voiceAI.testLlm(llmModel);
       setLlmTest({
         state: result.ok ? "ok" : "fail",
-        message: formatLocalizedConnectivityMessage(text.connection.apiService, result, text)
+        message: formatLocalizedConnectivityMessage(
+          text.connection.apiService,
+          result,
+          text,
+        ),
       });
     } catch (error) {
       setLlmTest({
         state: "fail",
         message: `${text.connection.apiService}${text.connection.connectionException}${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       });
     }
   };
@@ -183,14 +203,18 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
       <header className="settings-header">
         <div className="settings-header__left">
           <h1 className="settings-header__title">{text.header.title}</h1>
-          <p className="settings-header__subtitle">
-            {text.header.subtitle}
-          </p>
+          <p className="settings-header__subtitle">{text.header.subtitle}</p>
         </div>
       </header>
 
-      <section className="settings__section settings__section--plain" aria-label={text.sections.appearance}>
-        <h2 className="settings-group-header" aria-label={text.sections.appearance}>
+      <section
+        className="settings__section settings__section--plain"
+        aria-label={text.sections.appearance}
+      >
+        <h2
+          className="settings-group-header"
+          aria-label={text.sections.appearance}
+        >
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -209,7 +233,9 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">{text.sections.appearance}</span>
+          <span className="settings-group-header__label">
+            {text.sections.appearance}
+          </span>
         </h2>
         <div className="settings-row">
           <div className="settings-row__text">
@@ -231,15 +257,17 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                     ...current,
                     ui: {
                       ...current.ui,
-                      theme
-                    }
+                      theme,
+                    },
                   };
                 });
-                void window.voiceAI.updateSettings({ ui: { theme } }).catch((error) => {
-                  setSaveError(
-                    `${text.common.saveFailed}${error instanceof Error ? error.message : String(error)}`
-                  );
-                });
+                void window.voiceAI
+                  .updateSettings({ ui: { theme } })
+                  .catch((error) => {
+                    setSaveError(
+                      `${text.common.saveFailed}${error instanceof Error ? error.message : String(error)}`,
+                    );
+                  });
               }}
             >
               <option value="dark">{text.appearance.darkTheme}</option>
@@ -249,8 +277,14 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label={text.sections.shortcuts}>
-        <h2 className="settings-group-header" aria-label={text.sections.shortcuts}>
+      <section
+        className="settings__section settings__section--plain"
+        aria-label={text.sections.shortcuts}
+      >
+        <h2
+          className="settings-group-header"
+          aria-label={text.sections.shortcuts}
+        >
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -269,7 +303,9 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">{text.sections.shortcuts}</span>
+          <span className="settings-group-header__label">
+            {text.sections.shortcuts}
+          </span>
         </h2>
         <div className="settings-row settings-row--shortcut">
           <div className="settings-row__text">
@@ -285,8 +321,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   shortcuts: {
                     ...current.shortcuts,
-                    toggleRecording: value
-                  }
+                    toggleRecording: value,
+                  },
                 }))
               }
             />
@@ -307,8 +343,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   shortcuts: {
                     ...current.shortcuts,
-                    processSelection: value
-                  }
+                    processSelection: value,
+                  },
                 }))
               }
             />
@@ -329,8 +365,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   shortcuts: {
                     ...current.shortcuts,
-                    translateDictation: value
-                  }
+                    translateDictation: value,
+                  },
                 }))
               }
             />
@@ -338,8 +374,14 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label={text.sections.language}>
-        <h2 className="settings-group-header" aria-label={text.sections.language}>
+      <section
+        className="settings__section settings__section--plain"
+        aria-label={text.sections.language}
+      >
+        <h2
+          className="settings-group-header"
+          aria-label={text.sections.language}
+        >
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -357,7 +399,9 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">{text.sections.language}</span>
+          <span className="settings-group-header__label">
+            {text.sections.language}
+          </span>
         </h2>
 
         <div className="settings-row">
@@ -375,8 +419,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   ui: {
                     ...current.ui,
-                    language: event.target.value as InterfaceLanguage
-                  }
+                    language: event.target.value as InterfaceLanguage,
+                  },
                 }))
               }
             >
@@ -404,8 +448,9 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   translation: {
                     ...current.translation,
-                    targetLanguage: event.target.value as AppSettings["translation"]["targetLanguage"]
-                  }
+                    targetLanguage: event.target
+                      .value as AppSettings["translation"]["targetLanguage"],
+                  },
                 }))
               }
             >
@@ -419,7 +464,10 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label={text.sections.audio}>
+      <section
+        className="settings__section settings__section--plain"
+        aria-label={text.sections.audio}
+      >
         <h2 className="settings-group-header" aria-label={text.sections.audio}>
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
@@ -438,7 +486,9 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">{text.sections.audio}</span>
+          <span className="settings-group-header__label">
+            {text.sections.audio}
+          </span>
         </h2>
 
         <div className="settings-row">
@@ -456,8 +506,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   recording: {
                     ...current.recording,
-                    inputDeviceId: deviceId
-                  }
+                    inputDeviceId: deviceId,
+                  },
                 }))
               }
             />
@@ -478,8 +528,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   audio: {
                     ...current.audio,
-                    interactionSounds: checked
-                  }
+                    interactionSounds: checked,
+                  },
                 }))
               }
             />
@@ -500,8 +550,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   audio: {
                     ...current.audio,
-                    muteOtherAudioDuringRecording: checked
-                  }
+                    muteOtherAudioDuringRecording: checked,
+                  },
                 }))
               }
             />
@@ -523,8 +573,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   recording: {
                     ...current.recording,
-                    language: event.target.value as RecordingLanguage
-                  }
+                    language: event.target.value as RecordingLanguage,
+                  },
                 }))
               }
             >
@@ -550,7 +600,10 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                 value={settings.recording.waveformStyle}
                 onChange={(event) =>
                   updateSettings((current) =>
-                    updateWaveformStyle(current, event.target.value as WaveformStyle)
+                    updateWaveformStyle(
+                      current,
+                      event.target.value as WaveformStyle,
+                    ),
                   )
                 }
               >
@@ -560,12 +613,16 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   </option>
                 ))}
               </select>
-              <div className="settings-waveform-preview" aria-label={text.audio.waveformPreview}>
+              <div
+                className="settings-waveform-preview"
+                aria-label={text.audio.waveformPreview}
+              >
                 <WaveformPreview
                   styleName={settings.recording.waveformStyle}
                   label={
                     text.options.waveforms.find(
-                      (option) => option.value === settings.recording.waveformStyle
+                      (option) =>
+                        option.value === settings.recording.waveformStyle,
                     )?.key ?? text.audio.waveformPreview
                   }
                   compact
@@ -576,8 +633,14 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label={text.sections.appBehavior}>
-        <h2 className="settings-group-header" aria-label={text.sections.appBehavior}>
+      <section
+        className="settings__section settings__section--plain"
+        aria-label={text.sections.appBehavior}
+      >
+        <h2
+          className="settings-group-header"
+          aria-label={text.sections.appBehavior}
+        >
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -597,7 +660,9 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">{text.sections.appBehavior}</span>
+          <span className="settings-group-header__label">
+            {text.sections.appBehavior}
+          </span>
         </h2>
 
         <div className="settings-row">
@@ -614,8 +679,8 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
                   ...current,
                   appBehavior: {
                     ...current.appBehavior,
-                    launchAtLogin: checked
-                  }
+                    launchAtLogin: checked,
+                  },
                 }))
               }
             />
@@ -623,8 +688,14 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
         </div>
       </section>
 
-      <section className="settings__section settings__section--plain" aria-label={text.sections.connection}>
-        <h2 className="settings-group-header" aria-label={text.sections.connection}>
+      <section
+        className="settings__section settings__section--plain"
+        aria-label={text.sections.connection}
+      >
+        <h2
+          className="settings-group-header"
+          aria-label={text.sections.connection}
+        >
           <span className="settings-group-header__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
               <path
@@ -643,40 +714,83 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
               />
             </svg>
           </span>
-          <span className="settings-group-header__label">{text.sections.connection}</span>
+          <span className="settings-group-header__label">
+            {text.sections.connection}
+          </span>
         </h2>
-        <ConnectionSettingsFields
-          layout="page"
-          settings={settings}
-          language={settings.ui.language}
-          onSettingsChange={updateSettings}
-          wsTestResult={wsTest}
-          llmTestResult={llmTest}
-          wsTestButton={
-            <button
-              type="button"
-              className="settings__btn settings__btn--compact"
-              disabled={wsTest.state === "testing" || Boolean(connectionError)}
-              onClick={() => void handleTestWs()}
-            >
-              {renderLocalizedTestLabel(text.connection.wsTest, wsTest.state, text)}
-            </button>
-          }
-          llmTestButton={
-            <button
-              type="button"
-              className="settings__btn settings__btn--compact"
-              disabled={llmTest.state === "testing" || Boolean(connectionError)}
-              onClick={() => void handleTestLlm()}
-            >
-              {renderLocalizedTestLabel(text.connection.apiTest, llmTest.state, text)}
-            </button>
-          }
-        />
+        <div className="settings-row">
+          <div className="settings-row__text">
+            <strong>{text.connection.developerMode}</strong>
+            <small>{text.connection.developerModeDescription}</small>
+          </div>
+          <div className="settings-row__control">
+            <SettingsSwitch
+              checked={developerModeEnabled}
+              label={text.connection.developerMode}
+              onChange={(checked) =>
+                updateSettings((current) => ({
+                  ...current,
+                  developer: {
+                    ...current.developer,
+                    enabled: checked,
+                  },
+                }))
+              }
+            />
+          </div>
+        </div>
+        {developerModeEnabled ? (
+          <ConnectionSettingsFields
+            layout="page"
+            settings={settings}
+            language={settings.ui.language}
+            onSettingsChange={updateSettings}
+            wsTestResult={wsTest}
+            llmTestResult={llmTest}
+            wsTestButton={
+              <button
+                type="button"
+                className="settings__btn settings__btn--compact"
+                disabled={
+                  wsTest.state === "testing" || Boolean(connectionError)
+                }
+                onClick={() => void handleTestWs()}
+              >
+                {renderLocalizedTestLabel(
+                  text.connection.wsTest,
+                  wsTest.state,
+                  text,
+                )}
+              </button>
+            }
+            llmTestButton={
+              <button
+                type="button"
+                className="settings__btn settings__btn--compact"
+                disabled={
+                  llmTest.state === "testing" || Boolean(connectionError)
+                }
+                onClick={() => void handleTestLlm()}
+              >
+                {renderLocalizedTestLabel(
+                  text.connection.apiTest,
+                  llmTest.state,
+                  text,
+                )}
+              </button>
+            }
+          />
+        ) : null}
       </section>
 
-      {connectionError && <p className="settings__hint settings__hint--error">{connectionError}</p>}
-      {saveError && <p className="settings__hint settings__hint--error">{saveError}</p>}
+      {developerModeEnabled && connectionError && (
+        <p className="settings__hint settings__hint--error">
+          {connectionError}
+        </p>
+      )}
+      {saveError && (
+        <p className="settings__hint settings__hint--error">{saveError}</p>
+      )}
     </main>
   );
 }
@@ -684,7 +798,7 @@ export function SettingsPage({ initialSettings }: SettingsPageProps = {}): React
 function renderLocalizedTestLabel(
   base: string,
   state: ConnectionTestStatus["state"],
-  text: SettingsText
+  text: SettingsText,
 ): string {
   switch (state) {
     case "testing":
@@ -701,7 +815,7 @@ function renderLocalizedTestLabel(
 function SettingsSwitch({
   checked,
   label,
-  onChange
+  onChange,
 }: {
   checked: boolean;
   label: string;

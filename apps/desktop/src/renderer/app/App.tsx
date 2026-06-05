@@ -29,10 +29,13 @@ import {
   type VoicePostprocessResultEvent,
   type VoiceTextTarget,
 } from "../features/voice/voiceOperationController";
+import { createVoiceRecorderWorkletUrl } from "../features/recorder/voiceRecorderWorkletUrl";
 import {
   OverlayWindow,
   type ResultOverlayContent,
 } from "../features/overlay/OverlayWindow";
+import { loadRendererAppConfig } from "./appConfig";
+import { createJavaVoiceSessionProvider } from "./javaVoiceSessionProvider";
 import { createConfiguredTranscriptionProvider } from "./transcriptionProviderFactory";
 
 const SNAPSHOT_POLL_INTERVAL_MS = 120;
@@ -218,9 +221,13 @@ export function App(): React.JSX.Element {
       try {
         const bootstrapResponse = await window.voiceAI.bootstrapClient();
         const settings = await window.voiceAI.getSettings();
+        const appConfig = await loadRendererAppConfig();
         if (cancelled) {
           return;
         }
+        console.log(
+          `[voice] renderer config developer.enabled=${settings.developer.enabled} javaVoiceWsUrl=${appConfig.javaVoiceWsUrl}`,
+        );
         setWaveformStyle(settings.recording.waveformStyle);
         setUiLanguage(settings.ui.language);
         bundle = buildController({
@@ -228,6 +235,8 @@ export function App(): React.JSX.Element {
           language: settings.recording.language,
           inputDeviceId: settings.recording.inputDeviceId,
           saveHistory: settings.privacy.saveHistory,
+          developerEnabled: settings.developer.enabled,
+          javaVoiceWsUrl: appConfig.javaVoiceWsUrl,
           postprocessMode: settings.ai.defaultMode,
           postprocessStyle: settings.ai.defaultStyle,
           targetLanguage: settings.translation.targetLanguage,
@@ -291,11 +300,12 @@ export function App(): React.JSX.Element {
       console.log("[voice] 收到 onShortcutHelp");
       showShortcutHelp(payload);
     });
-    const unsubscribeShortcutHelpDismiss =
-      window.voiceAI.onShortcutHelpDismiss(() => {
+    const unsubscribeShortcutHelpDismiss = window.voiceAI.onShortcutHelpDismiss(
+      () => {
         console.log("[voice] 收到 onShortcutHelpDismiss");
         hideShortcutHelp({ reportIdle: true });
-      });
+      },
+    );
 
     let lastReportedState: RecordingState | undefined;
     let lastReportedRecordingLimitWarning = false;
@@ -527,6 +537,8 @@ interface BuildControllerInput {
   language: RecordingLanguage;
   inputDeviceId: string;
   saveHistory: boolean;
+  developerEnabled: boolean;
+  javaVoiceWsUrl: string;
   postprocessMode: PostprocessRequest["mode"];
   postprocessStyle: PostprocessRequest["style"];
   targetLanguage: "zh-CN" | "en-US";
@@ -537,7 +549,10 @@ interface BuildControllerInput {
   onTranscriptionUnavailable(): void;
 }
 
-function getModeHintLabel(mode: RecordingMode, language: InterfaceLanguage): string {
+function getModeHintLabel(
+  mode: RecordingMode,
+  language: InterfaceLanguage,
+): string {
   if (language === "en-US") {
     switch (mode) {
       case "direct":
@@ -627,10 +642,7 @@ function playInteractionTone(frequency: number, volume: number): void {
 }
 
 function buildController(input: BuildControllerInput): ControllerBundle {
-  const workletUrl = new URL(
-    "../features/recorder/audioWorkletProcessor.ts",
-    import.meta.url,
-  ).href;
+  const workletUrl = createVoiceRecorderWorkletUrl();
 
   const recorder = createRecorderService({
     adapter: createBrowserRecorderAdapter({
@@ -640,15 +652,27 @@ function buildController(input: BuildControllerInput): ControllerBundle {
     }),
   });
 
-  const transcriptionProvider: TranscriptionProvider =
-    createConfiguredTranscriptionProvider();
-
-  const postProcessService: PostProcessService = createPostProcessService({
-    backendClient: {
-      postprocess: (request): Promise<PostprocessResult> =>
-        window.voiceAI.postprocess(request),
-    },
-  });
+  let voiceServices: {
+    transcriptionProvider: TranscriptionProvider;
+    postProcessService: PostProcessService;
+  };
+  if (input.developerEnabled) {
+    console.log("[voice] controller using developer ASR/LLM flow");
+    voiceServices = {
+      transcriptionProvider: createConfiguredTranscriptionProvider(),
+      postProcessService: createPostProcessService({
+        backendClient: {
+          postprocess: (request): Promise<PostprocessResult> =>
+            window.voiceAI.postprocess(request),
+        },
+      }),
+    };
+  } else {
+    console.log(
+      `[voice] controller using Java voice gateway url=${input.javaVoiceWsUrl}`,
+    );
+    voiceServices = createJavaVoiceSessionProvider({ url: input.javaVoiceWsUrl });
+  }
 
   const textTarget: VoiceTextTarget = {
     getSelectedText: () => window.voiceAI.getSelectedText(),
@@ -673,8 +697,8 @@ function buildController(input: BuildControllerInput): ControllerBundle {
 
   const controller = createVoiceOperationController({
     recorder,
-    transcriptionProvider,
-    postProcessService,
+    transcriptionProvider: voiceServices.transcriptionProvider,
+    postProcessService: voiceServices.postProcessService,
     textTarget,
     settings: {
       installationId: input.installationId,
@@ -688,6 +712,9 @@ function buildController(input: BuildControllerInput): ControllerBundle {
     },
     getAppContext: () => window.voiceAI.getActiveWindow(),
     onPostprocessResult: input.onPostprocessResult,
+    finalResultBehavior: input.developerEnabled
+      ? "client_postprocess"
+      : "respect_service_action",
     onTranscriptionUnavailable: input.onTranscriptionUnavailable,
     onHistoryRecord: (historyInput) => {
       if (!input.saveHistory) {
@@ -733,6 +760,7 @@ function buildController(input: BuildControllerInput): ControllerBundle {
       unsubscribeToggle();
       unsubscribeLevel();
       controller.dispose();
+      URL.revokeObjectURL(workletUrl);
     },
   };
 }

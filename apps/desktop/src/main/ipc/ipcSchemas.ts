@@ -3,7 +3,7 @@ import type {
   PostprocessMode,
   PostprocessRequest,
   PostprocessStyle,
-  TranscriptionSessionRequest
+  TranscriptionSessionRequest,
 } from "@voice/backend-client";
 import type {
   CreateHistoryRecordInput,
@@ -16,8 +16,9 @@ import type {
   LlmModelConfig,
   RecordingLanguage,
   RecordingMode,
+  UpdateHistoryRecordInput,
   WaveformStyle,
-  WsServerConfig
+  WsServerConfig,
 } from "@voice/shared";
 import { validateShortcut } from "@voice/shared/shortcuts/reservedShortcutPolicy";
 import type { TranscriptionStartInput } from "@voice/ai";
@@ -44,6 +45,8 @@ export interface DeleteHistoryRecordInput {
   id: string;
 }
 
+export type UpdateHistoryRecordIpcInput = UpdateHistoryRecordInput;
+
 export interface ApplyHistoryRetentionInput {
   retention: HistoryRetention;
   now?: string;
@@ -52,7 +55,7 @@ export interface ApplyHistoryRetentionInput {
 const RECORDING_MODES: readonly RecordingMode[] = [
   "direct",
   "processSelection",
-  "translate"
+  "translate",
 ] as const;
 
 const RECORDING_LANGUAGES: readonly RecordingLanguage[] = [
@@ -67,14 +70,18 @@ const RECORDING_LANGUAGES: readonly RecordingLanguage[] = [
   "hindi",
   "indonesia",
   "zh-CN",
-  "en-US"
+  "en-US",
 ] as const;
 
 /**
  * backend-client 的 TranscriptionSession / Postprocess 仅接受下面 3 种语言（与 AppSettings 的 12 种录音语言独立）。
  */
 type BackendLanguage = "auto" | "zh-CN" | "en-US";
-const BACKEND_LANGUAGES: readonly BackendLanguage[] = ["auto", "zh-CN", "en-US"] as const;
+const BACKEND_LANGUAGES: readonly BackendLanguage[] = [
+  "auto",
+  "zh-CN",
+  "en-US",
+] as const;
 
 const POSTPROCESS_MODES: readonly PostprocessMode[] = [
   "direct",
@@ -82,48 +89,60 @@ const POSTPROCESS_MODES: readonly PostprocessMode[] = [
   "formal",
   "translate",
   "summarize",
-  "list"
+  "list",
 ] as const;
 
 const POSTPROCESS_STYLES: readonly PostprocessStyle[] = [
   "natural",
   "formal",
   "concise",
-  "friendly"
+  "friendly",
 ] as const;
 
-const TARGET_LANGUAGES: readonly ("zh-CN" | "en-US")[] = ["zh-CN", "en-US"] as const;
-const BACKEND_MODES: readonly BackendMode[] = ["mock", "staging", "production"] as const;
-const INSERT_STRATEGIES: readonly InsertStrategy[] = ["auto", "clipboard", "native"] as const;
+const TARGET_LANGUAGES: readonly ("zh-CN" | "en-US")[] = [
+  "zh-CN",
+  "en-US",
+] as const;
+const BACKEND_MODES: readonly BackendMode[] = [
+  "mock",
+  "staging",
+  "production",
+] as const;
+const INSERT_STRATEGIES: readonly InsertStrategy[] = [
+  "auto",
+  "clipboard",
+  "native",
+] as const;
 const WAVEFORM_STYLES: readonly WaveformStyle[] = [
   "waveform-sunset",
   "waveform-mono",
-  "waveform-candy"
+  "waveform-candy",
 ] as const;
 const APP_THEMES: readonly ("dark" | "light")[] = ["dark", "light"] as const;
 const INTERFACE_LANGUAGES: readonly ("zh-CN" | "zh-TW" | "en-US")[] = [
   "zh-CN",
   "zh-TW",
-  "en-US"
+  "en-US",
 ] as const;
 const HISTORY_RETENTIONS: readonly HistoryRetention[] = [
   "never",
   "24h",
   "7d",
   "30d",
-  "forever"
+  "forever",
 ] as const;
 const HISTORY_RECORD_STATUSES: readonly HistoryRecordStatus[] = [
   "completed",
   "cancelled",
   "no_audio",
-  "error"
+  "error",
 ] as const;
 const SETTINGS_PATCH_KEYS = [
   "schemaVersion",
   "ui",
   "audio",
   "appBehavior",
+  "developer",
   "backend",
   "ws",
   "llm",
@@ -132,11 +151,15 @@ const SETTINGS_PATCH_KEYS = [
   "recording",
   "ai",
   "privacy",
-  "insertion"
+  "insertion",
 ] as const;
 const UI_PATCH_KEYS = ["theme", "language"] as const;
-const AUDIO_PATCH_KEYS = ["interactionSounds", "muteOtherAudioDuringRecording"] as const;
+const AUDIO_PATCH_KEYS = [
+  "interactionSounds",
+  "muteOtherAudioDuringRecording",
+] as const;
 const APP_BEHAVIOR_PATCH_KEYS = ["launchAtLogin"] as const;
+const DEVELOPER_PATCH_KEYS = ["enabled"] as const;
 const BACKEND_PATCH_KEYS = ["mode", "baseUrl"] as const;
 const WS_PATCH_KEYS = ["servers", "selectedIndex"] as const;
 const LLM_PATCH_KEYS = ["models", "selectedIndex"] as const;
@@ -144,7 +167,7 @@ const SHORTCUT_PATCH_KEYS = [
   "toggleRecording",
   "processSelection",
   "translateDictation",
-  "holdToTalk"
+  "holdToTalk",
 ] as const;
 const TRANSLATION_PATCH_KEYS = ["sourceLanguage", "targetLanguage"] as const;
 const RECORDING_PATCH_KEYS = [
@@ -153,14 +176,18 @@ const RECORDING_PATCH_KEYS = [
   "sampleRate",
   "maxDurationSeconds",
   "silenceStopMs",
-  "waveformStyle"
+  "waveformStyle",
 ] as const;
-const AI_PATCH_KEYS = ["postprocessEnabled", "defaultMode", "defaultStyle"] as const;
+const AI_PATCH_KEYS = [
+  "postprocessEnabled",
+  "defaultMode",
+  "defaultStyle",
+] as const;
 const PRIVACY_PATCH_KEYS = [
   "saveHistory",
   "historyRetention",
   "restoreClipboard",
-  "allowCrashReports"
+  "allowCrashReports",
 ] as const;
 const INSERTION_PATCH_KEYS = ["strategy", "restoreClipboardDelayMs"] as const;
 
@@ -168,19 +195,31 @@ function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
-function hasOnlyKeys(input: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
+function hasOnlyKeys(
+  input: Record<string, unknown>,
+  allowedKeys: readonly string[],
+): boolean {
   return Object.keys(input).every((key) => allowedKeys.includes(key));
 }
 
-function isOptionalString(input: Record<string, unknown>, key: string): boolean {
+function isOptionalString(
+  input: Record<string, unknown>,
+  key: string,
+): boolean {
   return input[key] === undefined || typeof input[key] === "string";
 }
 
-function isOptionalBoolean(input: Record<string, unknown>, key: string): boolean {
+function isOptionalBoolean(
+  input: Record<string, unknown>,
+  key: string,
+): boolean {
   return input[key] === undefined || typeof input[key] === "boolean";
 }
 
-function isOptionalFiniteNumber(input: Record<string, unknown>, key: string): boolean {
+function isOptionalFiniteNumber(
+  input: Record<string, unknown>,
+  key: string,
+): boolean {
   return (
     input[key] === undefined ||
     (typeof input[key] === "number" && Number.isFinite(input[key]))
@@ -190,10 +229,13 @@ function isOptionalFiniteNumber(input: Record<string, unknown>, key: string): bo
 function isOptionalStringEnum<T extends string>(
   input: Record<string, unknown>,
   key: string,
-  values: readonly T[]
+  values: readonly T[],
 ): boolean {
   const value = input[key];
-  return value === undefined || (typeof value === "string" && values.includes(value as T));
+  return (
+    value === undefined ||
+    (typeof value === "string" && values.includes(value as T))
+  );
 }
 
 function isWsServerConfig(input: unknown): input is WsServerConfig {
@@ -216,7 +258,7 @@ function isLlmModelConfig(input: unknown): input is LlmModelConfig {
       "modelName",
       "proxy",
       "proxyUsername",
-      "proxyPassword"
+      "proxyPassword",
     ]) &&
     typeof input.baseUrl === "string" &&
     typeof input.apiKey === "string" &&
@@ -240,6 +282,7 @@ function isSettingsPatch(input: Record<string, unknown>): boolean {
     isUiPatch(input.ui) &&
     isAudioPatch(input.audio) &&
     isAppBehaviorPatch(input.appBehavior) &&
+    isDeveloperPatch(input.developer) &&
     isBackendPatch(input.backend) &&
     isWsPatch(input.ws) &&
     isLlmPatch(input.llm) &&
@@ -281,6 +324,15 @@ function isAppBehaviorPatch(input: unknown): boolean {
   );
 }
 
+function isDeveloperPatch(input: unknown): boolean {
+  return (
+    input === undefined ||
+    (isRecord(input) &&
+      hasOnlyKeys(input, DEVELOPER_PATCH_KEYS) &&
+      isOptionalBoolean(input, "enabled"))
+  );
+}
+
 function isBackendPatch(input: unknown): boolean {
   return (
     input === undefined ||
@@ -297,7 +349,8 @@ function isWsPatch(input: unknown): boolean {
     (isRecord(input) &&
       hasOnlyKeys(input, WS_PATCH_KEYS) &&
       (input.servers === undefined ||
-        (Array.isArray(input.servers) && input.servers.every(isWsServerConfig))) &&
+        (Array.isArray(input.servers) &&
+          input.servers.every(isWsServerConfig))) &&
       isOptionalFiniteNumber(input, "selectedIndex"))
   );
 }
@@ -308,7 +361,8 @@ function isLlmPatch(input: unknown): boolean {
     (isRecord(input) &&
       hasOnlyKeys(input, LLM_PATCH_KEYS) &&
       (input.models === undefined ||
-        (Array.isArray(input.models) && input.models.every(isLlmModelConfig))) &&
+        (Array.isArray(input.models) &&
+          input.models.every(isLlmModelConfig))) &&
       isOptionalFiniteNumber(input, "selectedIndex"))
   );
 }
@@ -325,9 +379,15 @@ function isShortcutsPatch(input: unknown): boolean {
   );
 }
 
-function isOptionalShortcut(input: Record<string, unknown>, key: string): boolean {
+function isOptionalShortcut(
+  input: Record<string, unknown>,
+  key: string,
+): boolean {
   const value = input[key];
-  return value === undefined || (typeof value === "string" && isValidShortcutValue(value));
+  return (
+    value === undefined ||
+    (typeof value === "string" && isValidShortcutValue(value))
+  );
 }
 
 function isValidShortcutValue(value: string): boolean {
@@ -395,7 +455,11 @@ function isInsertionPatch(input: unknown): boolean {
 }
 
 export function parseInsertTextInput(input: unknown): InsertTextInput {
-  if (!isRecord(input) || typeof input.text !== "string" || input.text.trim().length === 0) {
+  if (
+    !isRecord(input) ||
+    typeof input.text !== "string" ||
+    input.text.trim().length === 0
+  ) {
     throw new Error("Insert text is required");
   }
 
@@ -410,7 +474,9 @@ export function parseCopyTextInput(input: unknown): CopyTextInput {
   return { text: input.text };
 }
 
-export function parseReplaceSelectedTextInput(input: unknown): ReplaceSelectedTextInput {
+export function parseReplaceSelectedTextInput(
+  input: unknown,
+): ReplaceSelectedTextInput {
   const { text } = parseInsertTextInput(input);
 
   if (!isRecord(input)) {
@@ -418,7 +484,10 @@ export function parseReplaceSelectedTextInput(input: unknown): ReplaceSelectedTe
   }
 
   const expectedSelectedText = input.expectedSelectedText;
-  if (expectedSelectedText !== undefined && typeof expectedSelectedText !== "string") {
+  if (
+    expectedSelectedText !== undefined &&
+    typeof expectedSelectedText !== "string"
+  ) {
     throw new Error("Expected selected text must be a string when provided");
   }
 
@@ -435,7 +504,10 @@ export function parseStartRecordingInput(input: unknown): StartRecordingInput {
   }
 
   const mode = input.mode;
-  if (typeof mode !== "string" || !RECORDING_MODES.includes(mode as RecordingMode)) {
+  if (
+    typeof mode !== "string" ||
+    !RECORDING_MODES.includes(mode as RecordingMode)
+  ) {
     throw new Error("Start recording input requires a valid mode");
   }
 
@@ -444,7 +516,10 @@ export function parseStartRecordingInput(input: unknown): StartRecordingInput {
     throw new Error("Selected text must be a string when provided");
   }
 
-  if (mode === "processSelection" && (selectedText === undefined || selectedText.length === 0)) {
+  if (
+    mode === "processSelection" &&
+    (selectedText === undefined || selectedText.length === 0)
+  ) {
     // 允许主进程在后续从原生 helper 补充，但必须在 handler 内实际校验
   }
 
@@ -468,13 +543,16 @@ export function parseSettingsPatchInput(input: unknown): AppSettingsPatch {
 }
 
 export function parseCreateTranscriptionSessionInput(
-  input: unknown
+  input: unknown,
 ): TranscriptionSessionRequest {
   if (!isRecord(input)) {
     throw new Error("Transcription session input must be an object");
   }
 
-  if (typeof input.installationId !== "string" || input.installationId.length === 0) {
+  if (
+    typeof input.installationId !== "string" ||
+    input.installationId.length === 0
+  ) {
     throw new Error("Transcription session input requires installationId");
   }
   if (input.mode !== "realtime") {
@@ -498,17 +576,20 @@ export function parseCreateTranscriptionSessionInput(
     mode: "realtime",
     language: input.language as BackendLanguage,
     audioFormat: "pcm16",
-    sampleRate: 16000
+    sampleRate: 16000,
   };
 }
 
 export function parseTranscriptionStartInput(
-  input: unknown
+  input: unknown,
 ): TranscriptionStartInput {
   if (!isRecord(input)) {
     throw new Error("Transcription start input must be an object");
   }
-  if (typeof input.installationId !== "string" || input.installationId.length === 0) {
+  if (
+    typeof input.installationId !== "string" ||
+    input.installationId.length === 0
+  ) {
     throw new Error("Transcription start input requires installationId");
   }
   if (
@@ -524,7 +605,7 @@ export function parseTranscriptionStartInput(
   return {
     installationId: input.installationId,
     language: input.language as RecordingLanguage,
-    sampleRate: 16000
+    sampleRate: 16000,
   };
 }
 
@@ -538,7 +619,10 @@ export function parseAudioFrameInput(input: unknown): AudioFrame {
   if (input.sampleRate !== 16000) {
     throw new Error("Audio frame input requires sampleRate=16000");
   }
-  if (typeof input.timestampMs !== "number" || !Number.isFinite(input.timestampMs)) {
+  if (
+    typeof input.timestampMs !== "number" ||
+    !Number.isFinite(input.timestampMs)
+  ) {
     throw new Error("Audio frame input requires timestampMs");
   }
   if (typeof input.rms !== "number" || !Number.isFinite(input.rms)) {
@@ -549,20 +633,27 @@ export function parseAudioFrameInput(input: unknown): AudioFrame {
     pcm: input.pcm,
     sampleRate: 16000,
     timestampMs: input.timestampMs,
-    rms: input.rms
+    rms: input.rms,
   };
 }
 
 export function parseCreateHistoryRecordInput(
-  input: unknown
+  input: unknown,
 ): CreateHistoryRecordInput {
   if (!isRecord(input)) {
     throw new Error("History record input must be an object");
   }
-  if (typeof input.startedAt !== "string" || Number.isNaN(Date.parse(input.startedAt))) {
+  if (
+    typeof input.startedAt !== "string" ||
+    Number.isNaN(Date.parse(input.startedAt))
+  ) {
     throw new Error("History record input requires startedAt");
   }
-  if (typeof input.durationMs !== "number" || !Number.isFinite(input.durationMs) || input.durationMs < 0) {
+  if (
+    typeof input.durationMs !== "number" ||
+    !Number.isFinite(input.durationMs) ||
+    input.durationMs < 0
+  ) {
     throw new Error("History record input requires durationMs");
   }
   if (
@@ -583,11 +674,21 @@ export function parseCreateHistoryRecordInput(
   if (typeof input.finalText !== "string") {
     throw new Error("History record input requires finalText");
   }
-  if (input.selectedText !== undefined && typeof input.selectedText !== "string") {
-    throw new Error("History record selectedText must be a string when provided");
+  if (
+    input.selectedText !== undefined &&
+    typeof input.selectedText !== "string"
+  ) {
+    throw new Error(
+      "History record selectedText must be a string when provided",
+    );
   }
-  if (input.errorMessage !== undefined && typeof input.errorMessage !== "string") {
-    throw new Error("History record errorMessage must be a string when provided");
+  if (
+    input.errorMessage !== undefined &&
+    typeof input.errorMessage !== "string"
+  ) {
+    throw new Error(
+      "History record errorMessage must be a string when provided",
+    );
   }
 
   const result: CreateHistoryRecordInput = {
@@ -596,7 +697,7 @@ export function parseCreateHistoryRecordInput(
     mode: input.mode as RecordingMode,
     status: input.status as HistoryRecordStatus,
     transcript: input.transcript,
-    finalText: input.finalText
+    finalText: input.finalText,
   };
 
   if (input.selectedText !== undefined) {
@@ -617,17 +718,38 @@ export function parseCreateHistoryRecordInput(
     }
     result.audio = {
       pcm: input.audio.pcm,
-      sampleRate: 16000
+      sampleRate: 16000,
     };
   }
 
   return result;
 }
 
+export function parseUpdateHistoryRecordInput(
+  input: unknown,
+): UpdateHistoryRecordInput {
+  if (
+    !isRecord(input) ||
+    typeof input.id !== "string" ||
+    input.id.trim().length === 0
+  ) {
+    throw new Error("Update history record input requires id");
+  }
+
+  return {
+    id: input.id,
+    ...parseCreateHistoryRecordInput(input),
+  };
+}
+
 export function parseDeleteHistoryRecordInput(
-  input: unknown
+  input: unknown,
 ): DeleteHistoryRecordInput {
-  if (!isRecord(input) || typeof input.id !== "string" || input.id.trim().length === 0) {
+  if (
+    !isRecord(input) ||
+    typeof input.id !== "string" ||
+    input.id.trim().length === 0
+  ) {
     throw new Error("Delete history record input requires id");
   }
 
@@ -635,7 +757,7 @@ export function parseDeleteHistoryRecordInput(
 }
 
 export function parseApplyHistoryRetentionInput(
-  input: unknown
+  input: unknown,
 ): ApplyHistoryRetentionInput {
   if (!isRecord(input)) {
     throw new Error("Apply history retention input must be an object");
@@ -649,11 +771,13 @@ export function parseApplyHistoryRetentionInput(
   }
 
   const result: ApplyHistoryRetentionInput = {
-    retention: input.retention as HistoryRetention
+    retention: input.retention as HistoryRetention,
   };
   if (input.now !== undefined) {
     if (typeof input.now !== "string" || Number.isNaN(Date.parse(input.now))) {
-      throw new Error("Apply history retention input requires a valid now timestamp");
+      throw new Error(
+        "Apply history retention input requires a valid now timestamp",
+      );
     }
     result.now = input.now;
   }
@@ -664,7 +788,10 @@ export function parsePostprocessInput(input: unknown): PostprocessRequest {
   if (!isRecord(input)) {
     throw new Error("Postprocess input must be an object");
   }
-  if (typeof input.installationId !== "string" || input.installationId.length === 0) {
+  if (
+    typeof input.installationId !== "string" ||
+    input.installationId.length === 0
+  ) {
     throw new Error("Postprocess input requires installationId");
   }
   if (typeof input.rawText !== "string") {
@@ -707,7 +834,8 @@ export function parsePostprocessInput(input: unknown): PostprocessRequest {
     mode: input.mode as PostprocessMode,
     language: input.language as BackendLanguage,
     style: input.style as PostprocessStyle,
-    dictionaryTerms: input.dictionaryTerms as PostprocessRequest["dictionaryTerms"]
+    dictionaryTerms:
+      input.dictionaryTerms as PostprocessRequest["dictionaryTerms"],
   };
 
   if (input.targetLanguage !== undefined) {
@@ -717,7 +845,10 @@ export function parsePostprocessInput(input: unknown): PostprocessRequest {
     ) {
       throw new Error("Postprocess input requires a valid targetLanguage");
     }
-    return { ...base, targetLanguage: input.targetLanguage as "zh-CN" | "en-US" };
+    return {
+      ...base,
+      targetLanguage: input.targetLanguage as "zh-CN" | "en-US",
+    };
   }
 
   return base;
@@ -735,10 +866,16 @@ export function parseTestWebSocketInput(input: unknown): WsServerConfig {
   if (typeof input.proxy === "string" && input.proxy.trim().length > 0) {
     result.proxy = input.proxy;
   }
-  if (typeof input.proxyUsername === "string" && input.proxyUsername.length > 0) {
+  if (
+    typeof input.proxyUsername === "string" &&
+    input.proxyUsername.length > 0
+  ) {
     result.proxyUsername = input.proxyUsername;
   }
-  if (typeof input.proxyPassword === "string" && input.proxyPassword.length > 0) {
+  if (
+    typeof input.proxyPassword === "string" &&
+    input.proxyPassword.length > 0
+  ) {
     result.proxyPassword = input.proxyPassword;
   }
   return result;
@@ -758,15 +895,21 @@ export function parseTestLlmInput(input: unknown): LlmModelConfig {
     modelName:
       typeof input.modelName === "string" && input.modelName.trim().length > 0
         ? input.modelName
-        : "AOSO API"
+        : "AOSO API",
   };
   if (typeof input.proxy === "string" && input.proxy.trim().length > 0) {
     result.proxy = input.proxy;
   }
-  if (typeof input.proxyUsername === "string" && input.proxyUsername.length > 0) {
+  if (
+    typeof input.proxyUsername === "string" &&
+    input.proxyUsername.length > 0
+  ) {
     result.proxyUsername = input.proxyUsername;
   }
-  if (typeof input.proxyPassword === "string" && input.proxyPassword.length > 0) {
+  if (
+    typeof input.proxyPassword === "string" &&
+    input.proxyPassword.length > 0
+  ) {
     result.proxyPassword = input.proxyPassword;
   }
   return result;

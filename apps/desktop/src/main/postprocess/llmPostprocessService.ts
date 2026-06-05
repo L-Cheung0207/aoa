@@ -1,6 +1,7 @@
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 import type { PostprocessRequest, PostprocessResult } from "@voice/backend-client";
 import type { AppSettings, LlmModelConfig } from "@voice/shared";
+import { logHttpRequest } from "../log/requestLog";
 
 export interface LlmChatMessage {
   role: "system" | "user" | "assistant";
@@ -68,6 +69,7 @@ export interface CreateAosoPostprocessClientOptions {
 }
 
 const DEFAULT_LLM_TIMEOUT_MS = 60_000;
+const AOSO_VOICE_PATH = "/aoa_api/voice";
 const THINKING_TRACE_PREFIX_PATTERN =
   /^(?:thinking process|thought process|reasoning|analysis)\s*:/i;
 const FINAL_CONTENT_LABEL_PATTERN = [
@@ -124,10 +126,12 @@ export function createAosoPostprocessClient(
   return {
     postprocess: async ({ config, request }) => {
       const apiRequest = buildAosoRequest(request);
+      const url = buildAosoUrl(config.baseUrl, apiRequest.path);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetchImpl(buildAosoUrl(config.baseUrl, apiRequest.path), {
+        logHttpRequest(url, apiRequest.body);
+        const response = await fetchImpl(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -163,21 +167,24 @@ export function createOpenAiCompatibleChatClient(
 
   return {
     createCompletion: async ({ config, messages }) => {
+      const url = buildChatCompletionsUrl(config.baseUrl);
+      const body = {
+        model: config.modelName,
+        messages,
+        temperature: 0.2,
+        max_tokens: 1200
+      };
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetchImpl(buildChatCompletionsUrl(config.baseUrl), {
+        logHttpRequest(url, body);
+        const response = await fetchImpl(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${config.apiKey}`
           },
-          body: JSON.stringify({
-            model: config.modelName,
-            messages,
-            temperature: 0.2,
-            max_tokens: 1200
-          }),
+          body: JSON.stringify(body),
           signal: controller.signal,
           dispatcher: createDispatcher(config)
         });
@@ -218,7 +225,7 @@ interface AosoApiRequest {
 function buildAosoRequest(request: PostprocessRequest): AosoApiRequest {
   if (request.mode === "translate") {
     return {
-      path: "/aoa_api/voice/translate",
+      path: AOSO_VOICE_PATH,
       body: {
         text: request.rawText,
         language: toAosoTargetLanguage(request.targetLanguage),
@@ -230,7 +237,7 @@ function buildAosoRequest(request: PostprocessRequest): AosoApiRequest {
 
   if (shouldUseTemplateRewrite(request)) {
     return {
-      path: "/aoaapi_ctm/rewrite_by_templete",
+      path: AOSO_VOICE_PATH,
       body: {
         text: buildTemplateInstruction(request),
         text_to_rewrite: request.selectedText || request.rawText,
@@ -241,7 +248,7 @@ function buildAosoRequest(request: PostprocessRequest): AosoApiRequest {
   }
 
   return {
-    path: "/aoaapi_ctm/rewrite",
+    path: AOSO_VOICE_PATH,
     body: {
       text: request.rawText,
       stream: false

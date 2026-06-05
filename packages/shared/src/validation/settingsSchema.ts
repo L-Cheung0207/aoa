@@ -10,55 +10,62 @@ export const AOSO_HTTP_BASE_URL = `http://${AOSO_SERVER_HOST}`;
 /** 内置 ASR 语音识别 WebSocket（与 AOSO 后处理 HTTP API 无关）。 */
 export const BUNDLED_ASR_WS_URL =
   "wss://aiapi.ctmcloud.com.mo:8443/Others/websocket-uat2/ws";
+export const JAVA_VOICE_WS_URL =
+  "ws://172.27.209.114:8095/aoa_api/voice/transcribe";
 
 /** 误将 ASR 指到 AOSO 同机 WS 时的地址，启动时还原为内置 ASR。 */
 export const MISCONFIGURED_AOSO_ASR_WS_URL = `ws://${AOSO_SERVER_HOST}/ws/transcribe`;
 
-export function createDefaultSettings(options: DefaultSettingsOptions): AppSettings {
+export function createDefaultSettings(
+  options: DefaultSettingsOptions,
+): AppSettings {
   return {
     schemaVersion: 1,
     ui: {
       theme: "dark",
-      language: "zh-CN"
+      language: "zh-CN",
     },
     audio: {
       interactionSounds: true,
-      muteOtherAudioDuringRecording: true
+      muteOtherAudioDuringRecording: true,
     },
     appBehavior: {
-      launchAtLogin: true
+      launchAtLogin: true,
+    },
+    developer: {
+      enabled: false,
     },
     backend: {
       mode: options.isPackaged ? "production" : "mock",
-      baseUrl: "http://127.0.0.1:8787"
+      baseUrl: "http://127.0.0.1:8787",
     },
     ws: {
       servers: [
         {
-          url: BUNDLED_ASR_WS_URL
-        }
+          url: BUNDLED_ASR_WS_URL,
+        },
       ],
-      selectedIndex: 0
+      selectedIndex: 0,
     },
     llm: {
       models: [
         {
           baseUrl: AOSO_HTTP_BASE_URL,
           apiKey: "unused",
-          modelName: "AOSO API"
-        }
+          modelName: "AOSO API",
+        },
       ],
-      selectedIndex: 0
+      selectedIndex: 0,
     },
     shortcuts: {
       toggleRecording: "RightAlt",
       processSelection: "RightAlt+Space",
       translateDictation: "RightAlt+RightShift",
-      holdToTalk: ""
+      holdToTalk: "",
     },
     translation: {
       sourceLanguage: "auto",
-      targetLanguage: "en-US"
+      targetLanguage: "en-US",
     },
     recording: {
       language: "cantonese",
@@ -66,35 +73,39 @@ export function createDefaultSettings(options: DefaultSettingsOptions): AppSetti
       sampleRate: 16000,
       maxDurationSeconds: 60,
       silenceStopMs: 900,
-      waveformStyle: "waveform-sunset"
+      waveformStyle: "waveform-sunset",
     },
     ai: {
       postprocessEnabled: true,
       defaultMode: "clean",
-      defaultStyle: "natural"
+      defaultStyle: "natural",
     },
     privacy: {
       saveHistory: true,
       historyRetention: "forever",
       restoreClipboard: true,
-      allowCrashReports: false
+      allowCrashReports: false,
     },
     insertion: {
       strategy: "auto",
-      restoreClipboardDelayMs: 250
-    }
+      restoreClipboardDelayMs: 250,
+    },
   };
 }
 
 export function mergeSettingsPatch(
   settings: AppSettings,
-  patch: AppSettingsPatch
+  patch: AppSettingsPatch,
 ): AppSettings {
+  const currentDeveloper = settings.developer ?? { enabled: false };
   const privacyPatch = patch.privacy;
-  const mergedPrivacy = normalizePrivacySettings({
-    ...settings.privacy,
-    ...privacyPatch
-  }, privacyPatch);
+  const mergedPrivacy = normalizePrivacySettings(
+    {
+      ...settings.privacy,
+      ...privacyPatch,
+    },
+    privacyPatch,
+  );
 
   return {
     ...settings,
@@ -102,6 +113,7 @@ export function mergeSettingsPatch(
     ui: { ...settings.ui, ...patch.ui },
     audio: { ...settings.audio, ...patch.audio },
     appBehavior: { ...settings.appBehavior, ...patch.appBehavior },
+    developer: { ...currentDeveloper, ...patch.developer },
     backend: { ...settings.backend, ...patch.backend },
     ws: { ...settings.ws, ...patch.ws },
     llm: { ...settings.llm, ...patch.llm },
@@ -110,13 +122,13 @@ export function mergeSettingsPatch(
     recording: { ...settings.recording, ...patch.recording },
     ai: { ...settings.ai, ...patch.ai },
     privacy: mergedPrivacy,
-    insertion: { ...settings.insertion, ...patch.insertion }
+    insertion: { ...settings.insertion, ...patch.insertion },
   };
 }
 
 function normalizePrivacySettings(
   privacy: AppSettings["privacy"],
-  patch?: Partial<AppSettings["privacy"]>
+  patch?: Partial<AppSettings["privacy"]>,
 ): AppSettings["privacy"] {
   const historyRetention =
     patch?.historyRetention ??
@@ -124,11 +136,12 @@ function normalizePrivacySettings(
       ? "never"
       : patch?.saveHistory === true
         ? "forever"
-        : (privacy.historyRetention ?? (privacy.saveHistory ? "forever" : "never")));
+        : (privacy.historyRetention ??
+          (privacy.saveHistory ? "forever" : "never")));
   return {
     ...privacy,
     historyRetention,
-    saveHistory: historyRetention !== "never"
+    saveHistory: historyRetention !== "never",
   };
 }
 
@@ -143,6 +156,7 @@ export function isAppSettings(input: unknown): input is AppSettings {
     (!("ui" in input) || hasObject(input, "ui")) &&
     (!("audio" in input) || hasObject(input, "audio")) &&
     (!("appBehavior" in input) || hasObject(input, "appBehavior")) &&
+    (!("developer" in input) || hasObject(input, "developer")) &&
     hasObject(input, "backend") &&
     hasObject(input, "ws") &&
     hasObject(input, "llm") &&

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AppSettings,
   HistoryRecord,
@@ -33,12 +33,14 @@ export function HistoryPage({
   const [error, setError] = useState<string | undefined>(undefined);
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [downloadingIds, setDownloadingIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [retryingIds, setRetryingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [retryingRecordId, setRetryingRecordId] = useState<string | undefined>(undefined);
+  const [toastMessage, setToastMessage] = useState<string | undefined>(undefined);
   const [pendingDeleteRecord, setPendingDeleteRecord] = useState<HistoryRecord | undefined>(undefined);
   const [answerRecord, setAnswerRecord] = useState<HistoryRecord | undefined>(undefined);
   const [historyRetention, setHistoryRetention] = useState<HistoryRetention>("forever");
   const [pendingRetention, setPendingRetention] = useState<HistoryRetention | undefined>(undefined);
   const [applyingRetention, setApplyingRetention] = useState(false);
+  const retryInFlightRef = useRef(false);
   const now = initialNow ?? new Date();
 
   useEffect(() => {
@@ -111,6 +113,17 @@ export function HistoryPage({
     [language, now, visibleRecords]
   );
   const selectedRetention = pendingRetention ?? historyRetention;
+  const isRetrying = retryingRecordId !== undefined;
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setToastMessage(undefined), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
+
   const handleConfirmDelete = async (): Promise<void> => {
     const id = pendingDeleteRecord?.id;
     if (!id) {
@@ -180,22 +193,22 @@ export function HistoryPage({
     }
   };
   const handleRetry = async (record: HistoryRecord): Promise<void> => {
-    if (!record.audio || retryingIds.has(record.id)) {
+    if (!record.audio || retryInFlightRef.current || isRetrying) {
       return;
     }
-    setRetryingIds((current) => new Set(current).add(record.id));
+    retryInFlightRef.current = true;
+    setRetryingRecordId(record.id);
+    setToastMessage(undefined);
     setError(undefined);
     try {
       const retryRecord = await retryHistoryRecord(record);
       setRecords((current) => upsertHistoryRecord(current, retryRecord));
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : String(retryError));
+      console.warn("[history] retry failed", retryError);
+      setToastMessage(text.retryFailed);
     } finally {
-      setRetryingIds((current) => {
-        const next = new Set(current);
-        next.delete(record.id);
-        return next;
-      });
+      retryInFlightRef.current = false;
+      setRetryingRecordId(undefined);
     }
   };
 
@@ -276,7 +289,8 @@ export function HistoryPage({
                     record={record}
                     deleting={deletingIds.has(record.id)}
                     downloading={downloadingIds.has(record.id)}
-                    retrying={retryingIds.has(record.id)}
+                    retrying={retryingRecordId === record.id}
+                    retryDisabled={isRetrying && retryingRecordId !== record.id}
                     text={text}
                     onDownload={handleDownload}
                     onRequestDelete={setPendingDeleteRecord}
@@ -315,6 +329,11 @@ export function HistoryPage({
           onClose={() => setAnswerRecord(undefined)}
         />
       ) : null}
+      {toastMessage ? (
+        <div className="history-toast history-toast--error" role="status">
+          {toastMessage}
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -350,6 +369,7 @@ function HistoryRecordRow({
   onRequestDelete,
   onRetry,
   onViewAnswer,
+  retryDisabled,
   retrying,
   record,
   text
@@ -360,6 +380,7 @@ function HistoryRecordRow({
   onRequestDelete(record: HistoryRecord): void;
   onRetry(record: HistoryRecord): Promise<void>;
   onViewAnswer(record: HistoryRecord): void;
+  retryDisabled: boolean;
   retrying: boolean;
   record: HistoryRecord;
   text: HistoryText;
@@ -368,6 +389,7 @@ function HistoryRecordRow({
   const answerText = getHistoryRecordAnswerText(record);
   const canViewAnswer = record.mode === "processSelection" && answerText.length > 0;
   const canRetry = record.audio !== undefined;
+  const retryLabel = retrying || retryDisabled ? text.retrying : canRetry ? text.retry : text.retryNoAudio;
 
   return (
     <article className="history-row">
@@ -391,14 +413,15 @@ function HistoryRecordRow({
           <button
             className="history-row__icon-button"
             type="button"
-            aria-label={retrying ? text.retrying : canRetry ? text.retry : text.retryNoAudio}
-            title={retrying ? text.retrying : canRetry ? text.retry : text.retryNoAudio}
-            disabled={!canRetry || retrying}
+            aria-label={retryLabel}
+            title={retryLabel}
+            aria-busy={retrying}
+            disabled={!canRetry || retrying || retryDisabled}
             onClick={() => {
               void onRetry(record);
             }}
           >
-            {retrying ? <span>...</span> : <RetryIcon />}
+            {retrying ? <span className="history-row__spinner" aria-hidden="true" /> : <RetryIcon />}
           </button>
         ) : null}
         {record.audio ? (

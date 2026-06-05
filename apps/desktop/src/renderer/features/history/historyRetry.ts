@@ -44,9 +44,8 @@ export async function retryHistoryRecord(record: HistoryRecord): Promise<History
     selectedText: record.selectedText ?? "",
     settings
   });
-  const startedAt = new Date().toISOString();
   const input: CreateHistoryRecordInput = {
-    startedAt,
+    startedAt: record.startedAt,
     durationMs: record.audio.durationMs || (pcm.length / PCM16_SAMPLE_RATE) * 1000,
     mode: record.mode,
     status: transcript.trim() ? "completed" : "no_audio",
@@ -61,7 +60,10 @@ export async function retryHistoryRecord(record: HistoryRecord): Promise<History
     input.selectedText = record.selectedText;
   }
 
-  return window.voiceAI.createHistoryRecord(input);
+  return window.voiceAI.updateHistoryRecord({
+    id: record.id,
+    ...input
+  });
 }
 
 async function transcribeHistoryAudio(

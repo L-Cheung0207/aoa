@@ -369,6 +369,22 @@
   white-space: nowrap;
 }
 
+.history-row__spinner {
+  width: 14px;
+  height: 14px;
+  margin: 0 auto;
+  border: 2px solid rgba(32, 32, 32, 0.22);
+  border-top-color: #202020;
+  border-radius: 999px;
+  animation: history-spin 0.8s linear infinite;
+}
+
+:root[data-theme="dark"] .history-row__spinner,
+:root:not([data-theme="light"]) .history-row__spinner {
+  border-color: rgba(248, 250, 252, 0.22);
+  border-top-color: rgba(248, 250, 252, 0.88);
+}
+
 .history-row__answer-button {
   min-width: 72px;
   white-space: nowrap;
@@ -635,8 +651,38 @@
   color: #6b7280;
 }
 
+.history-toast {
+  position: fixed;
+  right: 32px;
+  bottom: 28px;
+  z-index: 90;
+  max-width: min(360px, calc(100vw - 48px));
+  padding: 12px 16px;
+  color: #7f1d1d;
+  background: rgba(254, 242, 242, 0.96);
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(127, 29, 29, 0.16);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .history-toast,
+:root:not([data-theme="light"]) .history-toast {
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.92);
+  border-color: rgba(248, 113, 113, 0.24);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+}
+
 .history-empty h2 {
   margin: 0 0 8px;
   color: #111;
   font-size: 18px;
+}
+
+@keyframes history-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

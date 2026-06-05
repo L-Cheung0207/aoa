@@ -3,27 +3,27 @@ export { createPostProcessService } from "./postprocess/PostProcessService";
 export { createRealtimeTranscriptionProvider } from "./transcription/RealtimeTranscriptionProvider";
 export {
   createBrowserTranscriptionSocketFactory,
-  createDefaultTranscriptionProvider
+  createDefaultTranscriptionProvider,
 } from "./transcription/DefaultTranscriptionProvider";
 export { encodePcm16ToBase64 } from "./transcription/transcriptionTypes";
+export type { TranscriptionStartInput } from "./transcription/transcriptionTypes";
 export type {
   PostProcessInput,
   PostProcessOutput,
-  PostProcessService
+  PostProcessService,
 } from "./postprocess/postProcessTypes";
 export type {
   RealtimeSocket,
-  RealtimeSocketFactory
+  RealtimeSocketFactory,
 } from "./transcription/RealtimeTranscriptionProvider";
 export type {
   CreateDefaultTranscriptionProviderOptions,
   DefaultTranscriptionLanguage,
   TranscriptionSocket,
   TranscriptionSocketCloseEvent,
-  TranscriptionSocketFactory
+  TranscriptionSocketFactory,
 } from "./transcription/DefaultTranscriptionProvider";
 export type {
   TranscriptionEvent,
   TranscriptionProvider,
-  TranscriptionStartInput
 } from "./transcription/TranscriptionProvider";

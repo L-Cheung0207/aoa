@@ -1,15 +1,18 @@
-import os, { tmpdir } from "node:os";
+import os, { homedir, tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
   globalShortcut,
   ipcMain,
   nativeTheme,
   safeStorage,
   session,
+  shell,
 } from "electron";
 import ElectronStore from "electron-store";
 import electronUpdater from "electron-updater";
@@ -34,9 +37,18 @@ import {
   createConfigStore,
   type ConfigStorageAdapter,
 } from "./config/configStore";
+import { readAppConfig, resolveAppConfigPath } from "./config/appConfig";
 import { createElectronStoreAdapter } from "./config/electronStoreAdapter";
 import { getOrCreateInstallationId } from "./installation/installationId";
 import { createFileHistoryStore } from "./history/historyStore";
+import { applyPendingInstallOptions, resolvePendingInstallOptionsPath } from "./installer/installOptions";
+import {
+  createInstallerService,
+  resolveInstallerModeMarkerPath,
+  shouldOpenInstallerShell,
+  type InstallerService,
+  type InstallerShellInstallInput,
+} from "./installer/installerService";
 import { createInsertService } from "./insertion/insertService";
 import { registerIpcRoutes } from "./ipc/ipcRoutes";
 import { createNativeBridge } from "./native/nativeBridge";
@@ -66,6 +78,7 @@ import {
   type OverlayWindowLayout,
 } from "./windows/createOverlayWindow";
 import { createHomeWindow } from "./windows/createHomeWindow";
+import { createInstallerWindow } from "./windows/createInstallerWindow";
 import { createUninstallWindow } from "./windows/createUninstallWindow";
 import {
   blockHomeWindowAltSpaceMenu,
@@ -204,9 +217,20 @@ export function applyLaunchAtLogin(launchAtLogin: boolean): void {
 
 const OVERLAY_HIDE_DELAY_MS = 0;
 const SELECTION_COPY_DELAY_MS = 80;
+const INSTALL_TARGET_PRODUCT_NAME = "Voice Assistant";
 
 export async function bootstrap(): Promise<void> {
   registerWindowControlIpc(ipcMain);
+  if (
+    shouldOpenInstallerShell(
+      process.argv,
+      existsSync(resolveInstallerModeMarkerPath(process.resourcesPath)),
+    )
+  ) {
+    registerInstallerOnlyIpc(createAppInstallerService());
+    openInstallerWindow();
+    return;
+  }
   if (shouldOpenUninstallWindow(process.argv)) {
     registerUninstallOnlyIpc(createAppUninstallService());
     openUninstallWindow();
@@ -216,12 +240,32 @@ export async function bootstrap(): Promise<void> {
   console.log("[bootstrap] 啟動中…");
   const electronStore = new ElectronStore();
   const storeAdapter = createElectronStoreAdapter(electronStore);
+  const appConfigPath = resolveAppConfigPath({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+  });
+  console.log(
+    `[bootstrap] runtime packaged=${app.isPackaged} appPath=${app.getAppPath()} resourcesPath=${process.resourcesPath} appConfigPath=${appConfigPath}`,
+  );
   const configStore = createConfigStore({
     adapter: storeAdapter,
     defaults: createDefaultSettings({ isPackaged: app.isPackaged }),
   });
-  applyNativeTheme(configStore.get().ui.theme);
-  applyLaunchAtLogin(configStore.get().appBehavior.launchAtLogin);
+  applyPendingInstallOptions({
+    installOptionsPath: resolvePendingInstallOptionsPath({
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+    }),
+    configStore,
+  });
+  const initialSettings = configStore.get();
+  console.log(
+    `[bootstrap] settings developer.enabled=${initialSettings.developer.enabled} wsUrl=${initialSettings.ws.servers[initialSettings.ws.selectedIndex]?.url ?? ""}`,
+  );
+  applyNativeTheme(initialSettings.ui.theme);
+  applyLaunchAtLogin(initialSettings.appBehavior.launchAtLogin);
   const installationId = getOrCreateInstallationId({ adapter: storeAdapter });
   const backendClient = createMockBackendClient();
   const postprocessService = createLlmPostprocessService({
@@ -294,6 +338,7 @@ export async function bootstrap(): Promise<void> {
       deviceName: os.hostname(),
       appVersion: app.getVersion(),
     },
+    getAppConfig: () => readAppConfig(appConfigPath),
     getInsertTargetWindowHandle: () => insertTargetWindowHandle,
     onSettingsUpdated: (settings) => {
       applyNativeTheme(settings.ui.theme);
@@ -549,10 +594,10 @@ export async function bootstrap(): Promise<void> {
   void updateService.checkForUpdates();
 
   // 托盤圖示：開發態從 app.getAppPath()/resources 讀取；打包後從 process.resourcesPath 讀取，
-  // 需要在 electron-builder 的 extraResources 中把 resources/tray-icon.ico 投放到 resources 目錄。
+  // 需要在 electron-builder 的 extraResources 中把 resources/app-icon.ico 投放到 resources 目錄。
   const trayIconPath = app.isPackaged
-    ? join(process.resourcesPath, "tray-icon.ico")
-    : join(app.getAppPath(), "resources", "tray-icon.ico");
+    ? join(process.resourcesPath, "app-icon.ico")
+    : join(app.getAppPath(), "resources", "app-icon.ico");
   const tray = createTray({
     onOpenHome: () => openHomeWindow(),
     onOpenHistory: () => openHomeWindow({ section: "history" }),
@@ -735,6 +780,14 @@ function createAppUninstallService(): UninstallService {
   });
 }
 
+function createAppInstallerService(): InstallerService {
+  return createInstallerService({
+    productName: INSTALL_TARGET_PRODUCT_NAME,
+    resourcesPath: process.resourcesPath,
+    localAppData: process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
+  });
+}
+
 function registerUninstallOnlyIpc(uninstallService: UninstallService): void {
   ipcMain.handle("voice:perform-uninstall", () =>
     uninstallService.performUninstall(),
@@ -742,6 +795,75 @@ function registerUninstallOnlyIpc(uninstallService: UninstallService): void {
   ipcMain.handle("voice:finish-uninstall", () => {
     app.quit();
     return undefined;
+  });
+}
+
+function registerInstallerOnlyIpc(installerService: InstallerService): void {
+  ipcMain.handle("voice:installer-get-defaults", () =>
+    installerService.getDefaults(),
+  );
+  ipcMain.handle("voice:installer-select-directory", async (_event, input) => {
+    const defaultPath =
+      typeof input === "object" &&
+      input !== null &&
+      "defaultPath" in input &&
+      typeof input.defaultPath === "string"
+        ? input.defaultPath
+        : installerService.getDefaults().installDir;
+    const result = await dialog.showOpenDialog({
+      title: "选择安装位置",
+      defaultPath,
+      properties: ["openDirectory", "createDirectory"],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true as const };
+    }
+
+    return {
+      canceled: false as const,
+      installDir: installerService.normalizeInstallDir(result.filePaths[0] ?? defaultPath),
+    };
+  });
+  ipcMain.handle("voice:installer-install", (_event, input) => {
+    return installerService.install(parseInstallerShellInstallInput(input));
+  });
+  ipcMain.handle("voice:installer-launch", (_event, input) => {
+    const installDir =
+      typeof input === "object" &&
+      input !== null &&
+      "installDir" in input &&
+      typeof input.installDir === "string"
+        ? input.installDir
+        : installerService.getDefaults().installDir;
+    void shell.openPath(join(installDir, `${INSTALL_TARGET_PRODUCT_NAME}.exe`));
+    app.quit();
+    return undefined;
+  });
+}
+
+function parseInstallerShellInstallInput(
+  input: unknown,
+): InstallerShellInstallInput {
+  if (typeof input !== "object" || input === null) {
+    throw new Error("Installer input must be an object");
+  }
+  const candidate = input as Partial<InstallerShellInstallInput>;
+  if (typeof candidate.installDir !== "string" || !candidate.installDir.trim()) {
+    throw new Error("Installer input requires installDir");
+  }
+  return {
+    installDir: candidate.installDir,
+    createDesktopShortcut: candidate.createDesktopShortcut !== false,
+    launchAtLogin: candidate.launchAtLogin !== false,
+  };
+}
+
+function openInstallerWindow(): void {
+  const installerWindow = createInstallerWindow();
+  installerWindow.once("ready-to-show", () => {
+    installerWindow.show();
+    installerWindow.focus();
   });
 }
 

@@ -20,8 +20,10 @@ files:
   - "!node_modules/@voice/db/**"
 
 extraResources:
-  - from: resources/tray-icon.ico
-    to: tray-icon.ico
+  - from: resources/app-icon.ico
+    to: app-icon.ico
+  - from: src/renderer/public/config.json
+    to: config.json
   - from: ../../packages/native-helper/dist/voice_native_helper.node
     to: voice_native_helper.node
 
@@ -31,7 +33,7 @@ win:
     - target: nsis
       arch:
         - x64
-  icon: resources/tray-icon.ico
+  icon: resources/app-icon.ico
 
 nsis:
   oneClick: false

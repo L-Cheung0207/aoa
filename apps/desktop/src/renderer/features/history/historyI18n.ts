@@ -19,6 +19,7 @@ export interface HistoryText {
   viewAnswer: string;
   retrying: string;
   retry: string;
+  retryFailed: string;
   retryNoAudio: string;
   downloading: string;
   downloadAudio: string;
@@ -65,6 +66,7 @@ const HISTORY_TEXT: Record<InterfaceLanguage, HistoryText> = {
     viewAnswer: "查看答案",
     retrying: "重试中",
     retry: "重试",
+    retryFailed: "重试失败，请稍后再试。",
     retryNoAudio: "没有音频，无法重试",
     downloading: "下载中",
     downloadAudio: "下载音频",
@@ -126,6 +128,7 @@ const HISTORY_TEXT: Record<InterfaceLanguage, HistoryText> = {
     viewAnswer: "檢視答案",
     retrying: "重試中",
     retry: "重試",
+    retryFailed: "重試失敗，請稍後再試。",
     retryNoAudio: "沒有音訊，無法重試",
     downloading: "下載中",
     downloadAudio: "下載音訊",
@@ -187,6 +190,7 @@ const HISTORY_TEXT: Record<InterfaceLanguage, HistoryText> = {
     viewAnswer: "View Answer",
     retrying: "Retrying",
     retry: "Retry",
+    retryFailed: "Retry failed. Please try again later.",
     retryNoAudio: "No audio to retry",
     downloading: "Downloading",
     downloadAudio: "Download Audio",

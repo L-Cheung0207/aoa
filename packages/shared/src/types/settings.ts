@@ -85,6 +85,9 @@ export interface AppSettings {
   appBehavior: {
     launchAtLogin: boolean;
   };
+  developer: {
+    enabled: boolean;
+  };
   backend: {
     mode: BackendMode;
     baseUrl: string;
