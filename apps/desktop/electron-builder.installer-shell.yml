@@ -34,4 +34,4 @@ win:
   icon: resources/app-icon.ico
 
 portable:
-  artifactName: "${productName} ${version}.${ext}"
+  artifactName: "Voice Assistant Setup ${version}.${ext}"

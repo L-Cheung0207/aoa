@@ -3,6 +3,7 @@
 !define VOICE_UNINSTALL_REGISTRY_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}"
 !define VOICE_UNINSTALL_FILENAME "Uninstall ${PRODUCT_FILENAME}.exe"
 
+!ifndef BUILD_UNINSTALLER
 Var VoiceCreateDesktopShortcut
 Var VoiceLaunchAtLogin
 
@@ -74,6 +75,7 @@ voice_check_done:
   ${EndIf}
   Call VoiceWriteInstallOptions
 !macroend
+!endif
 
 !macro customUnInit
   ${IfNot} ${Silent}
@@ -88,6 +90,7 @@ voice_check_done:
   Delete "$SMSTARTUP\${SHORTCUT_NAME}.lnk"
 !macroend
 
+!ifndef BUILD_UNINSTALLER
 Function VoiceReadShellOptions
   ReadEnvStr $0 "VOICE_CREATE_DESKTOP_SHORTCUT"
   ${If} $0 == "0"
@@ -116,7 +119,9 @@ Function VoiceWriteInstallOptions
 
 voice_write_install_options_done:
 FunctionEnd
+!endif
 
+!ifndef BUILD_UNINSTALLER
 Function VoiceRepairLegacyUninstallRegistry
   Push $0
   Push $1
@@ -137,3 +142,4 @@ voice_repair_done:
   Pop $1
   Pop $0
 FunctionEnd
+!endif

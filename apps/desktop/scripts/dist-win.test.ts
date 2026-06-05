@@ -1,7 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createDistWinCommands, resolveInstallerPayloadSetupPath } from "./dist-win.mjs";
+import {
+  createDistWinCommands,
+  createInstallerShellCommands,
+  removeLegacyInstallerShellArtifacts,
+  resolveInstallerPayloadSetupPath,
+} from "./dist-win.mjs";
 
 describe("desktop Windows distribution script", () => {
   it("builds the native helper before packaging the Electron app", () => {
@@ -41,6 +46,11 @@ describe("desktop Windows distribution script", () => {
         ],
         cwd: packageRoot,
       },
+      {
+        command: "node",
+        args: ["scripts/dist-win.mjs", "--remove-legacy-installer-shell-artifacts"],
+        cwd: packageRoot,
+      },
     ]);
   });
 
@@ -59,5 +69,44 @@ describe("desktop Windows distribution script", () => {
         readPackageJson: () => '{"version":"2.3.4"}',
       }),
     ).toBe(join("C:/app", "dist-electron", "Voice Assistant Setup 2.3.4.exe"));
+  });
+
+  it("can build only the outer installer shell when the payload is already prepared", () => {
+    const scriptUrl = new URL("./dist-win.mjs", import.meta.url);
+    const packageRoot = fileURLToPath(new URL("..", scriptUrl));
+
+    expect(createInstallerShellCommands(scriptUrl)).toEqual([
+      {
+        command: "electron-builder",
+        args: [
+          "--win",
+          "portable",
+          "--config",
+          "electron-builder.installer-shell.yml",
+        ],
+        cwd: packageRoot,
+      },
+    ]);
+  });
+
+  it("removes stale outer installer artifacts that used the old file name", () => {
+    const removed: string[] = [];
+    removeLegacyInstallerShellArtifacts("C:/app", {
+      readdirSync: () => [
+        "Voice Assistant Installer 0.1.0.exe",
+        "Voice Assistant Installer 0.1.0.exe.blockmap",
+        "Voice Assistant Setup 0.1.0.exe",
+      ],
+      rmSync: (path: string) => removed.push(path),
+    });
+
+    expect(removed).toEqual([
+      join("C:/app", "dist-electron", "Voice Assistant Installer 0.1.0.exe"),
+      join(
+        "C:/app",
+        "dist-electron",
+        "Voice Assistant Installer 0.1.0.exe.blockmap",
+      ),
+    ]);
   });
 });
