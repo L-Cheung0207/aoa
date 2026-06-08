@@ -11,7 +11,7 @@ export const AOSO_HTTP_BASE_URL = `http://${AOSO_SERVER_HOST}`;
 export const BUNDLED_ASR_WS_URL =
   "wss://aiapi.ctmcloud.com.mo:8443/Others/websocket-uat2/ws";
 export const JAVA_VOICE_WS_URL =
-  "ws://172.27.209.114:8095/aoa_api/voice/transcribe";
+  "ws://172.27.209.114:8095/aoa_api/voice";
 
 /** 误将 ASR 指到 AOSO 同机 WS 时的地址，启动时还原为内置 ASR。 */
 export const MISCONFIGURED_AOSO_ASR_WS_URL = `ws://${AOSO_SERVER_HOST}/ws/transcribe`;

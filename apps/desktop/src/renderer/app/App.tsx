@@ -36,7 +36,11 @@ import {
 } from "../features/overlay/OverlayWindow";
 import { loadRendererAppConfig } from "./appConfig";
 import { createJavaVoiceSessionProvider } from "./javaVoiceSessionProvider";
-import { createConfiguredTranscriptionProvider } from "./transcriptionProviderFactory";
+import {
+  createConfiguredTranscriptionProvider,
+  resolveSelectedWsServer,
+} from "./transcriptionProviderFactory";
+import { selectVoiceService } from "./voiceServiceSelection";
 
 const SNAPSHOT_POLL_INTERVAL_MS = 120;
 const MODE_HINT_VISIBLE_MS = 2000;
@@ -236,6 +240,7 @@ export function App(): React.JSX.Element {
           inputDeviceId: settings.recording.inputDeviceId,
           saveHistory: settings.privacy.saveHistory,
           developerEnabled: settings.developer.enabled,
+          developerWsUrl: resolveSelectedWsServer(settings.ws)?.url,
           javaVoiceWsUrl: appConfig.javaVoiceWsUrl,
           postprocessMode: settings.ai.defaultMode,
           postprocessStyle: settings.ai.defaultStyle,
@@ -538,6 +543,7 @@ interface BuildControllerInput {
   inputDeviceId: string;
   saveHistory: boolean;
   developerEnabled: boolean;
+  developerWsUrl: string | undefined;
   javaVoiceWsUrl: string;
   postprocessMode: PostprocessRequest["mode"];
   postprocessStyle: PostprocessRequest["style"];
@@ -656,7 +662,12 @@ function buildController(input: BuildControllerInput): ControllerBundle {
     transcriptionProvider: TranscriptionProvider;
     postProcessService: PostProcessService;
   };
-  if (input.developerEnabled) {
+  const voiceService = selectVoiceService({
+    developerEnabled: input.developerEnabled,
+    developerWsUrl: input.developerWsUrl,
+    javaVoiceWsUrl: input.javaVoiceWsUrl,
+  });
+  if (voiceService.kind === "developer") {
     console.log("[voice] controller using developer ASR/LLM flow");
     voiceServices = {
       transcriptionProvider: createConfiguredTranscriptionProvider(),
@@ -668,10 +679,15 @@ function buildController(input: BuildControllerInput): ControllerBundle {
       }),
     };
   } else {
+    if (voiceService.reason === "developer-unified-endpoint") {
+      console.warn(
+        `[voice] developer WS URL is a Java voice gateway; using session_start protocol url=${voiceService.url}`,
+      );
+    }
     console.log(
-      `[voice] controller using Java voice gateway url=${input.javaVoiceWsUrl}`,
+      `[voice] controller using Java voice gateway url=${voiceService.url}`,
     );
-    voiceServices = createJavaVoiceSessionProvider({ url: input.javaVoiceWsUrl });
+    voiceServices = createJavaVoiceSessionProvider({ url: voiceService.url });
   }
 
   const textTarget: VoiceTextTarget = {
@@ -712,7 +728,7 @@ function buildController(input: BuildControllerInput): ControllerBundle {
     },
     getAppContext: () => window.voiceAI.getActiveWindow(),
     onPostprocessResult: input.onPostprocessResult,
-    finalResultBehavior: input.developerEnabled
+    finalResultBehavior: voiceService.kind === "developer"
       ? "client_postprocess"
       : "respect_service_action",
     onTranscriptionUnavailable: input.onTranscriptionUnavailable,
