@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 
 type InstallerState = "loading" | "ready" | "installing" | "done" | "error";
 
+const INSTALL_PROGRESS_START = 8;
+const INSTALL_PROGRESS_STEPS = [
+  { percent: 12, label: "正在准备安装环境..." },
+  { percent: 24, label: "正在校验安装位置..." },
+  { percent: 42, label: "正在解压应用文件..." },
+  { percent: 68, label: "正在写入程序组件..." },
+  { percent: 86, label: "正在创建快捷方式..." },
+  { percent: 94, label: "正在完成最后配置..." },
+] as const;
+
 function AssistantMark(): React.JSX.Element {
   return (
     <div className="installer-mark" aria-hidden="true">
@@ -52,6 +62,10 @@ export function InstallerPage(): React.JSX.Element {
   const [createDesktopShortcut, setCreateDesktopShortcut] = useState(true);
   const [launchAtLogin, setLaunchAtLogin] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [progressPercent, setProgressPercent] = useState(INSTALL_PROGRESS_START);
+  const [progressLabel, setProgressLabel] = useState(
+    INSTALL_PROGRESS_STEPS[0].label,
+  );
   const canInstall = state === "ready" && agreed && installDir.trim().length > 0;
 
   const diskHint = useMemo(
@@ -84,6 +98,34 @@ export function InstallerPage(): React.JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    if (state !== "installing") {
+      return undefined;
+    }
+
+    let currentPercent = INSTALL_PROGRESS_START;
+    let stepIndex = 0;
+    setProgressPercent(currentPercent);
+    setProgressLabel(INSTALL_PROGRESS_STEPS[stepIndex].label);
+
+    const timer = window.setInterval(() => {
+      const currentStep = INSTALL_PROGRESS_STEPS[stepIndex];
+
+      if (currentPercent < currentStep.percent) {
+        currentPercent = Math.min(currentPercent + 4, currentStep.percent);
+        setProgressPercent(currentPercent);
+        return;
+      }
+
+      if (stepIndex < INSTALL_PROGRESS_STEPS.length - 1) {
+        stepIndex += 1;
+        setProgressLabel(INSTALL_PROGRESS_STEPS[stepIndex].label);
+      }
+    }, 520);
+
+    return () => window.clearInterval(timer);
+  }, [state]);
+
   const browseInstallDir = (): void => {
     void window.voiceAI
       .selectInstallerDirectory(installDir)
@@ -105,6 +147,8 @@ export function InstallerPage(): React.JSX.Element {
       return;
     }
     setError(undefined);
+    setProgressPercent(INSTALL_PROGRESS_START);
+    setProgressLabel(INSTALL_PROGRESS_STEPS[0].label);
     setState("installing");
     void window.voiceAI
       .installFromShell({
@@ -114,6 +158,8 @@ export function InstallerPage(): React.JSX.Element {
       })
       .then((result) => {
         setInstallDir(result.installDir);
+        setProgressPercent(100);
+        setProgressLabel("安装完成");
         setState("done");
       })
       .catch((installError: unknown) => {
@@ -144,10 +190,23 @@ export function InstallerPage(): React.JSX.Element {
 
         {state === "installing" ? (
           <div className="installer-progress-panel">
-            <div className="installer-progress" role="progressbar" aria-label="installing">
-              <span className="installer-progress__fill" />
+            <div className="installer-progress-header">
+              <span>{progressLabel}</span>
+              <strong>{progressPercent}%</strong>
             </div>
-            <p>正在安装，请稍候...</p>
+            <div
+              className="installer-progress"
+              role="progressbar"
+              aria-label="安装进度"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPercent}
+            >
+              <span
+                className="installer-progress__fill"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
           </div>
         ) : null}
 
