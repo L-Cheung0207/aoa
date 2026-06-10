@@ -27,12 +27,22 @@ function resolveInitialHomeSection(): "home" | "history" | "settings" | "about" 
   return "home";
 }
 
+function resolveInitialOnboardingStep(): number | undefined {
+  const match = /home-onboarding-(\d+)/.exec(window.location.hash);
+  if (!match) {
+    return undefined;
+  }
+  const step = Number(match[1]);
+  return Number.isInteger(step) ? step : undefined;
+}
+
 // 基於 hash 的輕量級路由分發：
 // - 懸浮窗載入 URL 不帶 hash 或為空 → 渲染 <App/> (OverlayWindow)
 // - 首頁窗載入 URL 包含 "home" → 渲染 <HomeShell/>
 // - 設定窗載入 URL 包含 "settings" (開發態 "#/settings"，生產態 "#settings") → 渲染 <SettingsPage/>
 const route = resolveRoute();
 const initialTheme = resolveInitialTheme();
+const initialOnboardingStep = resolveInitialOnboardingStep();
 if (initialTheme) {
   document.documentElement.dataset.theme = initialTheme;
 }
@@ -40,7 +50,15 @@ if (initialTheme) {
 createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {route === "home" ? (
-      <HomeShell initialSection={resolveInitialHomeSection()} />
+      <HomeShell
+        initialSection={resolveInitialHomeSection()}
+        {...(initialOnboardingStep !== undefined
+          ? {
+              initialOnboardingOpen: true,
+              initialOnboardingStep,
+            }
+          : {})}
+      />
     ) : route === "settings" ? (
       <SettingsPage />
     ) : route === "installer" ? (

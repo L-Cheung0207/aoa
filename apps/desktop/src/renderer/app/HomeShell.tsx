@@ -187,6 +187,9 @@ export function HomeShell({
   const [onboardingOpen, setOnboardingOpen] = useState<boolean>(
     () => initialOnboardingOpen ?? false,
   );
+  const [onboardingStep, setOnboardingStep] = useState<number | undefined>(
+    initialOnboardingStep,
+  );
   const [toast, setToast] = useState<string | undefined>(undefined);
   const [activeSection, setActiveSection] = useState<HomeSection>(
     () => initialSection ?? "home",
@@ -327,6 +330,13 @@ export function HomeShell({
         setActiveSection(section);
       },
     );
+    const unsubscribeOpenOnboardingStep = window.voiceAI.onOpenOnboardingStep(
+      (step) => {
+        setOnboardingStep(step);
+        setOnboardingOpen(true);
+        setActiveSection("home");
+      },
+    );
     const unsubscribeOpenUpdateDialog =
       window.voiceAI.onOpenUpdateDialog(openUpdateDialog);
     const unsubscribeUpdateReady = window.voiceAI.onUpdateReady((payload) => {
@@ -352,6 +362,7 @@ export function HomeShell({
     return () => {
       unsubscribeOpenSettings();
       unsubscribeOpenHomeSection();
+      unsubscribeOpenOnboardingStep();
       unsubscribeOpenUpdateDialog();
       unsubscribeUpdateReady();
       unsubscribeSettingsChanged();
@@ -488,7 +499,10 @@ export function HomeShell({
             {...(settings !== undefined ? { settings } : {})}
             usageStats={usageStats}
             versionLabel={versionLabel}
-            onOpenOnboarding={() => setOnboardingOpen(true)}
+            onOpenOnboarding={() => {
+              setOnboardingStep(undefined);
+              setOnboardingOpen(true);
+            }}
             onCheckUpdates={openUpdateDialog}
             onContact={() => setToast(shellText.contactPending)}
           />
@@ -497,8 +511,8 @@ export function HomeShell({
       {onboardingOpen && (
         <OnboardingGuide
           settings={settings}
-          {...(initialOnboardingStep !== undefined
-            ? { initialStep: initialOnboardingStep }
+          {...(onboardingStep !== undefined
+            ? { initialStep: onboardingStep }
             : {})}
           onClose={() => setOnboardingOpen(false)}
           onOpenSettings={() => {

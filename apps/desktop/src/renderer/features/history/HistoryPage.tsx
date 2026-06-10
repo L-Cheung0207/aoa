@@ -219,9 +219,6 @@ export function HistoryPage({
           <h1>{text.title}</h1>
           <p>{text.subtitle}</p>
         </div>
-        <button className="history-header__menu" type="button" aria-label={text.more}>
-          ...
-        </button>
       </header>
 
       <section className="history-privacy" aria-label={text.storeHistory}>

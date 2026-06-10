@@ -43,6 +43,12 @@ describe("installer shell service", () => {
     );
     expect(shouldOpenInstallerShell(["app.exe"], true)).toBe(true);
     expect(shouldOpenInstallerShell(["app.exe"], false)).toBe(false);
+    expect(
+      shouldOpenInstallerShell(["app.exe", "--uninstall"], true),
+    ).toBe(false);
+    expect(
+      shouldOpenInstallerShell(["app.exe", "/uninstall"], true),
+    ).toBe(false);
     expect(resolveInstallerModeMarkerPath("C:/app/resources")).toBe(
       join(
         "C:/app/resources",

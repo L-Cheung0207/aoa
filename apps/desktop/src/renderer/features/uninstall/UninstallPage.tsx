@@ -17,8 +17,12 @@ export function UninstallPage(): React.JSX.Element {
 
     void window.voiceAI
       .performUninstall()
-      .then(() => {
+      .then((result) => {
         runningRef.current = false;
+        if (result.launchedCleanup) {
+          void window.voiceAI.finishUninstall();
+          return;
+        }
         setState("done");
       })
       .catch((uninstallError: unknown) => {

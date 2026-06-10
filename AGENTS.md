@@ -43,3 +43,10 @@
 <!-- CODEGRAPH_END -->
 
 @RTK.md
+
+## Caveman Mode
+
+- Every session must use `caveman` skill: `D:\workspace\AOA\code\aoa-client\.agents\skills\caveman\SKILL.md`.
+- Default level: `full`.
+- Keep technical substance exact, replies terse, no filler.
+- Persist across turns unless user says `stop caveman` or `normal mode`.

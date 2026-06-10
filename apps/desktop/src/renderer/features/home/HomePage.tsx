@@ -79,7 +79,7 @@ const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
     footer: "底部信息",
     currentVersionPrefix: "当前版本 ",
     checkUpdates: "检查更新",
-    contact: "联系我们"
+    contact: "意见反馈"
   },
   "zh-TW": {
     welcomeAria: "歡迎",
@@ -103,7 +103,7 @@ const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
     footer: "底部資訊",
     currentVersionPrefix: "當前版本 ",
     checkUpdates: "檢查更新",
-    contact: "聯絡我們"
+    contact: "意見回饋"
   },
   "en-US": {
     welcomeAria: "Welcome",
@@ -127,7 +127,7 @@ const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
     footer: "Footer",
     currentVersionPrefix: "Current version ",
     checkUpdates: "Check for updates",
-    contact: "Contact us"
+    contact: "Feedback"
   }
 };
 

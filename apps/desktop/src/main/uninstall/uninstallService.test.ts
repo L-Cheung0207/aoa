@@ -74,6 +74,13 @@ describe("uninstall service", () => {
     expect(scriptContent).toContain("Start-Process");
     expect(scriptContent).toContain("/currentuser");
     expect(scriptContent).toContain("--delete-app-data");
+    expect(scriptContent).toContain(
+      "'C:\\Program Files\\Voice Assistant'",
+    );
+    expect(scriptContent).toContain(
+      "'C:\\Users\\Alex\\AppData\\Roaming\\Voice Assistant'",
+    );
+    expect(scriptContent).toContain("Remove-Item -LiteralPath $_ -Recurse -Force");
     expect(scriptContent).toContain("Remove-Item -LiteralPath $PSCommandPath");
     expect(options.spawnDetached).toHaveBeenCalledWith(
       "powershell.exe",

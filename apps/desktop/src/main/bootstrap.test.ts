@@ -5,9 +5,11 @@ import {
   applyNativeTheme,
   formatShortcutHelpLabel,
   formatTrayTooltip,
+  resolveShortcutTriggerOverlayLayout,
   resolveShortcutTriggerOverlayAction,
   resolveOverlayVisibility,
   resolveOverlayWindowLayout,
+  shouldReplayMicErrorOverlay,
   shouldShowShortcutHelpForState
 } from "./bootstrap";
 
@@ -31,8 +33,24 @@ describe("bootstrap overlay visibility", () => {
     expect(resolveOverlayVisibility("listening")).toBe("show");
   });
 
-  it("defers overlay display until the renderer reports a recording state", () => {
-    expect(resolveShortcutTriggerOverlayAction()).toBe("defer");
+  it("shows microphone errors even when no recording pill was visible yet", () => {
+    expect(resolveOverlayVisibility("error", "mic")).toBe("show");
+    expect(resolveOverlayVisibility("error", "transcription")).toBe("keep");
+  });
+
+  it("shows the overlay as soon as a shortcut is accepted", () => {
+    expect(resolveShortcutTriggerOverlayAction()).toBe("show");
+  });
+
+  it("keeps the microphone error layout stable when the shortcut is pressed again", () => {
+    expect(
+      resolveShortcutTriggerOverlayLayout("error", "direct", {
+        reason: "mic"
+      })
+    ).toBe("micError");
+    expect(shouldReplayMicErrorOverlay("error", "mic")).toBe(true);
+    expect(shouldReplayMicErrorOverlay("error", "transcription")).toBe(false);
+    expect(shouldReplayMicErrorOverlay("idle", "mic")).toBe(false);
   });
 
   it("syncs native menus with the configured app theme", () => {
@@ -67,8 +85,14 @@ describe("bootstrap overlay visibility", () => {
     expect(resolveOverlayWindowLayout("listening", "translate")).toBe("translatePill");
     expect(resolveOverlayWindowLayout("listening", "processSelection")).toBe("translatePill");
     expect(resolveOverlayWindowLayout("listening", undefined)).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("thinkingPill");
-    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("thinkingPill");
+    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("translatePill");
+    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("translatePill");
+    expect(
+      resolveOverlayWindowLayout("processing", "translate", {
+        busyHintVisible: true
+      })
+    ).toBe("thinkingPill");
+    expect(resolveOverlayWindowLayout("error", undefined, { reason: "mic" })).toBe("micError");
     expect(resolveOverlayWindowLayout("canceled", "translate")).toBe("canceledPill");
     expect(resolveOverlayWindowLayout("result", "translate")).toBe("result");
     expect(resolveOverlayWindowLayout("shortcutHelp", undefined)).toBe("shortcutHelp");

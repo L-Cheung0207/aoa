@@ -52,10 +52,24 @@ export function shouldOpenInstallerShell(
   argv: readonly string[],
   hasInstallerMarker: boolean,
 ): boolean {
+  if (argv.some(isUninstallArg)) {
+    return false;
+  }
+
   return (
-    argv.some((arg) => arg === "--installer-shell" || arg === "/installer-shell") ||
+    argv.some(isInstallerShellArg) ||
     hasInstallerMarker
   );
+}
+
+function isInstallerShellArg(arg: string): boolean {
+  const normalized = arg.toLowerCase();
+  return normalized === "--installer-shell" || normalized === "/installer-shell";
+}
+
+function isUninstallArg(arg: string): boolean {
+  const normalized = arg.toLowerCase();
+  return normalized === "--uninstall" || normalized === "/uninstall";
 }
 
 export function appendProductDirectory(path: string, productName: string): string {

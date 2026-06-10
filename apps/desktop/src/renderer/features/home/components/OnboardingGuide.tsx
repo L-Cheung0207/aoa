@@ -359,9 +359,16 @@ export function OnboardingGuide({
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
+    const unsubscribeShortcutCaptureAccelerator =
+      window.voiceAI.onShortcutCaptureAccelerator(({ accelerator }) => {
+        if (accelerator === shortcut) {
+          setShortcutPressed(true);
+        }
+      });
     return () => {
       disposed = true;
       window.removeEventListener("keydown", handleKeyDown, true);
+      unsubscribeShortcutCaptureAccelerator();
       if (suspended) {
         void window.voiceAI.setShortcutCaptureActive(false);
       }

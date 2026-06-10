@@ -74,6 +74,7 @@ export interface VoicePostprocessResultEvent {
 
 export interface VoiceOperationController {
   getSnapshot(): RecordingSnapshot;
+  getSnapshotRevision(): number;
   getRecordingRemainingSeconds(): number | undefined;
   handleToggle(mode: RecordingMode): Promise<void>;
   /** 使用者主動取消（懸浮窗左側 × 按鈕）：在 listening/processing/inserting/error 下拆掉會話並重置狀態機。 */
@@ -102,20 +103,24 @@ export function createVoiceOperationController(
   const machine = createRecordingStateMachine();
   let activeSession: ActiveSession | undefined;
   let finalTranscript = "";
+  let snapshotRevision = 0;
   /**
    * 啟動進行中的標記：在 startSession 的兩個 await（recorder.start / provider.start）
    * 跑完之前保持為 true。
    */
   let starting = false;
   /**
-   * 啟動期間使用者再次觸發（第二次 toggle 或主動 cancel）時：
-   * - 立刻停麥並重置 UI（requestAbortDuringStart）
-   * - provider 側仍等啟動收尾後再 cancel，避免 WS 未 open 就 send finished 幀
+   * 啟動期間使用者主動取消時：
+   * - 若已經開始開麥，立刻停麥並重置 UI（requestAbortDuringStart）
+   * - provider 側仍等啟動收尾後再 cancel，避免 WS 未 open 就 send finished 幀。
    */
   let pendingCancelAfterStart = false;
   /**
-   * 啟動階段是否已經開始開啟麥克風。provider.start 期間尚未開麥，取消時不需要碰 recorder。
+   * 啟動期間再次按收尾快捷鍵時，不應取消會話。等 provider ready 後正常 stop，
+   * 否則 Java WS 慢連時普通語音輸入會被第二次 RightAlt 誤取消。
    */
+  let pendingStopAfterStart = false;
+  /** 啟動階段是否已經開始開啟麥克風。 */
   let recorderStartRequested = false;
   const getNow = options.now ?? (() => new Date());
   const recordingMaxDurationSeconds = Math.max(
@@ -170,14 +175,26 @@ export function createVoiceOperationController(
     }, remainingMs + RECORDING_LIMIT_TIMER_FUZZ_MS);
   };
 
-  const requestAbortDuringStart = (): void => {
+  const requestAbortDuringStart = (
+    abortOptions: { preserveCurrentError?: boolean } = {},
+  ): void => {
     console.warn("[voice] 啟動進行中，標記 pendingCancel");
     pendingCancelAfterStart = true;
+    pendingStopAfterStart = false;
     clearRecordingLimitTimer();
     if (recorderStartRequested) {
       void options.recorder.cancel().catch((error) => {
         console.warn("[voice] 啟動期間立刻停麥失敗（忽略）", error);
       });
+    }
+    void options.transcriptionProvider.cancel().catch((error) => {
+      console.warn("[voice] cancel transcription during start failed", error);
+    });
+    if (
+      abortOptions.preserveCurrentError === true &&
+      machine.getSnapshot().state === "error"
+    ) {
+      return;
     }
     machine.send({ type: "reset" });
   };
@@ -186,6 +203,7 @@ export function createVoiceOperationController(
     console.warn(`[voice] 失敗原因=${reason}`);
     clearRecordingLimitTimer();
     machine.send({ type: "fail", reason });
+    snapshotRevision += 1;
   };
 
   const unsubscribeRecorder = options.recorder.subscribe((event) => {
@@ -254,6 +272,10 @@ export function createVoiceOperationController(
   ): Promise<boolean> => {
     session.transcriptionUnavailable = false;
     try {
+      const appContext = await options.getAppContext();
+      if (activeSession !== session || pendingCancelAfterStart) {
+        return false;
+      }
       await options.transcriptionProvider.start({
         installationId: options.settings.installationId,
         language: options.settings.language,
@@ -262,7 +284,7 @@ export function createVoiceOperationController(
         selectedText: session.selectedText,
         targetLanguage: resolveSessionTargetLanguage(options, session),
         postprocessMode: resolveSessionPostprocessMode(options, session),
-        appContext: await options.getAppContext(),
+        appContext,
       });
       if (activeSession !== session) {
         return false;
@@ -285,11 +307,14 @@ export function createVoiceOperationController(
       }
       return true;
     } catch (error) {
-      console.error("[voice] 轉寫啟動失敗，錄音保持進行中", error);
+      console.error("[voice] 轉寫啟動失敗", error);
       if (activeSession === session) {
         session.transcriptionUnavailable = true;
         session.transcriptionReady = false;
         options.onTranscriptionUnavailable?.();
+      }
+      if (options.finalResultBehavior === "respect_service_action") {
+        throw error;
       }
       return false;
     }
@@ -323,7 +348,11 @@ export function createVoiceOperationController(
 
     let stage: "recorder" | "transcription" = "recorder";
     let recorderStarted = false;
+    let transcriptionStarted = false;
+    let shouldCancelAfterStart = false;
+    let shouldStopAfterStart = false;
     try {
+      stage = "recorder";
       recorderStartRequested = true;
       await options.recorder.start({
         sampleRate: options.settings.sampleRate,
@@ -333,25 +362,28 @@ export function createVoiceOperationController(
           : {}),
       });
       recorderStarted = true;
-      if (activeSession) {
-        scheduleRecordingLimitTimer(activeSession);
-      }
       if (pendingCancelAfterStart) {
         console.log("[voice] 使用者已在錄音器啟動期間取消，跳過啟動成功收尾");
-        return;
+      } else {
+        stage = "transcription";
+        transcriptionStarted = await startTranscriptionForSession(activeSession);
+        if (
+          !transcriptionStarted &&
+          options.finalResultBehavior === "respect_service_action"
+        ) {
+          throw new Error("Transcription session is unavailable");
+        }
       }
-      stage = "transcription";
-      const transcriptionStarted =
-        await startTranscriptionForSession(activeSession);
-      if (
-        !transcriptionStarted &&
-        options.finalResultBehavior === "respect_service_action"
-      ) {
-        throw new Error("Transcription session is unavailable");
+
+      if (pendingCancelAfterStart) {
+        console.log("[voice] 使用者已在轉寫啟動期間取消，跳過啟動成功收尾");
+      } else if (activeSession) {
+        scheduleRecordingLimitTimer(activeSession);
+        console.log("[voice] 會話啟動完成：錄音器已就緒");
       }
-      console.log("[voice] 會話啟動完成：錄音器已就緒");
     } catch (error) {
       console.error(`[voice] 會話啟動失敗 stage=${stage}`, error);
+      const cancelledDuringStart = pendingCancelAfterStart;
       clearRecordingLimitTimer();
       activeSession = undefined;
       // recorder 啟動失敗或啟動後流程失敗時需關麥，避免麥克風一直佔用。
@@ -365,18 +397,45 @@ export function createVoiceOperationController(
           );
         }
       }
+      if (transcriptionStarted || cancelledDuringStart) {
+        try {
+          await options.transcriptionProvider.cancel();
+        } catch (cancelError) {
+          console.warn(
+            "[voice] 啟動失敗後取消 transcription 也報錯（忽略）",
+            cancelError,
+          );
+        }
+      }
+      if (cancelledDuringStart) {
+        machine.send({ type: "reset" });
+        snapshotRevision += 1;
+        return;
+      }
       fail(stage === "recorder" ? "mic" : stageToReason(stage));
       // 啟動失敗時已經把狀態機推到 error，pendingCancelAfterStart 無意義，清掉。
       pendingCancelAfterStart = false;
       throw error;
     } finally {
+      shouldCancelAfterStart = pendingCancelAfterStart;
+      shouldStopAfterStart = pendingStopAfterStart;
       starting = false;
       recorderStartRequested = false;
-      if (pendingCancelAfterStart) {
-        pendingCancelAfterStart = false;
-        console.log("[voice] 啟動完成後發現 pendingCancel，立即取消會話");
-        await cancelSession();
-      }
+      pendingCancelAfterStart = false;
+      pendingStopAfterStart = false;
+    }
+    if (shouldCancelAfterStart) {
+      console.log("[voice] 啟動完成後發現 pendingCancel，立即取消會話");
+      await cancelSession();
+      return;
+    }
+    if (
+      shouldStopAfterStart &&
+      activeSession &&
+      machine.getSnapshot().state === "listening"
+    ) {
+      console.log("[voice] 啟動完成後發現 pendingStop，立即停止會話");
+      await stopSession();
     }
   };
 
@@ -528,6 +587,7 @@ export function createVoiceOperationController(
 
   return {
     getSnapshot: () => machine.getSnapshot(),
+    getSnapshotRevision: () => snapshotRevision,
     getRecordingRemainingSeconds,
     handleToggle: async (mode) => {
       const snapshot = machine.getSnapshot();
@@ -537,7 +597,24 @@ export function createVoiceOperationController(
 
       // 啟動進行中：立刻停麥並重置 UI；provider 側等 finally 裡 cancelSession。
       if (starting) {
-        requestAbortDuringStart();
+        if (snapshot.state === "error") {
+          console.warn("[voice] handleToggle：啟動中且錯誤提示已顯示，忽略重複觸發");
+          return;
+        }
+        if (activeSession) {
+          if (mode === "direct" || mode === activeSession.mode) {
+            pendingStopAfterStart = true;
+            console.log(
+              `[voice] handleToggle：啟動中收到收尾觸發 mode=${mode} active=${activeSession.mode}，等待啟動完成後停止`,
+            );
+            return;
+          }
+          console.log(
+            `[voice] handleToggle：啟動中忽略非當前模式 mode=${mode} active=${activeSession.mode}`,
+          );
+          return;
+        }
+        requestAbortDuringStart({ preserveCurrentError: true });
         return;
       }
 
@@ -600,6 +677,11 @@ export function createVoiceOperationController(
     confirm: async () => {
       const current = machine.getSnapshot().state;
       console.log(`[voice] confirm：當前狀態=${current}`);
+      if (starting && activeSession) {
+        pendingStopAfterStart = true;
+        console.log("[voice] confirm：啟動中，等待啟動完成後停止");
+        return;
+      }
       if (current !== "listening") {
         // 僅在錄音進行中響應確認；其他狀態請走取消或快捷鍵重啟。
         return;
@@ -700,6 +782,9 @@ async function applyFinalText(
     const result = await options.postProcessService.process(
       await createPostProcessInput(options, session, rawText),
     );
+    console.log(
+      `[voice] postprocess result mode=${session.mode} action=${result.action} finalTextLength=${result.finalText.length}`,
+    );
     if (!result.finalText.trim()) {
       console.log("[voice] 服務端最終文本為空，跳過插入與展示");
       return "";
@@ -708,6 +793,7 @@ async function applyFinalText(
       session.mode === "processSelection" &&
       result.action === "show_result"
     ) {
+      console.log("[voice] processSelection action=show_result，展示结果浮层");
       options.onPostprocessResult?.({
         mode: "processSelection",
         rawText,
@@ -739,8 +825,12 @@ async function applyFinalText(
   const result = await options.postProcessService.process(
     await createPostProcessInput(options, session, rawText),
   );
+  console.log(
+    `[voice] postprocess result mode=${session.mode} action=${result.action} finalTextLength=${result.finalText.length}`,
+  );
 
   if (session.mode === "processSelection") {
+    console.log("[voice] processSelection 使用客户端后处理结果，展示结果浮层");
     options.onPostprocessResult?.({
       mode: "processSelection",
       rawText,
@@ -800,10 +890,16 @@ async function applyPostProcessResult(
   result: PostprocessResult,
 ): Promise<void> {
   if (result.action === "replace_selection" && session.selectedText) {
+    console.log(
+      `[voice] apply postprocess action=replace_selection，替换选区 selectedTextLength=${session.selectedText.length} finalTextLength=${result.finalText.length}`,
+    );
     await textTarget.replaceSelection(result.finalText, session.selectedText);
     return;
   }
 
+  console.log(
+    `[voice] apply postprocess action=${result.action}，执行插入 finalTextLength=${result.finalText.length}`,
+  );
   await textTarget.insertText(result.finalText);
 }
 

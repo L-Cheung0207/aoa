@@ -124,18 +124,36 @@ export function createIpcRouteHandlers(
     insertText: (input) => {
       const { text } = parseInsertTextInput(input);
       const settings = dependencies.configStore.get();
-      return dependencies.insertService.insertText(text, {
-        strategy: settings.insertion.strategy,
-        targetWindowHandle: dependencies.getInsertTargetWindowHandle?.()
-      });
+      const strategy = settings.insertion.strategy;
+      const targetWindowHandle = dependencies.getInsertTargetWindowHandle?.();
+      console.log(
+        `[ipc] insertText request strategy=${strategy} textLength=${text.length} targetHandle=${targetWindowHandle ?? "none"}`
+      );
+      return dependencies.insertService
+        .insertText(text, {
+          strategy,
+          targetWindowHandle
+        })
+        .then((result) => {
+          console.log(
+            `[ipc] insertText result ok=${result.ok} strategy=${result.strategy} message=${result.ok ? "" : result.message}`
+          );
+          return result;
+        });
     },
     replaceSelectedText: async (input) => {
       const { text, expectedSelectedText } = parseReplaceSelectedTextInput(input);
       const settings = dependencies.configStore.get();
       const strategy = settings.insertion.strategy;
       const targetWindowHandle = dependencies.getInsertTargetWindowHandle?.();
+      console.log(
+        `[ipc] replaceSelectedText request strategy=${strategy} textLength=${text.length} expectedSelectedTextLength=${expectedSelectedText?.length ?? 0} targetHandle=${targetWindowHandle ?? "none"}`
+      );
       const currentSelectedText =
         await dependencies.selectionService.getSelectedText(targetWindowHandle);
+      console.log(
+        `[ipc] replaceSelectedText currentSelectedTextLength=${currentSelectedText.length}`
+      );
 
       if (
         currentSelectedText &&
@@ -143,6 +161,7 @@ export function createIpcRouteHandlers(
         normalizeSelectionText(currentSelectedText) !==
           normalizeSelectionText(expectedSelectedText)
       ) {
+        console.warn("[ipc] replaceSelectedText blocked: selected text changed before replacement");
         return createReplacementFailure(
           strategy,
           text,
@@ -150,10 +169,14 @@ export function createIpcRouteHandlers(
         );
       }
 
-      return dependencies.insertService.insertText(text, {
+      const result = await dependencies.insertService.insertText(text, {
         strategy,
         targetWindowHandle
       });
+      console.log(
+        `[ipc] replaceSelectedText result ok=${result.ok} strategy=${result.strategy} message=${result.ok ? "" : result.message}`
+      );
+      return result;
     },
     bootstrapClient: async () => {
       const snapshot = await dependencies.backendClient.bootstrap({

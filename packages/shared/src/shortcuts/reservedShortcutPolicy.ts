@@ -1,9 +1,22 @@
-export type ShortcutValidationReason = "reserved" | "single_key";
+export type ShortcutValidationReason =
+  | "reserved"
+  | "single_key"
+  | "alphanumeric_only"
+  | "too_many_keys"
+  | "consecutive_letters"
+  | "consecutive_numbers"
+  | "already_in_use";
 
 export interface ShortcutValidationResult {
   ok: boolean;
   reason?: ShortcutValidationReason;
   message?: string;
+}
+
+export interface ShortcutValidationOptions {
+  platform?: string;
+  existingShortcuts?: string[] | undefined;
+  currentShortcut?: string | undefined;
 }
 
 const SYSTEM_RESERVED_SHORTCUTS = new Set([
@@ -55,16 +68,30 @@ const COMMON_RESERVED_SHORTCUTS = new Set([
   "SHIFT+SPACE",
   "ALT+SHIFT",
   "CTRL+SHIFT",
+  "SPACE",
   "F5",
   "CTRL+F5",
   "PRINTSCREEN",
   "ALT+PRINTSCREEN"
 ]);
 
+const PRODUCT_ALLOWED_SHORTCUTS = new Set([
+  "RIGHTALT",
+  "RIGHTALT+SPACE",
+  "RIGHTALT+RIGHTSHIFT"
+]);
+
+const RIGHT_ALT_RESERVED_KEYS = new Set(["TAB", "ESC"]);
+
 export function validateShortcut(
   shortcut: string,
-  platform: string = "win32"
+  platformOrOptions: string | ShortcutValidationOptions = "win32"
 ): ShortcutValidationResult {
+  const options =
+    typeof platformOrOptions === "string"
+      ? { platform: platformOrOptions }
+      : platformOrOptions;
+  const platform = options.platform ?? "win32";
   const normalized = normalizeShortcut(shortcut);
   if (!normalized) {
     return {
@@ -74,11 +101,68 @@ export function validateShortcut(
     };
   }
 
+  const parts = shortcutParts(normalized);
+  if (parts.every(isTypelessAlphanumericOnlyPart)) {
+    return {
+      ok: false,
+      reason: "alphanumeric_only",
+      message: "此快捷键已保留供系统使用"
+    };
+  }
+
+  if (parts.length > 3) {
+    return {
+      ok: false,
+      reason: "too_many_keys",
+      message: "快捷键最多支持 3 个按键"
+    };
+  }
+
+  if (isAlreadyInUse(normalized, options)) {
+    return {
+      ok: false,
+      reason: "already_in_use",
+      message: "此快捷键已被使用"
+    };
+  }
+
+  if (isRightAltReservedShortcut(parts)) {
+    return {
+      ok: false,
+      reason: "reserved",
+      message: "此快捷键已保留供系统使用"
+    };
+  }
+
+  if (parts.includes("RIGHTALT")) {
+    return { ok: true };
+  }
+
+  if (PRODUCT_ALLOWED_SHORTCUTS.has(normalized)) {
+    return { ok: true };
+  }
+
   if (platform === "win32" && isWindowsReservedShortcut(normalized)) {
     return {
       ok: false,
       reason: "reserved",
       message: "此快捷键已保留供系统使用"
+    };
+  }
+
+  if (hasConsecutiveLetters(parts)) {
+    return {
+      ok: false,
+      reason: "consecutive_letters",
+      message: "请避免连续字母组合"
+    };
+  }
+
+  if (hasConsecutiveNumbers(parts)) {
+    return {
+      ok: false,
+      reason: "consecutive_numbers",
+      message: "请避免连续数字组合"
     };
   }
 
@@ -102,8 +186,8 @@ export function normalizeShortcut(shortcut: string): string {
     return "";
   }
 
-  const key = parts[parts.length - 1];
-  const modifiers = parts.slice(0, -1);
+  const modifiers = parts.filter(isShortcutModifier);
+  const keys = parts.filter((part) => !isShortcutModifier(part));
   const orderedModifiers = [
     "CTRL",
     "ALT",
@@ -114,11 +198,75 @@ export function normalizeShortcut(shortcut: string): string {
     "CMD",
     "RIGHTALT"
   ].filter((modifier) => modifiers.includes(modifier));
-  return [...orderedModifiers, key].join("+");
+  return [...orderedModifiers, ...keys].join("+");
 }
 
 function isWindowsReservedShortcut(normalized: string): boolean {
   return SYSTEM_RESERVED_SHORTCUTS.has(normalized) || COMMON_RESERVED_SHORTCUTS.has(normalized);
+}
+
+function shortcutParts(normalized: string): string[] {
+  return normalized.split("+").filter(Boolean);
+}
+
+function isShortcutModifier(part: string): boolean {
+  return [
+    "CTRL",
+    "ALT",
+    "SHIFT",
+    "SUPER",
+    "COMMAND",
+    "META",
+    "CMD",
+    "RIGHTALT"
+  ].includes(part);
+}
+
+function isTypelessAlphanumericOnlyPart(part: string): boolean {
+  return /^[A-Z0-9`]$/.test(part);
+}
+
+function isRightAltReservedShortcut(parts: string[]): boolean {
+  return (
+    parts.includes("RIGHTALT") &&
+    parts.some((part) => RIGHT_ALT_RESERVED_KEYS.has(part))
+  );
+}
+
+function hasConsecutiveLetters(parts: string[]): boolean {
+  const letters = parts
+    .filter((part) => /^[A-Z]$/.test(part))
+    .map((part) => part.charCodeAt(0))
+    .sort((left, right) => left - right);
+  return hasAdjacentValues(letters);
+}
+
+function hasConsecutiveNumbers(parts: string[]): boolean {
+  const numbers = parts
+    .filter((part) => /^[0-9]$/.test(part))
+    .map((part) => Number.parseInt(part, 10))
+    .sort((left, right) => left - right);
+  return hasAdjacentValues(numbers);
+}
+
+function hasAdjacentValues(values: number[]): boolean {
+  for (let index = 0; index < values.length - 1; index += 1) {
+    const current = values[index];
+    const next = values[index + 1];
+    if (current !== undefined && next !== undefined && next - current === 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isAlreadyInUse(
+  normalized: string,
+  options: ShortcutValidationOptions
+): boolean {
+  return (options.existingShortcuts ?? [])
+    .map((shortcut) => normalizeShortcut(shortcut))
+    .includes(normalized);
 }
 
 function normalizeShortcutPart(part: string): string | undefined {

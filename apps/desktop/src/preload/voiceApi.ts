@@ -50,7 +50,9 @@ export interface StartRecordingInput {
 export interface RecordingStateUpdate {
   state: RecordingState;
   mode: RecordingMode | undefined;
+  reason?: string;
   recordingLimitWarning?: boolean;
+  busyHintVisible?: boolean;
 }
 
 export interface InsertResult {
@@ -85,8 +87,16 @@ export interface ShortcutHelpPayload {
   translate: string;
 }
 
+export interface ShortcutCaptureAcceleratorPayload {
+  accelerator: string;
+}
+
 export type HomeWindowControlAction = "minimize" | "toggleMaximize" | "close";
 export type HomeSection = "home" | "history" | "settings" | "about";
+export interface OpenHomeSectionInput {
+  section: HomeSection;
+  onboardingStep?: number;
+}
 
 export interface AppInfo {
   deviceName: string;
@@ -165,6 +175,7 @@ export interface VoiceAIAPI {
    */
   reportRecordingState(update: RecordingStateUpdate): void;
   controlHomeWindow(action: HomeWindowControlAction): void;
+  openHomeSection(input: OpenHomeSectionInput): void;
   /** 录入快捷键时暂停/恢复全局 Right Alt 快捷键，避免与语音功能冲突。 */
   setShortcutCaptureActive(active: boolean): Promise<void>;
   onToggleRecording(callback: (payload: ToggleRecordingPayload) => void): () => void;
@@ -172,6 +183,9 @@ export interface VoiceAIAPI {
   onPartialTranscript(callback: (text: string) => void): () => void;
   onError(callback: (error: ClientFacingError) => void): () => void;
   onShortcutConflict(callback: (payload: ShortcutConflictPayload) => void): () => void;
+  onShortcutCaptureAccelerator(
+    callback: (payload: ShortcutCaptureAcceleratorPayload) => void
+  ): () => void;
   onShortcutHelp(callback: (payload: ShortcutHelpPayload) => void): () => void;
   onShortcutHelpDismiss(callback: () => void): () => void;
   onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
@@ -179,6 +193,7 @@ export interface VoiceAIAPI {
   onHistoryRecordDeleted(callback: (payload: { id: string }) => void): () => void;
   onOpenSettingsPanel(callback: () => void): () => void;
   onOpenHomeSection(callback: (section: HomeSection) => void): () => void;
+  onOpenOnboardingStep(callback: (step: number) => void): () => void;
   onOpenUpdateDialog(callback: () => void): () => void;
   onUpdateReady(callback: (payload: UpdateReadyPayload) => void): () => void;
   /**
@@ -256,6 +271,9 @@ export const voiceAI: VoiceAIAPI = {
   controlHomeWindow: (action) => {
     ipcRenderer.send("voice:home-window-control", action);
   },
+  openHomeSection: (input) => {
+    ipcRenderer.send("voice:open-home-section-request", input);
+  },
   setShortcutCaptureActive: (active) =>
     ipcRenderer.invoke("voice:set-shortcut-capture-active", { active }),
   onToggleRecording: (callback) => {
@@ -301,6 +319,17 @@ export const voiceAI: VoiceAIAPI = {
     };
     ipcRenderer.on("voice:shortcut-conflict", listener);
     return () => ipcRenderer.removeListener("voice:shortcut-conflict", listener);
+  },
+  onShortcutCaptureAccelerator: (callback) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ShortcutCaptureAcceleratorPayload
+    ): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("voice:shortcut-capture-accelerator", listener);
+    return () =>
+      ipcRenderer.removeListener("voice:shortcut-capture-accelerator", listener);
   },
   onShortcutHelp: (callback) => {
     const listener = (
@@ -357,6 +386,14 @@ export const voiceAI: VoiceAIAPI = {
     };
     ipcRenderer.on("voice:open-home-section", listener);
     return () => ipcRenderer.removeListener("voice:open-home-section", listener);
+  },
+  onOpenOnboardingStep: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, step: number): void => {
+      callback(step);
+    };
+    ipcRenderer.on("voice:open-onboarding-step", listener);
+    return () =>
+      ipcRenderer.removeListener("voice:open-onboarding-step", listener);
   },
   onOpenUpdateDialog: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent): void => {

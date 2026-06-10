@@ -6,6 +6,7 @@ import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 export interface CreateHomeWindowOptions {
   section?: "home" | "history" | "settings" | "about";
   theme?: AppSettings["ui"]["theme"];
+  onboardingStep?: number;
 }
 
 function appendThemeQuery(
@@ -41,10 +42,14 @@ export function createHomeWindow(
 
   blockHomeWindowAltSpaceMenu(window);
 
-  const hash =
+  const baseHash =
     options.section && options.section !== "home"
       ? `home-${options.section}`
       : "home";
+  const hash =
+    options.onboardingStep !== undefined
+      ? `${baseHash}-onboarding-${options.onboardingStep}`
+      : baseHash;
   if (process.env.ELECTRON_RENDERER_URL) {
     window.loadURL(
       `${appendThemeQuery(process.env.ELECTRON_RENDERER_URL, options.theme)}#/${hash}`,

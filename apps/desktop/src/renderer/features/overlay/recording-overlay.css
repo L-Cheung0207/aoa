@@ -42,9 +42,7 @@
   background: rgba(39, 39, 42, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  box-shadow:
-    0 18px 36px rgba(0, 0, 0, 0.36),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   overflow: hidden;
 }
 
@@ -221,9 +219,7 @@
   background: rgba(24, 24, 27, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  box-shadow:
-    0 16px 36px rgba(0, 0, 0, 0.32),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   -webkit-app-region: no-drag;
 }
 
@@ -314,9 +310,7 @@
   background: rgba(39, 39, 42, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  box-shadow:
-    0 16px 34px rgba(0, 0, 0, 0.34),
-    0 0 0 1px rgba(255, 255, 255, 0.035) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
   -webkit-app-region: no-drag;
 }
 
@@ -417,9 +411,7 @@
   background: rgba(39, 39, 42, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.34),
-    0 0 0 1px rgba(255, 255, 255, 0.035) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
   -webkit-app-region: no-drag;
 }
 
@@ -504,6 +496,121 @@
 }
 
 .network-error-hint__retry:hover {
+  background: rgba(113, 113, 122, 0.96);
+}
+
+.mic-error-shell {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  -webkit-app-region: no-drag;
+}
+
+.mic-error-hint {
+  box-sizing: border-box;
+  width: 100vw;
+  padding: 28px 16px 26px;
+  color: #f4f4f5;
+  background: rgba(24, 24, 27, 0.98);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  -webkit-app-region: no-drag;
+}
+
+.mic-error-hint__header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 9px;
+}
+
+.mic-error-hint__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1.8px solid #f97316;
+  border-radius: 999px;
+  color: #f97316;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.mic-error-hint strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mic-error-hint__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: rgba(244, 244, 245, 0.58);
+  background: transparent;
+  cursor: pointer;
+}
+
+.mic-error-hint__close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mic-error-hint__close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mic-error-hint p {
+  margin: 15px 13px 15px;
+  color: rgba(244, 244, 245, 0.74);
+  font-size: 12px;
+  font-weight: 580;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.mic-error-hint__footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.mic-error-hint__help {
+  grid-column: 2;
+  min-width: 72px;
+  height: 32px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 999px;
+  color: #f4f4f5;
+  background: rgba(82, 82, 91, 0.9);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 32px;
+  cursor: pointer;
+}
+
+.mic-error-hint__help:hover {
   background: rgba(113, 113, 122, 0.96);
 }
 
@@ -596,9 +703,7 @@
   padding: 0 7px 0 12px;
   background: rgba(35, 35, 36, 0.96);
   border-radius: 8px;
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 
 .overlay__canceled-text {
@@ -701,7 +806,7 @@
 
 .overlay--error {
   --overlay-border: rgba(248, 113, 113, 0.55);
-  box-shadow: 0 0 16px rgba(248, 113, 113, 0.18);
+  box-shadow: none;
 }
 
 /* 錯誤狀態下的電平條變成警示色（即使 active=false 也保持暗紅提示） */
@@ -769,8 +874,7 @@
   background: rgba(47, 51, 56, 0.98);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.09) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.28) inset,
-    0 6px 14px rgba(0, 0, 0, 0.24);
+    0 -1px 0 rgba(0, 0, 0, 0.28) inset;
 }
 
 .overlay__btn:active:not(:disabled) {

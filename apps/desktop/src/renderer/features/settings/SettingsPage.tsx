@@ -37,6 +37,27 @@ interface SettingsPageProps {
   initialSettings?: AppSettings | undefined;
 }
 
+type ShortcutSettingKey =
+  | "toggleRecording"
+  | "translateDictation"
+  | "processSelection";
+
+export function getOtherShortcutValues(
+  settings: AppSettings,
+  key: ShortcutSettingKey
+): string[] {
+  const shortcuts = settings.shortcuts;
+  const keys: ShortcutSettingKey[] = [
+    "toggleRecording",
+    "translateDictation",
+    "processSelection"
+  ];
+  return keys
+    .filter((item) => item !== key)
+    .map((item) => shortcuts[item])
+    .filter(Boolean);
+}
+
 function formatLocalizedConnectivityMessage(
   label: string,
   result: { ok: boolean; message: string; elapsedMs?: number },
@@ -316,34 +337,16 @@ export function SettingsPage({
             <ShortcutRecorder
               language={settings.ui.language}
               value={settings.shortcuts.toggleRecording}
+              existingShortcuts={getOtherShortcutValues(
+                settings,
+                "toggleRecording"
+              )}
               onChange={(value) =>
                 updateSettings((current) => ({
                   ...current,
                   shortcuts: {
                     ...current.shortcuts,
                     toggleRecording: value,
-                  },
-                }))
-              }
-            />
-          </div>
-        </div>
-
-        <div className="settings-row settings-row--shortcut">
-          <div className="settings-row__text">
-            <strong>{text.shortcuts.smartRewrite}</strong>
-            <small>{text.shortcuts.smartRewriteDescription}</small>
-          </div>
-          <div className="settings-row__control">
-            <ShortcutRecorder
-              language={settings.ui.language}
-              value={settings.shortcuts.processSelection}
-              onChange={(value) =>
-                updateSettings((current) => ({
-                  ...current,
-                  shortcuts: {
-                    ...current.shortcuts,
-                    processSelection: value,
                   },
                 }))
               }
@@ -360,12 +363,42 @@ export function SettingsPage({
             <ShortcutRecorder
               language={settings.ui.language}
               value={settings.shortcuts.translateDictation}
+              existingShortcuts={getOtherShortcutValues(
+                settings,
+                "translateDictation"
+              )}
               onChange={(value) =>
                 updateSettings((current) => ({
                   ...current,
                   shortcuts: {
                     ...current.shortcuts,
                     translateDictation: value,
+                  },
+                }))
+              }
+            />
+          </div>
+        </div>
+
+        <div className="settings-row settings-row--shortcut">
+          <div className="settings-row__text">
+            <strong>{text.shortcuts.smartRewrite}</strong>
+            <small>{text.shortcuts.smartRewriteDescription}</small>
+          </div>
+          <div className="settings-row__control">
+            <ShortcutRecorder
+              language={settings.ui.language}
+              value={settings.shortcuts.processSelection}
+              existingShortcuts={getOtherShortcutValues(
+                settings,
+                "processSelection"
+              )}
+              onChange={(value) =>
+                updateSettings((current) => ({
+                  ...current,
+                  shortcuts: {
+                    ...current.shortcuts,
+                    processSelection: value,
                   },
                 }))
               }

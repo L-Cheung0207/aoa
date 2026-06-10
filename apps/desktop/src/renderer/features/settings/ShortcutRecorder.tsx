@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { InterfaceLanguage } from "@voice/shared";
 import {
+  type CreateShortcutCaptureHandlersOptions,
   createShortcutCaptureHandlers,
   formatShortcutLabel
 } from "./shortcutCapture";
@@ -8,6 +9,7 @@ import {
 interface ShortcutRecorderProps {
   value: string;
   onChange(value: string): void;
+  existingShortcuts?: string[];
   language?: InterfaceLanguage | undefined;
   disabled?: boolean;
 }
@@ -51,6 +53,7 @@ function getShortcutRecorderText(language: InterfaceLanguage | undefined): Short
 export function ShortcutRecorder({
   value,
   onChange,
+  existingShortcuts,
   language,
   disabled = false
 }: ShortcutRecorderProps): React.JSX.Element {
@@ -60,6 +63,21 @@ export function ShortcutRecorder({
   const baseId = useId();
   const fieldRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const latestCaptureConfigRef = useRef({
+    existingShortcuts,
+    onChange,
+    text,
+    value
+  });
+
+  useEffect(() => {
+    latestCaptureConfigRef.current = {
+      existingShortcuts,
+      onChange,
+      text,
+      value
+    };
+  }, [existingShortcuts, onChange, text, value]);
 
   useEffect(() => {
     if (!recording) {
@@ -67,10 +85,12 @@ export function ShortcutRecorder({
     }
 
     buttonRef.current?.focus();
+    const captureConfig = latestCaptureConfigRef.current;
 
-    const handlers = createShortcutCaptureHandlers({
+    const captureOptions: CreateShortcutCaptureHandlersOptions = {
+      currentShortcut: captureConfig.value,
       onCapture: (accelerator) => {
-        onChange(accelerator);
+        latestCaptureConfigRef.current.onChange(accelerator);
         setRecording(false);
         setHint(undefined);
       },
@@ -79,9 +99,13 @@ export function ShortcutRecorder({
         setHint(undefined);
       },
       onInvalid: (message) => {
-        setHint(message ? text.invalidShortcut : text.invalidShortcut);
+        setHint(message || latestCaptureConfigRef.current.text.invalidShortcut);
       }
-    });
+    };
+    if (captureConfig.existingShortcuts) {
+      captureOptions.existingShortcuts = captureConfig.existingShortcuts;
+    }
+    const handlers = createShortcutCaptureHandlers(captureOptions);
 
     const handlePointerDown = (event: PointerEvent): void => {
       const target = event.target;
@@ -95,15 +119,20 @@ export function ShortcutRecorder({
     window.addEventListener("keydown", handlers.handleKeyDown, true);
     window.addEventListener("keyup", handlers.handleKeyUp, true);
     window.addEventListener("pointerdown", handlePointerDown, true);
+    const unsubscribeShortcutCaptureAccelerator =
+      window.voiceAI.onShortcutCaptureAccelerator(({ accelerator }) => {
+        handlers.capture(accelerator);
+      });
 
     return () => {
       void window.voiceAI.setShortcutCaptureActive(false);
       window.removeEventListener("keydown", handlers.handleKeyDown, true);
       window.removeEventListener("keyup", handlers.handleKeyUp, true);
       window.removeEventListener("pointerdown", handlePointerDown, true);
+      unsubscribeShortcutCaptureAccelerator();
       handlers.reset();
     };
-  }, [onChange, recording, text]);
+  }, [recording]);
 
   const startRecording = async (): Promise<void> => {
     if (disabled) {

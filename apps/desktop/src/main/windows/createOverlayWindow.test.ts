@@ -96,6 +96,15 @@ describe("overlay window bounds", () => {
     });
   });
 
+  it("sizes the microphone error card without an outer frame", () => {
+    expect(calculateOverlayWindowBounds(workArea, "micError")).toEqual({
+      width: 360,
+      height: 168,
+      x: 780,
+      y: 800
+    });
+  });
+
   it("places the result panel above the bottom taskbar area", () => {
     expect(calculateOverlayWindowBounds(workArea, "result")).toEqual({
       width: 760,

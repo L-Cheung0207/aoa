@@ -299,6 +299,21 @@ fn parse_accelerator_part(part: &str) -> Result<ShortcutKey, String> {
         "RightShift" => vec![RIGHT_SHIFT_KEY_CODE],
         "Super" => vec![0x5B, 0x5C],
         "Space" => vec![SPACE_KEY_CODE],
+        "Tab" => vec![0x09],
+        "Enter" => vec![0x0D],
+        "Backspace" => vec![0x08],
+        "Delete" => vec![0x2E],
+        "Insert" => vec![0x2D],
+        "Home" => vec![0x24],
+        "End" => vec![0x23],
+        "PageUp" => vec![0x21],
+        "PageDown" => vec![0x22],
+        "Esc" | "Escape" => vec![0x1B],
+        "Up" | "ArrowUp" => vec![0x26],
+        "Down" | "ArrowDown" => vec![0x28],
+        "Left" | "ArrowLeft" => vec![0x25],
+        "Right" | "ArrowRight" => vec![0x27],
+        "PrintScreen" | "Print Screen" => vec![0x2C],
         "-" => vec![0xBD],
         "=" => vec![0xBB],
         "," => vec![0xBC],
@@ -310,6 +325,12 @@ fn parse_accelerator_part(part: &str) -> Result<ShortcutKey, String> {
         "[" => vec![0xDB],
         "]" => vec![0xDD],
         "`" => vec![0xC0],
+        value if is_function_key(value) => {
+            let number = value[1..]
+                .parse::<u32>()
+                .map_err(|_| format!("unsupported shortcut key: {value}"))?;
+            vec![0x6F + number]
+        }
         value if value.len() == 1 => {
             let ch = value.chars().next().expect("one char");
             if ch.is_ascii_alphabetic() {
@@ -324,6 +345,16 @@ fn parse_accelerator_part(part: &str) -> Result<ShortcutKey, String> {
     };
 
     Ok(ShortcutKey { variants })
+}
+
+fn is_function_key(value: &str) -> bool {
+    let Some(number) = value.strip_prefix('F') else {
+        return false;
+    };
+    let Ok(number) = number.parse::<u32>() else {
+        return false;
+    };
+    (1..=24).contains(&number)
 }
 
 fn shortcut_contains_key(keys: &[ShortcutKey], key_code: u32) -> bool {
@@ -789,6 +820,37 @@ mod tests {
         assert_eq!(
             recognizer.handle_event(KeyEvent::up(SPACE_KEY_CODE)),
             Some(HotkeyAction::ProcessSelection)
+        );
+    }
+
+    #[test]
+    fn supports_configured_right_alt_regular_key_shortcuts() {
+        let mut recognizer = RightAltHotkeyRecognizer::new();
+        recognizer
+            .configure_shortcuts("AltGr+A", "RightAlt+F5", "RightAlt+Right")
+            .expect("custom right alt shortcuts parse");
+
+        recognizer.handle_event(KeyEvent::down(RIGHT_ALT_KEY_CODE));
+        recognizer.handle_event(KeyEvent::down(0x41));
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::up(0x41)),
+            Some(HotkeyAction::ToggleDirect)
+        );
+        recognizer.handle_event(KeyEvent::up(RIGHT_ALT_KEY_CODE));
+
+        recognizer.handle_event(KeyEvent::down(RIGHT_ALT_KEY_CODE));
+        recognizer.handle_event(KeyEvent::down(0x74));
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::up(0x74)),
+            Some(HotkeyAction::ProcessSelection)
+        );
+        recognizer.handle_event(KeyEvent::up(RIGHT_ALT_KEY_CODE));
+
+        recognizer.handle_event(KeyEvent::down(RIGHT_ALT_KEY_CODE));
+        recognizer.handle_event(KeyEvent::down(0x27));
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::up(0x27)),
+            Some(HotkeyAction::TranslateDictation)
         );
     }
 }

@@ -29,6 +29,7 @@ interface OverlayWindowProps {
   onCancel?(): void;
   onDismissNetworkError?(): void;
   onRetryNetworkError?(): void;
+  onOpenMicrophoneHelp?(): void;
   onDismissBusyHint?(): void;
   onDismissRecordingLimitWarning?(): void;
   /** 右側 ✓ 按鈕：確認結束錄音並走後續流程。不傳則按鈕隱藏。 */
@@ -66,6 +67,9 @@ type OverlayText = {
   closeHint: string;
   close: string;
   networkMessage: string;
+  micTitle: string;
+  micMessage: string;
+  help: string;
   retry: string;
   busyTitle: string;
   busyMessage: string;
@@ -125,6 +129,10 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     closeHint: "关闭提示",
     close: "关闭",
     networkMessage: "未能完成转录。请重试。",
+    micTitle: "麦克风不可用",
+    micMessage:
+      "Voice Assistant 无法访问您的麦克风。可能是其他应用正在使用它，或者访问被系统或安全设置阻止。",
+    help: "获取帮助",
     retry: "重试",
     busyTitle: "Voice Assistant 仍在处理您的上一个转录",
     busyMessage: "如果您想取消上一个转录，请按 Esc 或点击下面。",
@@ -186,6 +194,10 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     closeHint: "關閉提示",
     close: "關閉",
     networkMessage: "未能完成轉錄。請重試。",
+    micTitle: "麥克風不可用",
+    micMessage:
+      "Voice Assistant 無法存取您的麥克風。可能是其他應用正在使用它，或者存取被系統或安全性設定阻止。",
+    help: "取得協助",
     retry: "重試",
     busyTitle: "Voice Assistant 仍在處理您的上一個轉錄",
     busyMessage: "如果您想取消上一個轉錄，請按 Esc 或點擊下面。",
@@ -247,6 +259,10 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     closeHint: "Close hint",
     close: "Close",
     networkMessage: "Transcription could not be completed. Please try again.",
+    micTitle: "Microphone unavailable",
+    micMessage:
+      "Voice Assistant cannot access your microphone. Another app may be using it, or access may be blocked by system or security settings.",
+    help: "Get help",
     retry: "Retry",
     busyTitle: "Voice Assistant is still processing your previous transcription",
     busyMessage: "To cancel the previous transcription, press Esc or click below.",
@@ -329,6 +345,18 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
           : {})}
         {...(props.onRetryNetworkError
           ? { onRetry: props.onRetryNetworkError }
+          : {})}
+      />
+    );
+  }
+
+  if (state === "error" && props.reason === "mic") {
+    return (
+      <MicrophoneErrorHint
+        text={text}
+        {...(props.onCancel ? { onDismiss: props.onCancel } : {})}
+        {...(props.onOpenMicrophoneHelp
+          ? { onHelp: props.onOpenMicrophoneHelp }
           : {})}
       />
     );
@@ -501,6 +529,12 @@ interface NetworkErrorHintProps {
   onRetry?(): void;
 }
 
+interface MicrophoneErrorHintProps {
+  text: OverlayText;
+  onDismiss?(): void;
+  onHelp?(): void;
+}
+
 function ShortcutHelpPanel({
   shortcuts,
   text,
@@ -638,6 +672,59 @@ function NetworkErrorHint({
             {text.retry}
           </button>
         ) : null}
+      </section>
+    </main>
+  );
+}
+
+function MicrophoneErrorHint({
+  text,
+  onDismiss,
+  onHelp,
+}: MicrophoneErrorHintProps): React.JSX.Element {
+  return (
+    <main className="mic-error-shell">
+      <section
+        className="mic-error-hint"
+        role="alertdialog"
+        aria-modal="false"
+        aria-label={text.micTitle}
+      >
+        <header className="mic-error-hint__header">
+          <span className="mic-error-hint__icon" aria-hidden="true">
+            !
+          </span>
+          <strong>{text.micTitle}</strong>
+          {onDismiss ? (
+            <button
+              type="button"
+              className="mic-error-hint__close"
+              aria-label={text.closeHint}
+              title={text.close}
+              onClick={onDismiss}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M6 6l12 12M18 6 6 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              </svg>
+            </button>
+          ) : null}
+        </header>
+        <p>{text.micMessage}</p>
+        <footer className="mic-error-hint__footer">
+          <button
+            type="button"
+            className="mic-error-hint__help"
+            onClick={onHelp}
+          >
+            {text.help}
+          </button>
+        </footer>
       </section>
     </main>
   );

@@ -47,6 +47,9 @@ const MODE_HINT_VISIBLE_MS = 2000;
 const BUSY_HINT_VISIBLE_MS = 5000;
 const INTERACTION_SOUND_DURATION_MS = 90;
 const RECORDING_LIMIT_WARNING_SECONDS = 60;
+const MIN_START_LOADING_MS = 2000;
+const THINKING_TIMEOUT_MS = 10000;
+const ONBOARDING_MICROPHONE_STEP = 1;
 
 interface ControllerBundle {
   controller: VoiceOperationController;
@@ -90,8 +93,18 @@ export function App(): React.JSX.Element {
   const resultRef = useRef<ResultOverlayContent | undefined>(undefined);
   const showModeHintRef = useRef(false);
   const busyHintTimerRef = useRef<number | undefined>(undefined);
+  const showBusyHintRef = useRef(false);
   const recordingLimitWarningDismissedRef = useRef(false);
   const shortcutHelpVisibleRef = useRef(false);
+  const pendingStartModeRef = useRef<RecordingMode | undefined>(undefined);
+  const pendingStartStartedAtRef = useRef<number | undefined>(undefined);
+  const pendingStartDisplayStateRef = useRef<"listening" | "processing">(
+    "listening",
+  );
+  const pendingStartKindRef = useRef<"start" | "retry" | "stop">("start");
+  const thinkingStartedAtRef = useRef<number | undefined>(undefined);
+  const thinkingTimeoutFiredRef = useRef(false);
+  const thinkingTimeoutTimerRef = useRef<number | undefined>(undefined);
   const lastRecordingModeRef = useRef<RecordingMode>("direct");
   const networkErrorVisibleRef = useRef(false);
   const networkErrorDismissedRef = useRef(false);
@@ -102,7 +115,52 @@ export function App(): React.JSX.Element {
       window.clearTimeout(busyHintTimerRef.current);
       busyHintTimerRef.current = undefined;
     }
+    showBusyHintRef.current = false;
     setShowBusyHint(false);
+  };
+
+  const resetThinkingTimeout = (): void => {
+    if (thinkingTimeoutTimerRef.current !== undefined) {
+      window.clearTimeout(thinkingTimeoutTimerRef.current);
+      thinkingTimeoutTimerRef.current = undefined;
+    }
+    thinkingStartedAtRef.current = undefined;
+    thinkingTimeoutFiredRef.current = false;
+  };
+
+  const showThinkingTimeoutError = (): void => {
+    thinkingTimeoutTimerRef.current = undefined;
+    if (thinkingTimeoutFiredRef.current) {
+      return;
+    }
+    thinkingTimeoutFiredRef.current = true;
+    thinkingStartedAtRef.current = undefined;
+    pendingStartModeRef.current = undefined;
+    pendingStartStartedAtRef.current = undefined;
+    networkErrorVisibleRef.current = true;
+    networkErrorDismissedRef.current = false;
+    setNetworkErrorDismissed(false);
+    setReason("transcription");
+    hideBusyHint();
+    setState("error");
+    window.voiceAI.reportRecordingState({
+      state: "error",
+      mode: undefined,
+      reason: "transcription",
+    });
+    console.warn("[voice] thinking timed out after 10s; closing connection");
+    bundleRef.current?.controller.cancel().catch((error) => {
+      console.error("[voice] failed to close connection after thinking timeout", error);
+    });
+  };
+
+  const startThinkingTimeout = (): void => {
+    resetThinkingTimeout();
+    thinkingStartedAtRef.current = Date.now();
+    thinkingTimeoutTimerRef.current = window.setTimeout(
+      showThinkingTimeoutError,
+      THINKING_TIMEOUT_MS,
+    );
   };
 
   const dismissRecordingLimitWarning = (): void => {
@@ -134,10 +192,15 @@ export function App(): React.JSX.Element {
   };
 
   const showProcessingBusyHint = (): void => {
+    const wasVisible = showBusyHintRef.current;
     if (busyHintTimerRef.current) {
       window.clearTimeout(busyHintTimerRef.current);
     }
+    showBusyHintRef.current = true;
     setShowBusyHint(true);
+    if (!wasVisible && bundleRef.current) {
+      playWarningInteractionSound(bundleRef.current.audio);
+    }
     busyHintTimerRef.current = window.setTimeout(() => {
       hideBusyHint();
     }, BUSY_HINT_VISIBLE_MS);
@@ -147,6 +210,7 @@ export function App(): React.JSX.Element {
     resultRef.current = next;
     setResult(next);
     if (next) {
+      resetThinkingTimeout();
       hideShortcutHelp();
       setState("result");
       window.voiceAI.reportRecordingState({ state: "result", mode: undefined });
@@ -156,13 +220,76 @@ export function App(): React.JSX.Element {
   const dismissResult = (): void => {
     setDisplayedResult(undefined);
     hideShortcutHelp();
+    pendingStartModeRef.current = undefined;
+    pendingStartStartedAtRef.current = undefined;
+    resetThinkingTimeout();
     setState("idle");
     window.voiceAI.reportRecordingState({ state: "idle", mode: undefined });
+  };
+
+  const showStartLoading = (mode: RecordingMode): void => {
+    pendingStartModeRef.current = mode;
+    pendingStartStartedAtRef.current = Date.now();
+    pendingStartDisplayStateRef.current = "listening";
+    pendingStartKindRef.current = "start";
+    resetThinkingTimeout();
+    hideShortcutHelp();
+    hideBusyHint();
+    networkErrorVisibleRef.current = false;
+    networkErrorDismissedRef.current = false;
+    setNetworkErrorDismissed(false);
+    setReason(undefined);
+    setActiveMode(mode);
+    showModeHintRef.current = true;
+    setShowModeHint(true);
+    setState("listening");
+    window.voiceAI.reportRecordingState({ state: "listening", mode });
+  };
+
+  const showRetryThinking = (mode: RecordingMode): void => {
+    pendingStartModeRef.current = mode;
+    pendingStartStartedAtRef.current = Date.now();
+    pendingStartDisplayStateRef.current = "processing";
+    pendingStartKindRef.current = "retry";
+    startThinkingTimeout();
+    hideShortcutHelp();
+    hideBusyHint();
+    networkErrorVisibleRef.current = false;
+    networkErrorDismissedRef.current = false;
+    setNetworkErrorDismissed(false);
+    setReason(undefined);
+    setActiveMode(mode);
+    showModeHintRef.current = false;
+    setShowModeHint(false);
+    setState("processing");
+    window.voiceAI.reportRecordingState({ state: "processing", mode });
+  };
+
+  const showStopThinking = (mode: RecordingMode): void => {
+    pendingStartModeRef.current = mode;
+    pendingStartStartedAtRef.current = Date.now();
+    pendingStartDisplayStateRef.current = "processing";
+    pendingStartKindRef.current = "stop";
+    startThinkingTimeout();
+    hideShortcutHelp();
+    hideBusyHint();
+    networkErrorVisibleRef.current = false;
+    networkErrorDismissedRef.current = false;
+    setNetworkErrorDismissed(false);
+    setReason(undefined);
+    setActiveMode(mode);
+    showModeHintRef.current = false;
+    setShowModeHint(false);
+    setState("processing");
+    window.voiceAI.reportRecordingState({ state: "processing", mode });
   };
 
   const dismissNetworkError = (): void => {
     networkErrorVisibleRef.current = false;
     networkErrorDismissedRef.current = true;
+    pendingStartModeRef.current = undefined;
+    pendingStartStartedAtRef.current = undefined;
+    resetThinkingTimeout();
     setNetworkErrorDismissed(true);
     hideShortcutHelp();
     if (state === "error") {
@@ -200,8 +327,16 @@ export function App(): React.JSX.Element {
         });
       return;
     }
+    showRetryThinking(mode);
     controller.handleToggle(mode).catch((error) => {
       console.error("[voice] 网络错误重试失败", error);
+    });
+  };
+
+  const openMicrophoneHelp = (): void => {
+    window.voiceAI.openHomeSection({
+      section: "home",
+      onboardingStep: ONBOARDING_MICROPHONE_STEP,
     });
   };
 
@@ -256,14 +391,23 @@ export function App(): React.JSX.Element {
           },
           onClearResult: () => {
             setDisplayedResult(undefined);
+            pendingStartModeRef.current = undefined;
+            pendingStartStartedAtRef.current = undefined;
+            resetThinkingTimeout();
             setState("idle");
           },
+          onToggleAccepted: (mode) => {
+            showStartLoading(mode);
+          },
+          onStopAccepted: (mode) => {
+            showStopThinking(mode);
+          },
+          getPendingStartMode: () => pendingStartModeRef.current,
           onBusyDuringProcessing: showProcessingBusyHint,
           onTranscriptionUnavailable: () => {
             networkErrorVisibleRef.current = true;
             networkErrorDismissedRef.current = false;
             setNetworkErrorDismissed(false);
-            setReason("transcription");
           },
         });
         bundleRef.current = bundle;
@@ -313,8 +457,13 @@ export function App(): React.JSX.Element {
     );
 
     let lastReportedState: RecordingState | undefined;
+    let lastReportedReason: VoiceErrorReason | undefined;
+    let lastReportedSnapshotRevision = -1;
     let lastReportedRecordingLimitWarning = false;
+    let lastReportedBusyHintVisible = false;
     let lastSoundState: RecordingState | undefined;
+    let lastNetworkWarningVisible = false;
+    let lastRecordingLimitWarningSoundVisible = false;
     let lastHintedListeningMode: RecordingMode | undefined;
     let modeHintTimer: number | undefined;
 
@@ -342,21 +491,98 @@ export function App(): React.JSX.Element {
       if (!bundle) {
         return;
       }
+      const now = Date.now();
       const snapshot = bundle.controller.getSnapshot();
-      const displayedState: RecordingState = resultRef.current
+      const pendingStartMode = pendingStartModeRef.current;
+      const pendingStartStartedAt = pendingStartStartedAtRef.current;
+      const pendingStartDisplayState = pendingStartDisplayStateRef.current;
+      const pendingStartKind = pendingStartKindRef.current;
+      const snapshotRevision = bundle.controller.getSnapshotRevision();
+      const pendingStartElapsedMs =
+        pendingStartStartedAt === undefined
+          ? Number.POSITIVE_INFINITY
+          : now - pendingStartStartedAt;
+      let shouldHoldStopThinking =
+        pendingStartKind === "stop" &&
+        pendingStartMode !== undefined &&
+        pendingStartStartedAt !== undefined &&
+        (pendingStartElapsedMs < MIN_START_LOADING_MS ||
+          snapshot.state === "listening" ||
+          (snapshot.state === "error" &&
+            snapshot.reason === "transcription" &&
+            networkErrorVisibleRef.current &&
+            !networkErrorDismissedRef.current));
+      let shouldHoldStartLoading =
+        pendingStartMode !== undefined &&
+        pendingStartStartedAt !== undefined &&
+        pendingStartElapsedMs < MIN_START_LOADING_MS &&
+        (pendingStartKind === "retry" ||
+          (snapshot.state === "error" &&
+            snapshot.reason === "transcription" &&
+            networkErrorVisibleRef.current &&
+            !networkErrorDismissedRef.current));
+      let displayedState: RecordingState = resultRef.current
         ? "result"
+        : shouldHoldStopThinking || shouldHoldStartLoading
+          ? pendingStartDisplayState
         : networkErrorVisibleRef.current && !networkErrorDismissedRef.current
           ? "error"
           : networkErrorDismissedRef.current &&
               snapshot.state === "error" &&
               snapshot.reason === "transcription"
             ? "idle"
+            : pendingStartKind === "start" &&
+                pendingStartMode &&
+                (snapshot.state === "idle" || snapshot.state === "success")
+              ? "listening"
             : snapshot.state;
+      const displayedMode =
+        displayedState === "result" ? undefined : (snapshot.mode ?? pendingStartMode);
+      const thinkingVisible =
+        displayedState === "processing" || displayedState === "inserting";
+      let thinkingTimedOut = false;
+      if (thinkingVisible) {
+        if (thinkingStartedAtRef.current === undefined) {
+          thinkingStartedAtRef.current = now;
+          thinkingTimeoutFiredRef.current = false;
+        } else if (
+          !thinkingTimeoutFiredRef.current &&
+          now - thinkingStartedAtRef.current >= THINKING_TIMEOUT_MS
+        ) {
+          thinkingTimeoutFiredRef.current = true;
+          thinkingStartedAtRef.current = undefined;
+          thinkingTimedOut = true;
+          pendingStartModeRef.current = undefined;
+          pendingStartStartedAtRef.current = undefined;
+          shouldHoldStopThinking = false;
+          shouldHoldStartLoading = false;
+          networkErrorVisibleRef.current = true;
+          networkErrorDismissedRef.current = false;
+          setNetworkErrorDismissed(false);
+          hideBusyHint();
+          displayedState = "error";
+          console.warn("[voice] 思考超过 10s，自动关闭连接并显示重试");
+          bundle.controller.cancel().catch((error) => {
+            console.error("[voice] 思考超时后关闭连接失败", error);
+          });
+        }
+      } else {
+        resetThinkingTimeout();
+      }
+      if (
+        !shouldHoldStopThinking &&
+        !shouldHoldStartLoading &&
+        snapshot.state !== "idle" &&
+        snapshot.state !== "success"
+      ) {
+        pendingStartModeRef.current = undefined;
+        pendingStartStartedAtRef.current = undefined;
+      }
       if (displayedState !== "idle" && displayedState !== "success") {
         hideShortcutHelp();
       }
-      if (snapshot.mode) {
-        lastRecordingModeRef.current = snapshot.mode;
+      if (displayedMode) {
+        lastRecordingModeRef.current = displayedMode;
       }
       if (snapshot.state !== "error" || snapshot.reason !== "transcription") {
         if (!networkErrorVisibleRef.current) {
@@ -367,10 +593,10 @@ export function App(): React.JSX.Element {
         networkErrorDismissedRef.current = false;
         setNetworkErrorDismissed(false);
       }
-      if (snapshot.state === "listening" && snapshot.mode) {
-        if (lastHintedListeningMode !== snapshot.mode) {
-          lastHintedListeningMode = snapshot.mode;
-          showModeHintFor(snapshot.mode);
+      if (displayedState === "listening" && displayedMode) {
+        if (lastHintedListeningMode !== displayedMode) {
+          lastHintedListeningMode = displayedMode;
+          showModeHintFor(displayedMode);
         }
       } else {
         lastHintedListeningMode = undefined;
@@ -386,12 +612,15 @@ export function App(): React.JSX.Element {
         console.log(`[voice] 狀態變更 ${current} -> ${displayedState}`);
         return displayedState;
       });
+      const nextReason =
+        (shouldHoldStopThinking || shouldHoldStartLoading) && !thinkingTimedOut
+        ? undefined
+        : networkErrorVisibleRef.current
+        ? "transcription"
+        : displayedState === "result"
+          ? undefined
+          : snapshot.reason;
       setReason((current) => {
-        const nextReason = networkErrorVisibleRef.current
-          ? "transcription"
-          : displayedState === "result"
-            ? undefined
-            : snapshot.reason;
         if (current === nextReason) {
           return current;
         }
@@ -401,7 +630,7 @@ export function App(): React.JSX.Element {
         return nextReason;
       });
       // 僅在展示狀態真正變化時上報給 main，避免每 120ms 一次 IPC 噪音。
-      const nextMode = displayedState === "result" ? undefined : snapshot.mode;
+      const nextMode = displayedMode;
       setActiveMode((current) => (current === nextMode ? current : nextMode));
       const nextRecordingRemainingSeconds =
         snapshot.state === "listening"
@@ -424,27 +653,50 @@ export function App(): React.JSX.Element {
           ? current
           : nextRecordingRemainingSeconds,
       );
-      if (lastSoundState !== displayedState) {
+      const networkWarningVisible =
+        networkErrorVisibleRef.current &&
+        !networkErrorDismissedRef.current &&
+        displayedState === "error";
+      const busyHintVisible =
+        showBusyHintRef.current &&
+        (displayedState === "processing" || displayedState === "inserting");
+      if (networkWarningVisible && !lastNetworkWarningVisible) {
+        playWarningInteractionSound(bundle.audio);
+      }
+      lastNetworkWarningVisible = networkWarningVisible;
+      if (
+        recordingLimitWarningVisible &&
+        !lastRecordingLimitWarningSoundVisible
+      ) {
+        playWarningInteractionSound(bundle.audio);
+      }
+      lastRecordingLimitWarningSoundVisible = recordingLimitWarningVisible;
+      if (!networkWarningVisible && lastSoundState !== displayedState) {
         playInteractionSoundForState(displayedState, bundle.audio);
         lastSoundState = displayedState;
       }
       if (
         lastReportedState !== displayedState ||
-        lastReportedRecordingLimitWarning !== recordingLimitWarningVisible
+        lastReportedReason !== nextReason ||
+        lastReportedSnapshotRevision !== snapshotRevision ||
+        lastReportedRecordingLimitWarning !== recordingLimitWarningVisible ||
+        lastReportedBusyHintVisible !== busyHintVisible
       ) {
         console.log(
           `[voice] 上報托盤狀態 ${lastReportedState ?? "初始"} -> ${displayedState}`,
         );
         window.voiceAI.reportRecordingState({
           state: displayedState,
-          mode:
-            displayedState === "listening" && showModeHintRef.current
-              ? snapshot.mode
-              : undefined,
+          mode: displayedMode,
+          ...(nextReason !== undefined ? { reason: nextReason } : {}),
           recordingLimitWarning: recordingLimitWarningVisible,
+          busyHintVisible,
         });
         lastReportedState = displayedState;
+        lastReportedReason = nextReason;
+        lastReportedSnapshotRevision = snapshotRevision;
         lastReportedRecordingLimitWarning = recordingLimitWarningVisible;
+        lastReportedBusyHintVisible = busyHintVisible;
       }
 
       // 電平：僅 listening 狀態下顯示即時音量，其他狀態強制歸零，避免殘影。
@@ -506,10 +758,19 @@ export function App(): React.JSX.Element {
             onRetryNetworkError: retryNetworkError,
           }
         : {})}
+      onOpenMicrophoneHelp={openMicrophoneHelp}
       {...(reason !== undefined ? { reason } : {})}
       {...(initError !== undefined ? { error: initError } : {})}
       onCancel={() => {
         console.log("[voice] 使用者點選 × 取消");
+        if (networkErrorVisibleRef.current) {
+          networkErrorVisibleRef.current = false;
+          networkErrorDismissedRef.current = true;
+          pendingStartModeRef.current = undefined;
+          pendingStartStartedAtRef.current = undefined;
+          setNetworkErrorDismissed(true);
+          setReason(undefined);
+        }
         // controller 可能尚未初始化（bootstrap 中），此時靜默忽略即可。
         // 注意沒有 bundle 的閉包引用，因為此回撥在 effect 中定義會造成近更難讀，
         // 因此直接通過 window 全域性介面上報狀態不適用；改為從 React 模組作用域共享的 bundleRef 讀取。
@@ -551,6 +812,9 @@ interface BuildControllerInput {
   audio: AppSettings["audio"];
   onPostprocessResult(event: VoicePostprocessResultEvent): void;
   onClearResult(): void;
+  onToggleAccepted(mode: RecordingMode): void;
+  onStopAccepted(mode: RecordingMode): void;
+  getPendingStartMode(): RecordingMode | undefined;
   onBusyDuringProcessing(): void;
   onTranscriptionUnavailable(): void;
 }
@@ -611,6 +875,19 @@ function playInteractionSoundForState(
     default:
       return;
   }
+}
+
+function playWarningInteractionSound(
+  audioSettings: AppSettings["audio"],
+): void {
+  if (!audioSettings.interactionSounds) {
+    return;
+  }
+
+  playInteractionTone(520, 0.045);
+  window.setTimeout(() => {
+    playInteractionTone(520, 0.035);
+  }, 120);
 }
 
 function playInteractionTone(frequency: number, volume: number): void {
@@ -693,15 +970,25 @@ function buildController(input: BuildControllerInput): ControllerBundle {
   const textTarget: VoiceTextTarget = {
     getSelectedText: () => window.voiceAI.getSelectedText(),
     insertText: async (text) => {
+      console.log(`[voice] textTarget.insertText request textLength=${text.length}`);
       const result = await window.voiceAI.insertText(text);
+      console.log(
+        `[voice] textTarget.insertText result ok=${result.ok} strategy=${result.strategy} message=${result.message ?? ""}`,
+      );
       if (!result.ok) {
         throw new Error(result.message ?? "insert failed");
       }
     },
     replaceSelection: async (text, expectedSelectedText) => {
+      console.log(
+        `[voice] textTarget.replaceSelection request textLength=${text.length} expectedSelectedTextLength=${expectedSelectedText?.length ?? 0}`,
+      );
       const result = await window.voiceAI.replaceSelectedText(
         text,
         expectedSelectedText,
+      );
+      console.log(
+        `[voice] textTarget.replaceSelection result ok=${result.ok} strategy=${result.strategy} message=${result.message ?? ""}`,
       );
       if (!result.ok) {
         throw new Error(result.message ?? "insert failed");
@@ -745,8 +1032,34 @@ function buildController(input: BuildControllerInput): ControllerBundle {
   const unsubscribeToggle = window.voiceAI.onToggleRecording(({ mode }) => {
     console.log(`[voice] 收到 onToggleRecording，mode=${mode}`);
     const snapshot = controller.getSnapshot();
+    const pendingStartMode = input.getPendingStartMode();
+    if (
+      pendingStartMode &&
+      (mode === "direct" || mode === pendingStartMode)
+    ) {
+      input.onStopAccepted(pendingStartMode);
+      void controller.handleToggle(mode);
+      return;
+    }
     if (snapshot.state === "processing" || snapshot.state === "inserting") {
       input.onBusyDuringProcessing();
+      return;
+    }
+    if (
+      snapshot.state === "idle" ||
+      snapshot.state === "success" ||
+      snapshot.state === "error"
+    ) {
+      input.onClearResult();
+      input.onToggleAccepted(mode);
+      void controller.handleToggle(mode);
+      return;
+    } else if (
+      snapshot.state === "listening" &&
+      (mode === "direct" || mode === snapshot.mode)
+    ) {
+      input.onStopAccepted(snapshot.mode ?? mode);
+      void controller.handleToggle(mode);
       return;
     }
     input.onClearResult();

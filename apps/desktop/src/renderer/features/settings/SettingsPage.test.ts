@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createDefaultSettings } from "@voice/shared";
 import { describe, expect, it } from "vitest";
-import { SettingsPage } from "./SettingsPage";
+import { getOtherShortcutValues, SettingsPage } from "./SettingsPage";
 
 describe("SettingsPage", () => {
   it("renders the waveform style selector in recording settings", () => {
@@ -30,5 +30,22 @@ describe("SettingsPage", () => {
     expect(html).toContain("麦克风");
     expect(html).toContain("recording-input-device");
     expect(html).toContain("自动检测");
+  });
+
+  it("collects only the other mode shortcuts for conflict checks", () => {
+    const settings = createDefaultSettings({ isPackaged: false });
+
+    expect(getOtherShortcutValues(settings, "toggleRecording")).toEqual([
+      "RightAlt+RightShift",
+      "RightAlt+Space"
+    ]);
+    expect(getOtherShortcutValues(settings, "translateDictation")).toEqual([
+      "RightAlt",
+      "RightAlt+Space"
+    ]);
+    expect(getOtherShortcutValues(settings, "processSelection")).toEqual([
+      "RightAlt",
+      "RightAlt+RightShift"
+    ]);
   });
 });

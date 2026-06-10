@@ -78,12 +78,15 @@ export function isSupportedShortcut(value: string): boolean {
 }
 
 export interface ShortcutCaptureHandlers {
+  capture(accelerator: string): void;
   handleKeyDown(event: KeyboardEvent): void;
   handleKeyUp(event: KeyboardEvent): void;
   reset(): void;
 }
 
 export interface CreateShortcutCaptureHandlersOptions {
+  currentShortcut?: string;
+  existingShortcuts?: string[];
   onCapture(accelerator: string): void;
   onCancel(): void;
   onInvalid?(message: string): void;
@@ -121,7 +124,11 @@ export function createShortcutCaptureHandlers(
     }
     clearRightAltFallback();
 
-    const validation = validateShortcut(accelerator, "win32");
+    const validation = validateShortcut(accelerator, {
+      platform: "win32",
+      currentShortcut: options.currentShortcut,
+      existingShortcuts: options.existingShortcuts
+    });
     if (!validation.ok) {
       options.onInvalid?.(validation.message ?? INVALID_SHORTCUT_MESSAGE);
       return;
@@ -135,6 +142,11 @@ export function createShortcutCaptureHandlers(
   const handleKeyDown = (event: KeyboardEvent): void => {
     event.preventDefault();
     event.stopPropagation();
+
+    if (event.code === "Escape" && pressedModifiers.has("RightAlt")) {
+      finish("RightAlt+Esc");
+      return;
+    }
 
     if (event.code === "Escape") {
       options.onCancel();
@@ -206,6 +218,7 @@ export function createShortcutCaptureHandlers(
   };
 
   return {
+    capture: finish,
     handleKeyDown,
     handleKeyUp,
     reset
@@ -213,6 +226,10 @@ export function createShortcutCaptureHandlers(
 }
 
 function modifierFromEvent(event: KeyboardEvent): string | undefined {
+  if (event.key === "AltGraph") {
+    return "RightAlt";
+  }
+
   switch (event.code) {
     case "ControlLeft":
     case "ControlRight":
@@ -228,9 +245,6 @@ function modifierFromEvent(event: KeyboardEvent): string | undefined {
     case "MetaRight":
       return "Super";
     default:
-      if (event.key === "AltGraph") {
-        return "RightAlt";
-      }
       return undefined;
   }
 }
@@ -240,18 +254,27 @@ function syncHeldModifiersFromEvent(
   modifiers: Set<string>,
   currentModifier?: string
 ): void {
-  if (isAltGraphActive(event)) {
+  if (
+    currentModifier === "RightAlt" ||
+    isAltGraphActive(event) ||
+    isImplicitRightAltEvent(event, modifiers, currentModifier)
+  ) {
     modifiers.delete("Ctrl");
     modifiers.delete("Alt");
     modifiers.add("RightAlt");
   } else {
-    if (event.ctrlKey && currentModifier !== "Ctrl") {
+    if (
+      event.ctrlKey &&
+      currentModifier !== "Ctrl" &&
+      !modifiers.has("RightAlt")
+    ) {
       modifiers.add("Ctrl");
     }
     if (
       event.altKey &&
       currentModifier !== "Alt" &&
-      currentModifier !== "RightAlt"
+      currentModifier !== "RightAlt" &&
+      !modifiers.has("RightAlt")
     ) {
       modifiers.add("Alt");
     }
@@ -270,6 +293,21 @@ function isAltGraphActive(event: KeyboardEvent): boolean {
     return false;
   }
   return event.getModifierState("AltGraph");
+}
+
+function isImplicitRightAltEvent(
+  event: KeyboardEvent,
+  modifiers: Set<string>,
+  currentModifier?: string
+): boolean {
+  return (
+    event.ctrlKey &&
+    event.altKey &&
+    currentModifier !== "Ctrl" &&
+    currentModifier !== "Alt" &&
+    !modifiers.has("RightAlt") &&
+    !modifiers.has("Alt")
+  );
 }
 
 function buildAccelerator(modifiers: Set<string>, key: string): string {

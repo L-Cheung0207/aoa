@@ -79,6 +79,24 @@ describe("ipc schemas", () => {
     });
   });
 
+  it("accepts RightAlt regular-key shortcut settings patches", () => {
+    expect(
+      parseSettingsPatchInput({
+        shortcuts: {
+          toggleRecording: "AltGr+A",
+          processSelection: "RightAlt+F5",
+          translateDictation: "RightAlt+Right",
+        },
+      }),
+    ).toEqual({
+      shortcuts: {
+        toggleRecording: "AltGr+A",
+        processSelection: "RightAlt+F5",
+        translateDictation: "RightAlt+Right",
+      },
+    });
+  });
+
   it("rejects reserved shortcut settings patches", () => {
     expect(() =>
       parseSettingsPatchInput({
@@ -87,14 +105,12 @@ describe("ipc schemas", () => {
     ).toThrow("Settings patch is invalid");
   });
 
-  it("accepts single-key shortcut settings patches", () => {
-    expect(
+  it("rejects Typeless-blacklisted single-key shortcut settings patches", () => {
+    expect(() =>
       parseSettingsPatchInput({
         shortcuts: { toggleRecording: "A" },
       }),
-    ).toEqual({
-      shortcuts: { toggleRecording: "A" },
-    });
+    ).toThrow("Settings patch is invalid");
   });
 
   it("accepts a valid history retention apply input", () => {

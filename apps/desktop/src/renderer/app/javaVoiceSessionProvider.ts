@@ -38,6 +38,8 @@ type JavaVoiceMessage =
   | JavaVoiceFinalResult
   | JavaVoiceError;
 
+const JAVA_VOICE_STOP_TIMEOUT_MS = 10000;
+
 export interface CreateJavaVoiceSessionProviderOptions {
   url?: string;
   WebSocketConstructor?: typeof WebSocket;
@@ -240,6 +242,7 @@ function createJavaVoiceTranscriptionProvider(
           (resolve) => {
             stopResolver = resolve;
           },
+          JAVA_VOICE_STOP_TIMEOUT_MS,
         );
         if (sessionError && !finalResult) {
           throw sessionError;
@@ -344,12 +347,18 @@ function waitForOpen(socket: WebSocket): Promise<void> {
 function waitForSessionEnd(
   isEnded: () => boolean,
   registerResolver: (resolve: () => void) => void,
+  timeoutMs: number,
 ): Promise<void> {
   if (isEnded()) {
     return Promise.resolve();
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error("Java voice session timed out waiting for final result"));
+    }, timeoutMs);
     registerResolver(resolve);
+  }).finally(() => {
+    stopResolver = undefined;
   });
 }
 

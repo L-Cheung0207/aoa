@@ -77,6 +77,9 @@ export function createUninstallService(
         options.app.getPath("userData"),
         options.app.getPath("logs"),
       ]);
+      for (const cleanupPath of cleanupPaths) {
+        assertSafeCleanupDirectory(cleanupPath);
+      }
       const scriptPath = join(
         options.tempDir,
         `voice-assistant-uninstall-${options.pid}.ps1`,
@@ -87,6 +90,7 @@ export function createUninstallService(
         buildWindowsCleanupScript({
           pid: options.pid,
           uninstallerPath,
+          cleanupPaths,
         }),
       );
       const spawnDetached = options.spawnDetached ?? defaultSpawnDetached;
@@ -153,11 +157,18 @@ function uniquePaths(paths: string[]): string[] {
 }
 
 function assertSafeInstallDirectory(path: string): void {
+  assertSafeCleanupDirectory(path, "install directory");
+}
+
+function assertSafeCleanupDirectory(
+  path: string,
+  label = "cleanup directory",
+): void {
   const resolved = resolve(path);
   const parsedRoot = resolve(resolved, "..");
   if (resolved === parsedRoot || resolved.split(/[\\/]+/).length < 3) {
     throw new Error(
-      `Refusing to uninstall from unsafe install directory: ${path}`,
+      `Refusing to uninstall from unsafe ${label}: ${path}`,
     );
   }
 }
@@ -165,10 +176,18 @@ function assertSafeInstallDirectory(path: string): void {
 function buildWindowsCleanupScript(options: {
   pid: number;
   uninstallerPath: string;
+  cleanupPaths: string[];
 }): string {
+  const cleanupPathEntries = options.cleanupPaths
+    .map((path) => `  ${toPowerShellString(path)}`)
+    .join("\n");
+
   return `\
 $ErrorActionPreference = "SilentlyContinue"
 $UninstallerPath = ${toPowerShellString(options.uninstallerPath)}
+$CleanupPaths = @(
+${cleanupPathEntries}
+)
 
 try {
   Wait-Process -Id ${options.pid} -Timeout 30
@@ -179,6 +198,12 @@ Start-Sleep -Milliseconds 600
 if (Test-Path -LiteralPath $UninstallerPath) {
   Start-Process -FilePath $UninstallerPath -ArgumentList @('/currentuser', '/S', '--delete-app-data') -Wait -WindowStyle Hidden
 }
+
+$CleanupPaths |
+  Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+  ForEach-Object {
+    Remove-Item -LiteralPath $_ -Recurse -Force
+  }
 
 Remove-Item -LiteralPath $PSCommandPath -Force
 `;

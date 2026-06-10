@@ -62,6 +62,7 @@ import {
   shouldEnableEscCancelForState,
 } from "./shortcuts/escCancelController";
 import { createNativeShortcutRegistrar } from "./shortcuts/nativeShortcutRegistrar";
+import { createShortcutCaptureSession } from "./shortcuts/shortcutCaptureSession";
 import { createShortcutManager } from "./shortcuts/shortcutManager";
 import { createMainTranscriptionService } from "./transcription/mainTranscriptionService";
 import { createTray } from "./tray/createTray";
@@ -128,7 +129,10 @@ export function formatTrayTooltip(
  * - error：保留顯示，讓使用者看到錯誤提示
  */
 export type OverlayVisibility = "show" | "hide" | "keep";
-export function resolveOverlayVisibility(state: string): OverlayVisibility {
+export function resolveOverlayVisibility(
+  state: string,
+  reason?: string,
+): OverlayVisibility {
   switch (state) {
     case "listening":
     case "canceled":
@@ -141,6 +145,7 @@ export function resolveOverlayVisibility(state: string): OverlayVisibility {
     case "idle":
       return "hide";
     case "error":
+      return reason === "mic" ? "show" : "keep";
     default:
       return "keep";
   }
@@ -149,7 +154,11 @@ export function resolveOverlayVisibility(state: string): OverlayVisibility {
 export function resolveOverlayWindowLayout(
   state: string,
   _mode: RecordingMode | undefined,
-  options: { recordingLimitWarning?: boolean } = {},
+  options: {
+    recordingLimitWarning?: boolean;
+    busyHintVisible?: boolean;
+    reason?: string;
+  } = {},
 ): OverlayWindowLayout {
   if (state === "result") {
     return "result";
@@ -166,6 +175,15 @@ export function resolveOverlayWindowLayout(
     }
     return "translatePill";
   }
+  if (state === "error" && options.reason === "mic") {
+    return "micError";
+  }
+  if (
+    (state === "processing" || state === "inserting") &&
+    !options.busyHintVisible
+  ) {
+    return "translatePill";
+  }
   if (state === "processing" || state === "inserting" || state === "error") {
     return "thinkingPill";
   }
@@ -176,7 +194,35 @@ export function resolveOverlayWindowLayout(
 export type ShortcutTriggerOverlayAction = "defer" | "show";
 
 export function resolveShortcutTriggerOverlayAction(): ShortcutTriggerOverlayAction {
-  return "defer";
+  return "show";
+}
+
+export function shouldReplayMicErrorOverlay(
+  state: string,
+  reason?: string,
+): boolean {
+  return state === "error" && reason === "mic";
+}
+
+export function resolveShortcutTriggerOverlayLayout(
+  lastState: string,
+  mode: RecordingMode,
+  options: {
+    reason?: string;
+  } = {},
+): OverlayWindowLayout {
+  const state =
+    lastState === "processing" ||
+    lastState === "inserting" ||
+    lastState === "error"
+      ? lastState
+      : "listening";
+
+  return resolveOverlayWindowLayout(state, mode, {
+    ...(lastState === "error" && options.reason !== undefined
+      ? { reason: options.reason }
+      : {}),
+  });
 }
 
 export function formatShortcutHelpLabel(shortcut: string): string {
@@ -295,6 +341,7 @@ export async function bootstrap(): Promise<void> {
   });
   let insertTargetWindowHandle: string | undefined;
   let lastRecordingState = "idle";
+  let lastRecordingReason: string | undefined;
   let refreshTrayTooltip = (_state: string): void => {};
   const historyStore = createFileHistoryStore({
     rootDir: join(app.getPath("userData"), "history"),
@@ -408,6 +455,7 @@ export async function bootstrap(): Promise<void> {
       },
     ),
   );
+  const shortcutCaptureSession = createShortcutCaptureSession();
   let currentShortcuts = configStore.get().shortcuts;
   let shortcutHelpVisible = false;
 
@@ -424,6 +472,7 @@ export async function bootstrap(): Promise<void> {
   });
   app.on("will-quit", () => {
     overlayWindowFollower.stop();
+    shortcutCaptureSession.stop();
     escCancelController.dispose();
   });
 
@@ -434,6 +483,21 @@ export async function bootstrap(): Promise<void> {
     }
     console.log(`[bootstrap] handleToggle 觸發，mode=${mode}`);
     void (async () => {
+      if (shouldReplayMicErrorOverlay(lastRecordingState, lastRecordingReason)) {
+        const layout = resolveShortcutTriggerOverlayLayout(
+          lastRecordingState,
+          mode,
+          lastRecordingReason ? { reason: lastRecordingReason } : {},
+        );
+        applyOverlayWindowLayout(overlayWindow, layout);
+        if (!overlayWindow.isVisible()) {
+          overlayWindow.showInactive();
+        }
+        overlayWindowFollower.start(layout);
+        console.log("[bootstrap] microphone error overlay already active; replay only");
+        return;
+      }
+
       if (
         lastRecordingState === "idle" ||
         lastRecordingState === "success" ||
@@ -453,13 +517,15 @@ export async function bootstrap(): Promise<void> {
 
       // 使用 showInactive 而非 show，避免搶走前臺焦點：
       // 否則 Ctrl+V 貼上會打到懸浮窗 WebContents，而不是使用者原本的游標位置。
-      const shortcutLayoutState =
-        lastRecordingState === "processing" ||
-        lastRecordingState === "inserting" ||
-        lastRecordingState === "error"
-          ? lastRecordingState
-          : "listening";
-      const layout = resolveOverlayWindowLayout(shortcutLayoutState, mode);
+      const layout = resolveShortcutTriggerOverlayLayout(
+        lastRecordingState,
+        mode,
+        {
+          ...(lastRecordingReason !== undefined
+            ? { reason: lastRecordingReason }
+            : {}),
+        },
+      );
       applyOverlayWindowLayout(overlayWindow, layout);
       if (resolveShortcutTriggerOverlayAction() === "show") {
         overlayWindow.showInactive();
@@ -519,17 +585,38 @@ export async function bootstrap(): Promise<void> {
   }
 
   let shortcutCaptureDepth = 0;
+  let shortcutCaptureTargetWindow: BrowserWindow | undefined;
 
-  function setShortcutCaptureActive(active: boolean): void {
+  function setShortcutCaptureActive(
+    active: boolean,
+    targetWindow: BrowserWindow | undefined,
+  ): void {
     if (active) {
-      shortcutCaptureDepth += 1;
-      if (shortcutCaptureDepth === 1) {
+      if (shortcutCaptureDepth === 0) {
+        shortcutCaptureTargetWindow = targetWindow;
         shortcutManager.suspend();
         ensureShortcutCaptureWindowGuards(
           BrowserWindow.getAllWindows(),
           () => shortcutCaptureDepth > 0,
+          () => shortcutCaptureTargetWindow,
         );
+        try {
+          shortcutCaptureSession.start();
+          shortcutCaptureDepth = 1;
+        } catch (error) {
+          shortcutCaptureSession.stop();
+          const resumeResult = shortcutManager.resume();
+          if (resumeResult && !resumeResult.ok) {
+            broadcastShortcutConflict(
+              resumeResult.conflicts.map((c) => c.accelerator),
+            );
+          }
+          throw error;
+        }
         console.log("[bootstrap] 快捷鍵錄入模式：已暫停全域性快捷鍵");
+      } else {
+        shortcutCaptureTargetWindow = targetWindow ?? shortcutCaptureTargetWindow;
+        shortcutCaptureDepth += 1;
       }
       return;
     }
@@ -540,6 +627,8 @@ export async function bootstrap(): Promise<void> {
 
     shortcutCaptureDepth -= 1;
     if (shortcutCaptureDepth === 0) {
+      shortcutCaptureTargetWindow = undefined;
+      shortcutCaptureSession.stop();
       const resumeResult = shortcutManager.resume();
       console.log(
         `[bootstrap] 快捷鍵錄入模式：已恢復全域性快捷鍵 ok=${resumeResult?.ok ?? false}`,
@@ -621,6 +710,7 @@ export async function bootstrap(): Promise<void> {
       section?: "home" | "history" | "settings" | "about";
       showUpdates?: boolean;
       updateReady?: { version?: string };
+      onboardingStep?: number;
     } = {},
   ): void {
     if (homeWindow && !homeWindow.isDestroyed()) {
@@ -638,6 +728,12 @@ export async function bootstrap(): Promise<void> {
       if (options.showUpdates) {
         homeWindow.webContents.send("voice:open-update-dialog");
       }
+      if (options.onboardingStep !== undefined) {
+        homeWindow.webContents.send(
+          "voice:open-onboarding-step",
+          options.onboardingStep,
+        );
+      }
       if (options.updateReady) {
         homeWindow.webContents.send("voice:update-ready", options.updateReady);
       }
@@ -645,6 +741,9 @@ export async function bootstrap(): Promise<void> {
     }
     homeWindow = createHomeWindow({
       ...(options.section ? { section: options.section } : {}),
+      ...(options.onboardingStep !== undefined
+        ? { onboardingStep: options.onboardingStep }
+        : {}),
       theme: configStore.get().ui.theme,
     });
     wireShortcutCaptureWindowGuard(homeWindow, () => shortcutCaptureDepth > 0);
@@ -654,6 +753,12 @@ export async function bootstrap(): Promise<void> {
       if (options.showUpdates) {
         homeWindow?.webContents.send("voice:open-update-dialog");
       }
+      if (options.onboardingStep !== undefined) {
+        homeWindow?.webContents.send(
+          "voice:open-onboarding-step",
+          options.onboardingStep,
+        );
+      }
       if (options.updateReady) {
         homeWindow?.webContents.send("voice:update-ready", options.updateReady);
       }
@@ -662,6 +767,33 @@ export async function bootstrap(): Promise<void> {
       homeWindow = undefined;
     });
   }
+
+  ipcMain.on("voice:open-home-section-request", (_event, input: unknown) => {
+    const request =
+      typeof input === "object" && input !== null
+        ? (input as {
+            section?: unknown;
+            onboardingStep?: unknown;
+          })
+        : {};
+    const section =
+      request.section === "history" ||
+      request.section === "settings" ||
+      request.section === "about" ||
+      request.section === "home"
+        ? request.section
+        : "home";
+    const onboardingStep =
+      typeof request.onboardingStep === "number" &&
+      Number.isInteger(request.onboardingStep) &&
+      request.onboardingStep >= 0
+        ? request.onboardingStep
+        : undefined;
+    openHomeWindow({
+      section,
+      ...(onboardingStep !== undefined ? { onboardingStep } : {}),
+    });
+  });
 
   // 監聽 renderer 上報的錄音狀態，更新托盤 tooltip（僅開啟/關閉兩態），並控制懸浮窗顯隱。
   // 用定時器控制代碼保證"快速切換"場景下最終顯隱意圖以最後一次 state 為準，不會出現閃爍或延遲隱藏。
@@ -674,24 +806,29 @@ export async function bootstrap(): Promise<void> {
         | {
             state: string;
             mode?: RecordingMode | undefined;
+            reason?: string | undefined;
             recordingLimitWarning?: boolean;
+            busyHintVisible?: boolean;
           }
         | undefined,
     ) => {
       const state = typeof update?.state === "string" ? update.state : "idle";
       lastRecordingState = state;
+      lastRecordingReason = state === "error" ? update?.reason : undefined;
       if (state !== "idle" && state !== "shortcutHelp") {
         shortcutHelpVisible = false;
       }
       const tooltip = formatTrayTooltip(state, configStore.get().ui.language);
-      const visibility = resolveOverlayVisibility(state);
+      const visibility = resolveOverlayVisibility(state, update?.reason);
       console.log(
         `[bootstrap] 收到錄音狀態 state=${state} mode=${update?.mode ?? "無"} → tooltip="${tooltip}" overlay=${visibility}`,
       );
       tray.setToolTip(tooltip);
 
       const layout = resolveOverlayWindowLayout(state, update?.mode, {
+        ...(update?.reason !== undefined ? { reason: update.reason } : {}),
         recordingLimitWarning: update?.recordingLimitWarning === true,
+        busyHintVisible: update?.busyHintVisible === true,
       });
       applyOverlayWindowLayout(overlayWindow, layout);
       overlayWindowFollower.updateLayout(layout);
@@ -739,8 +876,11 @@ export async function bootstrap(): Promise<void> {
 
   ipcMain.handle(
     "voice:set-shortcut-capture-active",
-    (_event, payload: { active?: boolean } | undefined) => {
-      setShortcutCaptureActive(payload?.active === true);
+    (event, payload: { active?: boolean } | undefined) => {
+      setShortcutCaptureActive(
+        payload?.active === true,
+        BrowserWindow.fromWebContents(event.sender) ?? undefined,
+      );
     },
   );
 

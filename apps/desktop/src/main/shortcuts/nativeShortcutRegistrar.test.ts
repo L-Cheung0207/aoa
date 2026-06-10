@@ -131,6 +131,41 @@ describe("native shortcut registrar", () => {
     expect(translate).toHaveBeenCalledTimes(1);
   });
 
+  it("routes configured RightAlt regular-key shortcuts through the native hook", () => {
+    const api = createHookApi();
+    const genericRegister = vi.fn();
+    const registrar = createNativeShortcutRegistrar(api, {
+      register: genericRegister,
+      unregister: vi.fn()
+    });
+    const direct = vi.fn();
+    const processSelection = vi.fn();
+    const translate = vi.fn();
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "AltGr+A",
+      processSelection: "RightAlt+F5",
+      translateDictation: "RightAlt+Right"
+    });
+
+    expect(registrar.register("AltGr+A", direct)).toBe(true);
+    expect(registrar.register("RightAlt+F5", processSelection)).toBe(true);
+    expect(registrar.register("RightAlt+Right", translate)).toBe(true);
+    expect(api.configuredShortcuts).toEqual([
+      ["AltGr+A", "RightAlt+F5", "RightAlt+Right"]
+    ]);
+    expect(api.startCount).toBe(1);
+    expect(genericRegister).not.toHaveBeenCalled();
+
+    api.dispatch("direct");
+    api.dispatch("processSelection");
+    api.dispatch("translate");
+
+    expect(direct).toHaveBeenCalledTimes(1);
+    expect(processSelection).toHaveBeenCalledTimes(1);
+    expect(translate).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects unknown accelerators without starting the hook", () => {
     const api = createHookApi();
     const registrar = createNativeShortcutRegistrar(api);
