@@ -1,13 +1,9 @@
 export type VoiceServiceSelection =
-  | {
-      kind: "java";
-      url: string;
-      reason: "standard" | "developer-unified-endpoint";
-    }
-  | {
-      kind: "developer";
-      reason: "developer-legacy-endpoint";
-    };
+  {
+    kind: "java";
+    url: string;
+    reason: "standard" | "developer-unified-endpoint";
+  };
 
 export interface SelectVoiceServiceInput {
   developerEnabled: boolean;
@@ -29,7 +25,7 @@ export function selectVoiceService(
     };
   }
 
-  if (isJavaVoiceUnifiedEndpoint(developerWsUrl)) {
+  if (developerWsUrl) {
     return {
       kind: "java",
       url: developerWsUrl,
@@ -38,30 +34,9 @@ export function selectVoiceService(
   }
 
   return {
-    kind: "developer",
-    reason: "developer-legacy-endpoint",
+    kind: "java",
+    url: javaVoiceWsUrl,
+    reason: "standard",
   };
 }
 
-export function isJavaVoiceUnifiedEndpoint(url: string): boolean {
-  const pathname = getNormalizedPathname(url);
-  return pathname.endsWith("/voice");
-}
-
-function getNormalizedPathname(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed) {
-    return "";
-  }
-
-  try {
-    return normalizePathname(new URL(trimmed).pathname);
-  } catch {
-    const withoutQuery = trimmed.split(/[?#]/, 1)[0] ?? "";
-    return normalizePathname(withoutQuery);
-  }
-}
-
-function normalizePathname(pathname: string): string {
-  return pathname.replace(/\/+$/, "").toLowerCase();
-}

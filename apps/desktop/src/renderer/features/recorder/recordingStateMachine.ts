@@ -1,6 +1,8 @@
 import type { RecordingMode } from "@voice/shared";
 import type { RecordingState } from "../../../preload/voiceApi";
 
+export type ControllerRecordingState = Exclude<RecordingState, "result">;
+
 export type VoiceErrorReason =
   | "mic"
   | "transcription"
@@ -20,23 +22,24 @@ export type RecordingEvent =
   | { type: "reset" };
 
 export interface RecordingSnapshot {
-  state: RecordingState;
+  state: ControllerRecordingState;
   /** 僅在 listening/processing/inserting 階段有值 */
   mode: RecordingMode | undefined;
   /** 僅在 error 狀態下有值 */
   reason?: VoiceErrorReason;
+  transcriptionStatus?: "starting" | "ready" | "unavailable";
 }
 
 export interface RecordingStateMachine {
   getSnapshot(): RecordingSnapshot;
   /** 向後相容：返回當前狀態（不包含 mode / reason） */
-  getState(): RecordingState;
+  getState(): ControllerRecordingState;
   send(event: RecordingEvent): RecordingSnapshot;
 }
 
-type TransitionMap = Partial<Record<RecordingEvent["type"], RecordingState>>;
+type TransitionMap = Partial<Record<RecordingEvent["type"], ControllerRecordingState>>;
 
-const transitions: Record<RecordingState, TransitionMap> = {
+const transitions: Record<ControllerRecordingState, TransitionMap> = {
   idle: {
     start: "listening",
     fail: "error"
@@ -62,10 +65,6 @@ const transitions: Record<RecordingState, TransitionMap> = {
     fail: "error",
     reset: "idle"
   },
-  result: {
-    reset: "idle",
-    start: "listening"
-  },
   success: {
     reset: "idle",
     // 第一次會話成功後狀態機停留在 success 等待 reset；若使用者直接按 Right ALT 開啟下一輪，
@@ -78,7 +77,7 @@ const transitions: Record<RecordingState, TransitionMap> = {
   }
 };
 
-const MODE_CLEARING_STATES: ReadonlySet<RecordingState> = new Set([
+const MODE_CLEARING_STATES: ReadonlySet<ControllerRecordingState> = new Set([
   "idle",
   "success",
   "error"

@@ -3,7 +3,11 @@ import type {
   RecordingLanguage,
   RecordingMode,
 } from "@voice/shared";
-import type { AppContext, PostprocessMode } from "@voice/backend-client";
+import type {
+  AppContext,
+  PostprocessMode,
+  PostprocessResult,
+} from "@voice/backend-client";
 
 export interface TranscriptionStartInput {
   installationId: string;
@@ -27,6 +31,7 @@ export type TranscriptionEvent =
   | {
       type: "final";
       text: string;
+      result?: PostprocessResult;
     }
   | {
       type: "error";

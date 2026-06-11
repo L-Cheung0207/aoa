@@ -9,13 +9,11 @@ export interface ClientBootstrapRequest {
 
 export interface FeatureFlags {
   realtimeTranscription: boolean;
-  postprocess: boolean;
   history: boolean;
 }
 
 export interface AnonymousQuota {
   transcriptionSecondsRemaining: number;
-  postprocessRequestsRemaining: number;
 }
 
 export interface ClientBootstrapSnapshot {
@@ -72,18 +70,6 @@ export interface AppContext {
   windowTitle: string;
 }
 
-export interface PostprocessRequest {
-  installationId: string;
-  rawText: string;
-  selectedText: string;
-  appContext: AppContext;
-  mode: PostprocessMode;
-  language: "auto" | "zh-CN" | "en-US";
-  style: PostprocessStyle;
-  targetLanguage?: "zh-CN" | "en-US";
-  dictionaryTerms: DictionaryTermContext[];
-}
-
 export interface PostprocessResult {
   action: "insert" | "replace_selection" | "show_result";
   finalText: string;
@@ -98,7 +84,6 @@ export interface BackendClient {
   createTranscriptionSession(
     request: TranscriptionSessionRequest,
   ): Promise<TranscriptionSession>;
-  postprocess(request: PostprocessRequest): Promise<PostprocessResult>;
 }
 
 export interface BackendErrorPayload {

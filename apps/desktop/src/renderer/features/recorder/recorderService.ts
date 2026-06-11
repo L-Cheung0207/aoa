@@ -49,7 +49,7 @@ export interface CreateRecorderServiceOptions {
   adapter: RecorderAdapter;
 }
 
-export const DEFAULT_RECORDER_MAX_DURATION_SECONDS = 5 * 60;
+export const DEFAULT_RECORDER_MAX_DURATION_SECONDS = 300;
 
 const defaultRecorderOptions: RecorderOptions = {
   sampleRate: 16000,

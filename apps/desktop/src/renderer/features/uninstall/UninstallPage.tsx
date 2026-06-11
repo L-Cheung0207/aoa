@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-type UninstallState = "ready" | "running" | "done" | "error";
+type UninstallState = "ready" | "running" | "closing" | "done" | "error";
 
 export function UninstallPage(): React.JSX.Element {
   const [state, setState] = useState<UninstallState>("ready");
@@ -20,7 +20,10 @@ export function UninstallPage(): React.JSX.Element {
       .then((result) => {
         runningRef.current = false;
         if (result.launchedCleanup) {
-          void window.voiceAI.finishUninstall();
+          setState("closing");
+          window.setTimeout(() => {
+            void window.voiceAI.finishUninstall();
+          }, 900);
           return;
         }
         setState("done");
@@ -82,6 +85,21 @@ export function UninstallPage(): React.JSX.Element {
               <div className="uninstall-progress__fill uninstall-progress__fill--indeterminate" />
             </div>
             <p className="uninstall-progress__label">{"正在卸载，请稍候..."}</p>
+          </div>
+        ) : null}
+
+        {state === "closing" ? (
+          <div className="uninstall-progress-panel">
+            <div
+              className="uninstall-progress uninstall-progress--indeterminate"
+              role="progressbar"
+              aria-label="finishing uninstall"
+            >
+              <div className="uninstall-progress__fill uninstall-progress__fill--indeterminate" />
+            </div>
+            <p className="uninstall-progress__label">
+              {"Finishing cleanup in background..."}
+            </p>
           </div>
         ) : null}
 

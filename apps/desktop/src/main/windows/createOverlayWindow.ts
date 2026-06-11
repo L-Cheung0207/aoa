@@ -8,6 +8,7 @@ export type OverlayWindowLayout =
   | "canceledPill"
   | "thinkingPill"
   | "micError"
+  | "selectionError"
   | "shortcutHelp"
   | "result";
 
@@ -56,8 +57,9 @@ const OVERLAY_LAYOUT_SIZE: Record<OverlayWindowLayout, { width: number; height: 
   translatePill: { width: 184, height: 70 },
   recordingLimitWarning: { width: 420, height: 196 },
   canceledPill: { width: 184, height: 40 },
-  thinkingPill: { width: 380, height: 176 },
+  thinkingPill: { width: 380, height: 196 },
   micError: { width: 360, height: 168 },
+  selectionError: { width: 360, height: 112 },
   shortcutHelp: { width: 340, height: 258 },
   /** LLM 回答结果面板，接近 Typeless 的居中白色浮层。 */
   result: { width: 760, height: 520 }

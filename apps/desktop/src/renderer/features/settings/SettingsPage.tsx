@@ -5,11 +5,7 @@ import type {
   RecordingLanguage,
   WaveformStyle,
 } from "@voice/shared";
-import {
-  ConnectionSettingsFields,
-  getConnectionTargets,
-  type ConnectionTestStatus,
-} from "./ConnectionSettingsFields";
+import { ConnectionSettingsFields } from "./ConnectionSettingsFields";
 import {
   normalizeConnectionSettings,
   validateConnectionSettings,
@@ -18,7 +14,7 @@ import { MicrophoneDevicePicker } from "../../shared/ui/MicrophoneDevicePicker";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import { useAutoSaveSettings } from "./useAutoSaveSettings";
 import { WaveformPreview } from "./WaveformPreview";
-import { getSettingsText, type SettingsText } from "./settingsI18n";
+import { getSettingsText } from "./settingsI18n";
 
 function updateWaveformStyle(
   current: AppSettings,
@@ -58,19 +54,6 @@ export function getOtherShortcutValues(
     .filter(Boolean);
 }
 
-function formatLocalizedConnectivityMessage(
-  label: string,
-  result: { ok: boolean; message: string; elapsedMs?: number },
-  text: SettingsText,
-): string {
-  if (result.ok) {
-    return `${label}${text.connection.connectionSucceeded}${
-      result.elapsedMs ? ` (${result.elapsedMs}ms)` : ""
-    }`;
-  }
-  return `${label}${text.connection.connectionFailed}${result.message}`;
-}
-
 export function SettingsPage({
   initialSettings,
 }: SettingsPageProps = {}): React.JSX.Element {
@@ -79,10 +62,6 @@ export function SettingsPage({
     initialSettings,
   );
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
-  const [wsTest, setWsTest] = useState<ConnectionTestStatus>({ state: "idle" });
-  const [llmTest, setLlmTest] = useState<ConnectionTestStatus>({
-    state: "idle",
-  });
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
 
   const autoSave = useAutoSaveSettings({
@@ -93,8 +72,6 @@ export function SettingsPage({
 
   const updateSettings = useCallback(
     (updater: AppSettings | ((draft: AppSettings) => AppSettings)): void => {
-      setWsTest({ state: "idle" });
-      setLlmTest({ state: "idle" });
       setSettings(
         (current) => autoSave.commitSettings(current, updater) ?? current,
       );
@@ -162,62 +139,6 @@ export function SettingsPage({
   const text = getSettingsText(settings.ui.language);
   const developerModeEnabled = settings.developer.enabled;
   const connectionError = validateConnectionSettings(settings);
-
-  const handleTestWs = async (): Promise<void> => {
-    const { wsServer } = getConnectionTargets(settings);
-    if (!wsServer?.url.trim()) {
-      setWsTest({ state: "fail", message: text.connection.wsMissing });
-      return;
-    }
-
-    setWsTest({ state: "testing", message: text.connection.testingWs });
-    try {
-      const result = await window.voiceAI.testWebSocket(wsServer);
-      setWsTest({
-        state: result.ok ? "ok" : "fail",
-        message: formatLocalizedConnectivityMessage(
-          text.connection.wsService,
-          result,
-          text,
-        ),
-      });
-    } catch (error) {
-      setWsTest({
-        state: "fail",
-        message: `${text.connection.wsService}${text.connection.connectionException}${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      });
-    }
-  };
-
-  const handleTestLlm = async (): Promise<void> => {
-    const { llmModel } = getConnectionTargets(settings);
-    if (!llmModel?.baseUrl.trim()) {
-      setLlmTest({ state: "fail", message: text.connection.apiMissing });
-      return;
-    }
-
-    setLlmTest({ state: "testing", message: text.connection.testingApi });
-    try {
-      const result = await window.voiceAI.testLlm(llmModel);
-      setLlmTest({
-        state: result.ok ? "ok" : "fail",
-        message: formatLocalizedConnectivityMessage(
-          text.connection.apiService,
-          result,
-          text,
-        ),
-      });
-    } catch (error) {
-      setLlmTest({
-        state: "fail",
-        message: `${text.connection.apiService}${text.connection.connectionException}${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      });
-    }
-  };
 
   return (
     <main className="settings">
@@ -778,40 +699,6 @@ export function SettingsPage({
             settings={settings}
             language={settings.ui.language}
             onSettingsChange={updateSettings}
-            wsTestResult={wsTest}
-            llmTestResult={llmTest}
-            wsTestButton={
-              <button
-                type="button"
-                className="settings__btn settings__btn--compact"
-                disabled={
-                  wsTest.state === "testing" || Boolean(connectionError)
-                }
-                onClick={() => void handleTestWs()}
-              >
-                {renderLocalizedTestLabel(
-                  text.connection.wsTest,
-                  wsTest.state,
-                  text,
-                )}
-              </button>
-            }
-            llmTestButton={
-              <button
-                type="button"
-                className="settings__btn settings__btn--compact"
-                disabled={
-                  llmTest.state === "testing" || Boolean(connectionError)
-                }
-                onClick={() => void handleTestLlm()}
-              >
-                {renderLocalizedTestLabel(
-                  text.connection.apiTest,
-                  llmTest.state,
-                  text,
-                )}
-              </button>
-            }
           />
         ) : null}
       </section>
@@ -826,23 +713,6 @@ export function SettingsPage({
       )}
     </main>
   );
-}
-
-function renderLocalizedTestLabel(
-  base: string,
-  state: ConnectionTestStatus["state"],
-  text: SettingsText,
-): string {
-  switch (state) {
-    case "testing":
-      return text.common.testing;
-    case "ok":
-      return `${base}${text.common.testOkSuffix}`;
-    case "fail":
-      return `${base}${text.common.testFailSuffix}`;
-    default:
-      return base;
-  }
 }
 
 function SettingsSwitch({

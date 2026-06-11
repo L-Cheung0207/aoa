@@ -1,11 +1,9 @@
 import type {
-  AppSettings,
   AudioFrame,
   CreateHistoryRecordInput,
   HistoryAudioData,
   HistoryRecord,
-  RecordingLanguage,
-  RecordingMode
+  RecordingLanguage
 } from "@voice/shared";
 
 const HISTORY_RETRY_FRAME_SIZE = 1600;
@@ -37,13 +35,7 @@ export async function retryHistoryRecord(record: HistoryRecord): Promise<History
     installationId: bootstrap.installationId,
     language: settings.recording.language
   });
-  const finalText = await resolveHistoryRetryFinalText({
-    installationId: bootstrap.installationId,
-    mode: record.mode,
-    rawText: transcript,
-    selectedText: record.selectedText ?? "",
-    settings
-  });
+  const finalText = transcript;
   const input: CreateHistoryRecordInput = {
     startedAt: record.startedAt,
     durationMs: record.audio.durationMs || (pcm.length / PCM16_SAMPLE_RATE) * 1000,
@@ -104,40 +96,6 @@ async function transcribeHistoryAudio(
   } finally {
     unsubscribe();
   }
-}
-
-async function resolveHistoryRetryFinalText(input: {
-  installationId: string;
-  mode: RecordingMode;
-  rawText: string;
-  selectedText: string;
-  settings: AppSettings;
-}): Promise<string> {
-  if (!input.rawText.trim()) {
-    return "";
-  }
-  if (input.mode === "direct") {
-    return input.rawText;
-  }
-
-  const result = await window.voiceAI.postprocess({
-    installationId: input.installationId,
-    rawText: input.rawText,
-    selectedText: input.selectedText,
-    appContext: await window.voiceAI.getActiveWindow(),
-    mode: input.mode === "translate" ? "translate" : input.settings.ai.defaultMode,
-    language: toBackendLanguage(input.settings.recording.language),
-    style: input.settings.ai.defaultStyle,
-    targetLanguage:
-      input.mode === "translate"
-        ? resolveTranslateTargetLanguage(
-            input.settings.recording.language,
-            input.settings.translation.targetLanguage
-          )
-        : input.settings.translation.targetLanguage,
-    dictionaryTerms: []
-  });
-  return result.finalText;
 }
 
 function decodePcm16Wav(audio: HistoryAudioData): Int16Array {
@@ -237,34 +195,3 @@ function readAscii(view: DataView, offset: number, length: number): string {
   return value;
 }
 
-function toBackendLanguage(lang: RecordingLanguage): "auto" | "zh-CN" | "en-US" {
-  switch (lang) {
-    case "auto":
-      return "auto";
-    case "mandarin":
-    case "zh-CN":
-      return "zh-CN";
-    case "english":
-    case "en-US":
-      return "en-US";
-    default:
-      return "auto";
-  }
-}
-
-function resolveTranslateTargetLanguage(
-  lang: RecordingLanguage,
-  fallback: "zh-CN" | "en-US"
-): "zh-CN" | "en-US" {
-  switch (lang) {
-    case "cantonese":
-    case "mandarin":
-    case "zh-CN":
-      return "en-US";
-    case "english":
-    case "en-US":
-      return "zh-CN";
-    default:
-      return fallback;
-  }
-}

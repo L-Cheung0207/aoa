@@ -90,9 +90,9 @@ describe("overlay window bounds", () => {
   it("reserves room for the thinking busy hint above the pill", () => {
     expect(calculateOverlayWindowBounds(workArea, "thinkingPill")).toEqual({
       width: 380,
-      height: 176,
+      height: 196,
       x: 770,
-      y: 792
+      y: 772
     });
   });
 
@@ -102,6 +102,15 @@ describe("overlay window bounds", () => {
       height: 168,
       x: 780,
       y: 800
+    });
+  });
+
+  it("uses a compact layout for no-selection errors", () => {
+    expect(calculateOverlayWindowBounds(workArea, "selectionError")).toEqual({
+      width: 360,
+      height: 112,
+      x: 780,
+      y: 856
     });
   });
 

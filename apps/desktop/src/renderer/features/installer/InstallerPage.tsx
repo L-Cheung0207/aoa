@@ -15,7 +15,7 @@ const INSTALL_PROGRESS_STEPS = [
 function AssistantMark(): React.JSX.Element {
   return (
     <div className="installer-mark" aria-hidden="true">
-      <svg viewBox="0 0 96 70" role="img">
+      <svg viewBox="-4 0 100 70" role="img">
         <path
           d="M20 8h44c15 0 27 11.4 27 25.5S79 59 64 59H45l-9 10-2-10H20C5 59 0 47.6 0 33.5S5 8 20 8Z"
           fill="none"

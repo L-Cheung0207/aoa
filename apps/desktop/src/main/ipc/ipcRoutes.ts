@@ -2,7 +2,6 @@ import type {
   AppContext,
   BackendClient,
   ClientBootstrapSnapshot,
-  PostprocessResult,
   ServiceStatusSnapshot,
   TranscriptionSession
 } from "@voice/backend-client";
@@ -20,7 +19,6 @@ import type {
 import type { AppSettings, HistoryRetention } from "@voice/shared";
 import {
   type ConnectivityTestResult,
-  testLlm,
   testWebSocket
 } from "../connectivity/connectivityService";
 import {
@@ -33,10 +31,8 @@ import {
   parseUpdateHistoryRecordInput,
   parseTranscriptionStartInput,
   parseInsertTextInput,
-  parsePostprocessInput,
   parseReplaceSelectedTextInput,
   parseSettingsPatchInput,
-  parseTestLlmInput,
   parseTestWebSocketInput
 } from "./ipcSchemas";
 
@@ -51,7 +47,6 @@ export interface IpcRouteDependencies {
   insertService: InsertService;
   selectionService: Pick<SelectionService, "getSelectedText">;
   backendClient: BackendClient;
-  postprocessService: Pick<BackendClient, "postprocess">;
   transcriptionService: MainTranscriptionService;
   uninstallService: UninstallService;
   updateService: Pick<UpdateService, "checkForUpdates" | "restartToUpdate">;
@@ -81,11 +76,9 @@ export interface IpcRouteHandlers {
   bootstrapClient(): Promise<BootstrapClientResponse>;
   getServiceStatus(): Promise<ServiceStatusSnapshot>;
   createTranscriptionSession(input: unknown): Promise<TranscriptionSession>;
-  postprocess(input: unknown): Promise<PostprocessResult>;
   getSelectedText(): Promise<string>;
   getActiveWindow(): Promise<AppContext>;
   testWebSocket(input: unknown): Promise<ConnectivityTestResult>;
-  testLlm(input: unknown): Promise<ConnectivityTestResult>;
   startTranscription(input: unknown): Promise<void>;
   sendTranscriptionAudio(input: unknown): void;
   stopTranscription(): Promise<TranscriptionStopResult>;
@@ -193,8 +186,6 @@ export function createIpcRouteHandlers(
       dependencies.backendClient.createTranscriptionSession(
         parseCreateTranscriptionSessionInput(input)
       ),
-    postprocess: (input) =>
-      dependencies.postprocessService.postprocess(parsePostprocessInput(input)),
     getSelectedText: () =>
       dependencies.selectionService.getSelectedText(
         dependencies.getInsertTargetWindowHandle?.()
@@ -206,7 +197,6 @@ export function createIpcRouteHandlers(
       windowTitle: ""
     }),
     testWebSocket: (input) => testWebSocket(parseTestWebSocketInput(input)),
-    testLlm: (input) => testLlm(parseTestLlmInput(input)),
     startTranscription: (input) =>
       dependencies.transcriptionService.start(
         parseTranscriptionStartInput(input)
@@ -308,16 +298,10 @@ export function registerIpcRoutes(
   ipcMain.handle("voice:create-transcription-session", (_event, input: unknown) => {
     return handlers.createTranscriptionSession(input);
   });
-  ipcMain.handle("voice:postprocess", (_event, input: unknown) => {
-    return handlers.postprocess(input);
-  });
   ipcMain.handle("voice:get-selected-text", () => handlers.getSelectedText());
   ipcMain.handle("voice:get-active-window", () => handlers.getActiveWindow());
   ipcMain.handle("voice:test-websocket", (_event, input: unknown) => {
     return handlers.testWebSocket(input);
-  });
-  ipcMain.handle("voice:test-llm", (_event, input: unknown) => {
-    return handlers.testLlm(input);
   });
 
   // preload 已声明以下 API，主流程改为 renderer 直接驱动 controller，

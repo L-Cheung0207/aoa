@@ -9,7 +9,7 @@ body:has(.home-page) {
   --home-shell-bg: #0b0f16;
   --home-content-bg: rgba(3, 6, 23, 0.78);
   --home-content-border: rgba(148, 163, 184, 0.14);
-  --home-sidebar-width: 216px;
+  --home-sidebar-width: 196px;
   --home-sidebar-content-gap: 10px;
   --home-content-outer-gap: 14px;
   --home-topbar-height: 56px;

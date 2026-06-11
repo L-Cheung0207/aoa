@@ -7,7 +7,6 @@ import type {
   HistoryAudioData,
   HistoryRecord,
   HistoryRetention,
-  LlmModelConfig,
   RecordingMode,
   UpdateHistoryRecordInput,
   WsServerConfig
@@ -16,8 +15,6 @@ import type {
   AppContext,
   ClientBootstrapSnapshot,
   ClientFacingError,
-  PostprocessRequest,
-  PostprocessResult,
   ServiceStatusSnapshot,
   TranscriptionSession,
   TranscriptionSessionRequest
@@ -137,11 +134,9 @@ export interface VoiceAIAPI {
   createTranscriptionSession(
     input: TranscriptionSessionRequest
   ): Promise<TranscriptionSession>;
-  postprocess(input: PostprocessRequest): Promise<PostprocessResult>;
   getSelectedText(): Promise<string>;
   getActiveWindow(): Promise<AppContext>;
   testWebSocket(config: WsServerConfig): Promise<ConnectivityTestResult>;
-  testLlm(config: LlmModelConfig): Promise<ConnectivityTestResult>;
   /** 启动主进程 ASR 转写会话（主进程走 node ws + https-proxy-agent，避免浏览器原生 WS 不支持代理）。 */
   startTranscription(input: TranscriptionStartInput): Promise<void>;
   /** 推帧到主进程。在 socket 未就绪期间主进程会静默丢帧。 */
@@ -223,11 +218,9 @@ export const voiceAI: VoiceAIAPI = {
   bootstrapClient: () => ipcRenderer.invoke("voice:bootstrap-client"),
   createTranscriptionSession: (input) =>
     ipcRenderer.invoke("voice:create-transcription-session", input),
-  postprocess: (input) => ipcRenderer.invoke("voice:postprocess", input),
   getSelectedText: () => ipcRenderer.invoke("voice:get-selected-text"),
   getActiveWindow: () => ipcRenderer.invoke("voice:get-active-window"),
   testWebSocket: (config) => ipcRenderer.invoke("voice:test-websocket", config),
-  testLlm: (config) => ipcRenderer.invoke("voice:test-llm", config),
   startTranscription: (input) =>
     ipcRenderer.invoke("voice:start-transcription", input),
   sendTranscriptionAudio: (frame) => ipcRenderer.invoke("voice:send-transcription-audio", frame),

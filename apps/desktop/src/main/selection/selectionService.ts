@@ -3,6 +3,7 @@ import type { ClipboardSnapshot } from "../clipboard/clipboardService";
 export interface SelectionClipboardService {
   backup(): ClipboardSnapshot;
   readText(): string;
+  writeText(text: string): void;
   restore(snapshot: ClipboardSnapshot): Promise<void>;
 }
 
@@ -21,6 +22,8 @@ export interface CreateSelectionServiceOptions {
   copyDelayMs: number;
 }
 
+const SELECTION_CLIPBOARD_SENTINEL = "__AOA_SELECTION_SENTINEL__";
+
 export function createSelectionService(
   options: CreateSelectionServiceOptions
 ): SelectionService {
@@ -30,9 +33,11 @@ export function createSelectionService(
 
       try {
         await focusTargetWindow(options.nativeBridge, targetWindowHandle);
+        options.clipboard.writeText(SELECTION_CLIPBOARD_SENTINEL);
         await options.nativeBridge.copySelectionToClipboard();
         await delay(options.copyDelayMs);
-        return options.clipboard.readText();
+        const selectedText = options.clipboard.readText();
+        return selectedText === SELECTION_CLIPBOARD_SENTINEL ? "" : selectedText;
       } catch (error) {
         console.warn("[selection] failed to copy selected text", error);
         return "";

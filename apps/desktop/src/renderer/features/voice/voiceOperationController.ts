@@ -1,14 +1,9 @@
-import type {
-  PostProcessInput,
-  PostProcessService,
-  TranscriptionProvider,
-} from "@voice/ai";
+import type { TranscriptionProvider } from "@voice/ai";
 import type {
   AppContext,
   DictionaryTermContext,
   PostprocessMode,
   PostprocessResult,
-  PostprocessStyle,
 } from "@voice/backend-client";
 import type {
   AudioFrame,
@@ -39,7 +34,6 @@ export interface VoiceOperationSettings {
   maxDurationSeconds?: number;
   inputDeviceId: string;
   postprocessMode: PostprocessMode;
-  postprocessStyle: PostprocessStyle;
   targetLanguage: "zh-CN" | "en-US";
   dictionaryTerms: DictionaryTermContext[];
 }
@@ -53,12 +47,10 @@ export interface VoiceTextTarget {
 export interface CreateVoiceOperationControllerOptions {
   recorder: RecorderService;
   transcriptionProvider: TranscriptionProvider;
-  postProcessService: PostProcessService;
   textTarget: VoiceTextTarget;
   settings: VoiceOperationSettings;
   getAppContext(): Promise<AppContext>;
   onPostprocessResult?(event: VoicePostprocessResultEvent): void;
-  finalResultBehavior?: "client_postprocess" | "respect_service_action";
   onCancel?(mode: RecordingMode): void;
   onTranscriptionUnavailable?(): void;
   onHistoryRecord?(input: CreateHistoryRecordInput): void;
@@ -103,6 +95,7 @@ export function createVoiceOperationController(
   const machine = createRecordingStateMachine();
   let activeSession: ActiveSession | undefined;
   let finalTranscript = "";
+  let finalPostprocessResult: PostprocessResult | undefined;
   let snapshotRevision = 0;
   /**
    * 啟動進行中的標記：在 startSession 的兩個 await（recorder.start / provider.start）
@@ -129,6 +122,47 @@ export function createVoiceOperationController(
       DEFAULT_RECORDER_MAX_DURATION_SECONDS,
   );
   let recordingLimitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const getTranscriptionStatus = (
+    session: ActiveSession,
+  ): NonNullable<RecordingSnapshot["transcriptionStatus"]> => {
+    if (session.transcriptionUnavailable) {
+      return "unavailable";
+    }
+    return session.transcriptionReady ? "ready" : "starting";
+  };
+
+  const updateTranscriptionStatus = (
+    session: ActiveSession,
+    update: { ready?: boolean; unavailable?: boolean },
+  ): void => {
+    const previous = getTranscriptionStatus(session);
+    if (update.ready !== undefined) {
+      session.transcriptionReady = update.ready;
+    }
+    if (update.unavailable !== undefined) {
+      session.transcriptionUnavailable = update.unavailable;
+    }
+    if (activeSession === session && previous !== getTranscriptionStatus(session)) {
+      snapshotRevision += 1;
+    }
+  };
+
+  const markTranscriptionUnavailable = (session: ActiveSession): void => {
+    updateTranscriptionStatus(session, { unavailable: true });
+    options.onTranscriptionUnavailable?.();
+  };
+
+  const getSnapshot = (): RecordingSnapshot => {
+    const snapshot = machine.getSnapshot();
+    if (snapshot.state !== "listening" || !activeSession) {
+      return snapshot;
+    }
+    return {
+      ...snapshot,
+      transcriptionStatus: getTranscriptionStatus(activeSession),
+    };
+  };
 
   const clearRecordingLimitTimer = (): void => {
     if (!recordingLimitTimer) {
@@ -226,8 +260,7 @@ export function createVoiceOperationController(
         options.transcriptionProvider.sendAudio(event.frame);
       } catch (error) {
         console.warn("[voice] 发送音频到转写服务失败，录音保持进行中", error);
-        session.transcriptionUnavailable = true;
-        options.onTranscriptionUnavailable?.();
+        markTranscriptionUnavailable(session);
       }
       return;
     }
@@ -244,6 +277,7 @@ export function createVoiceOperationController(
     (event) => {
       if (event.type === "final") {
         finalTranscript = event.text;
+        finalPostprocessResult = event.result;
         console.log("[voice] 轉寫最終文本：", finalTranscript);
         return;
       }
@@ -251,8 +285,7 @@ export function createVoiceOperationController(
       if (event.type === "error") {
         console.error("[voice] 轉寫錯誤", event);
         if (activeSession && machine.getSnapshot().state === "listening") {
-          activeSession.transcriptionUnavailable = true;
-          options.onTranscriptionUnavailable?.();
+          markTranscriptionUnavailable(activeSession);
           return;
         }
         fail("transcription");
@@ -270,7 +303,7 @@ export function createVoiceOperationController(
   const startTranscriptionForSession = async (
     session: ActiveSession,
   ): Promise<boolean> => {
-    session.transcriptionUnavailable = false;
+    updateTranscriptionStatus(session, { ready: false, unavailable: false });
     try {
       const appContext = await options.getAppContext();
       if (activeSession !== session || pendingCancelAfterStart) {
@@ -289,7 +322,7 @@ export function createVoiceOperationController(
       if (activeSession !== session) {
         return false;
       }
-      session.transcriptionReady = true;
+      updateTranscriptionStatus(session, { ready: true, unavailable: false });
       try {
         for (const frame of session.pendingTranscriptionFrames) {
           options.transcriptionProvider.sendAudio(frame);
@@ -299,8 +332,7 @@ export function createVoiceOperationController(
           "[voice] 发送缓存音频到转写服务失败，录音保持进行中",
           sendError,
         );
-        session.transcriptionUnavailable = true;
-        options.onTranscriptionUnavailable?.();
+        markTranscriptionUnavailable(session);
         return false;
       } finally {
         session.pendingTranscriptionFrames = [];
@@ -309,12 +341,8 @@ export function createVoiceOperationController(
     } catch (error) {
       console.error("[voice] 轉寫啟動失敗", error);
       if (activeSession === session) {
-        session.transcriptionUnavailable = true;
-        session.transcriptionReady = false;
-        options.onTranscriptionUnavailable?.();
-      }
-      if (options.finalResultBehavior === "respect_service_action") {
-        throw error;
+        updateTranscriptionStatus(session, { ready: false });
+        markTranscriptionUnavailable(session);
       }
       return false;
     }
@@ -328,6 +356,11 @@ export function createVoiceOperationController(
       console.log(
         `[voice] processSelection 選中文本長度=${selectedText.length}`,
       );
+      if (!selectedText.trim()) {
+        console.warn("[voice] processSelection 無選中文本，取消啟動");
+        fail("no_selection");
+        return;
+      }
     }
 
     const startedAt = getNow();
@@ -342,6 +375,7 @@ export function createVoiceOperationController(
       transcriptionUnavailable: false,
     };
     finalTranscript = "";
+    finalPostprocessResult = undefined;
     machine.send({ type: "start", mode });
     starting = true;
     recorderStartRequested = false;
@@ -367,10 +401,7 @@ export function createVoiceOperationController(
       } else {
         stage = "transcription";
         transcriptionStarted = await startTranscriptionForSession(activeSession);
-        if (
-          !transcriptionStarted &&
-          options.finalResultBehavior === "respect_service_action"
-        ) {
+        if (!transcriptionStarted) {
           throw new Error("Transcription session is unavailable");
         }
       }
@@ -479,6 +510,7 @@ export function createVoiceOperationController(
         options,
         session,
         finalTranscript,
+        finalPostprocessResult,
         (nextStage) => {
           console.log(`[voice] 停止會話：進入階段=${nextStage}`);
           stage = nextStage;
@@ -513,6 +545,7 @@ export function createVoiceOperationController(
       if (activeSession === session) {
         activeSession = undefined;
         finalTranscript = "";
+        finalPostprocessResult = undefined;
       }
     }
   };
@@ -525,6 +558,7 @@ export function createVoiceOperationController(
     // 先切斷會話引用，這樣正在併發執行的 stopSession 恢復時會通過 activeSession !== session 判定靜默退出。
     activeSession = undefined;
     finalTranscript = "";
+    finalPostprocessResult = undefined;
     try {
       if (options.recorder.getState() === "listening") {
         await options.recorder.cancel();
@@ -586,7 +620,7 @@ export function createVoiceOperationController(
   };
 
   return {
-    getSnapshot: () => machine.getSnapshot(),
+    getSnapshot,
     getSnapshotRevision: () => snapshotRevision,
     getRecordingRemainingSeconds,
     handleToggle: async (mode) => {
@@ -721,6 +755,7 @@ export function createVoiceOperationController(
           options,
           session,
           finalTranscript,
+          finalPostprocessResult,
           (nextStage) => {
             stage = nextStage;
           },
@@ -745,6 +780,7 @@ export function createVoiceOperationController(
         if (activeSession === session) {
           activeSession = undefined;
           finalTranscript = "";
+          finalPostprocessResult = undefined;
         }
       }
     },
@@ -775,13 +811,11 @@ async function applyFinalText(
   options: CreateVoiceOperationControllerOptions,
   session: ActiveSession,
   rawText: string,
+  result: PostprocessResult | undefined,
   setStage: (stage: "postprocess" | "insertion") => void,
 ): Promise<string> {
-  if (options.finalResultBehavior === "respect_service_action") {
+  if (result) {
     setStage("postprocess");
-    const result = await options.postProcessService.process(
-      await createPostProcessInput(options, session, rawText),
-    );
     console.log(
       `[voice] postprocess result mode=${session.mode} action=${result.action} finalTextLength=${result.finalText.length}`,
     );
@@ -815,52 +849,9 @@ async function applyFinalText(
     return "";
   }
 
-  if (session.mode === "direct") {
-    setStage("insertion");
-    await options.textTarget.insertText(rawText);
-    return rawText;
-  }
-
-  setStage("postprocess");
-  const result = await options.postProcessService.process(
-    await createPostProcessInput(options, session, rawText),
-  );
-  console.log(
-    `[voice] postprocess result mode=${session.mode} action=${result.action} finalTextLength=${result.finalText.length}`,
-  );
-
-  if (session.mode === "processSelection") {
-    console.log("[voice] processSelection 使用客户端后处理结果，展示结果浮层");
-    options.onPostprocessResult?.({
-      mode: "processSelection",
-      rawText,
-      selectedText: session.selectedText,
-      result,
-    });
-    return result.finalText;
-  }
-
   setStage("insertion");
-  await applyPostProcessResult(options.textTarget, session, result);
-  return result.finalText;
-}
-
-async function createPostProcessInput(
-  options: CreateVoiceOperationControllerOptions,
-  session: ActiveSession,
-  rawText: string,
-): Promise<PostProcessInput> {
-  return {
-    installationId: options.settings.installationId,
-    rawText,
-    selectedText: session.selectedText,
-    appContext: await options.getAppContext(),
-    mode: resolveSessionPostprocessMode(options, session),
-    language: toBackendLanguage(options.settings.language),
-    style: options.settings.postprocessStyle,
-    targetLanguage: resolveSessionTargetLanguage(options, session),
-    dictionaryTerms: options.settings.dictionaryTerms,
-  };
+  await options.textTarget.insertText(rawText);
+  return rawText;
 }
 
 function resolveSessionPostprocessMode(
@@ -901,28 +892,6 @@ async function applyPostProcessResult(
     `[voice] apply postprocess action=${result.action}，执行插入 finalTextLength=${result.finalText.length}`,
   );
   await textTarget.insertText(result.finalText);
-}
-
-/**
- * 把 RecordingLanguage (12 種，含 old 10 種 + zh-CN/en-US) 歸一為 backend-client 接受的
- * BackendLanguage (auto|zh-CN|en-US)。未被 backend 直接支援的語言（如 cantonese/korean）
- * 回退到 "auto"，讓後端自動識別。
- */
-function toBackendLanguage(
-  lang: RecordingLanguage,
-): "auto" | "zh-CN" | "en-US" {
-  switch (lang) {
-    case "auto":
-      return "auto";
-    case "mandarin":
-    case "zh-CN":
-      return "zh-CN";
-    case "english":
-    case "en-US":
-      return "en-US";
-    default:
-      return "auto";
-  }
 }
 
 export function resolveTranslateTargetLanguage(

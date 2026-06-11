@@ -614,6 +614,132 @@
   background: rgba(113, 113, 122, 0.96);
 }
 
+.selection-error-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 10px;
+  background: transparent;
+  -webkit-app-region: no-drag;
+}
+
+.selection-error-hint {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  padding: 16px 44px 16px 18px;
+  overflow: hidden;
+  color: #f8fafc;
+  background:
+    linear-gradient(145deg, rgba(34, 34, 38, 0.8), rgba(18, 18, 21, 0.72)),
+    rgba(24, 24, 27, 0.72);
+  border: 1px solid rgba(250, 204, 21, 0.13);
+  border-radius: 15px;
+  backdrop-filter: blur(16px);
+  box-shadow: none;
+  -webkit-app-region: no-drag;
+}
+
+.selection-error-hint__glow {
+  display: none;
+}
+
+.selection-error-hint__body {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.selection-error-hint__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 12px;
+  color: #facc15;
+  background:
+    linear-gradient(145deg, rgba(250, 204, 21, 0.15), rgba(250, 204, 21, 0.045)),
+    rgba(255, 255, 255, 0.035);
+  box-shadow: none;
+}
+
+.selection-error-hint__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.selection-error-hint__copy {
+  min-width: 0;
+}
+
+.selection-error-hint strong {
+  display: block;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 760;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-error-hint p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: rgba(226, 232, 240, 0.68);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-error-hint__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(226, 232, 240, 0.54);
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.selection-error-hint__close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.selection-error-hint__close svg {
+  width: 14px;
+  height: 14px;
+}
+
 .overlay {
   --overlay-border: rgba(148, 163, 184, 0.2);
   --overlay-mode-accent: var(--overlay-border);

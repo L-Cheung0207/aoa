@@ -16,6 +16,10 @@ function createClipboardService(initialText: string): SelectionClipboardService 
     writes,
     backup: () => ({ text: currentText }),
     readText: () => currentText,
+    writeText: (text) => {
+      writes.push(`write:${text}`);
+      currentText = text;
+    },
     restore: async (snapshot) => {
       writes.push(`restore:${snapshot.text}`);
       currentText = snapshot.text;
@@ -49,7 +53,10 @@ describe("selection service", () => {
 
     expect(selectedText).toBe("selected text");
     expect(calls).toEqual(["focus:12345", "copy"]);
-    expect(clipboard.writes).toEqual(["restore:previous clipboard"]);
+    expect(clipboard.writes).toEqual([
+      "write:__AOA_SELECTION_SENTINEL__",
+      "restore:previous clipboard"
+    ]);
   });
 
   it("returns an empty string and still restores the clipboard when copy fails", async () => {
@@ -69,6 +76,30 @@ describe("selection service", () => {
     const selectedText = await service.getSelectedText("12345");
 
     expect(selectedText).toBe("");
-    expect(clipboard.writes).toEqual(["restore:previous clipboard"]);
+    expect(clipboard.writes).toEqual([
+      "write:__AOA_SELECTION_SENTINEL__",
+      "restore:previous clipboard"
+    ]);
+  });
+
+  it("does not return stale clipboard text when no selection is copied", async () => {
+    const clipboard = createClipboardService("stale clipboard text");
+    const nativeBridge: SelectionNativeBridge = {
+      focusWindow: async () => undefined,
+      copySelectionToClipboard: async () => undefined
+    };
+    const service = createSelectionService({
+      clipboard,
+      nativeBridge,
+      copyDelayMs: 0
+    });
+
+    const selectedText = await service.getSelectedText("12345");
+
+    expect(selectedText).toBe("");
+    expect(clipboard.writes).toEqual([
+      "write:__AOA_SELECTION_SENTINEL__",
+      "restore:stale clipboard text"
+    ]);
   });
 });

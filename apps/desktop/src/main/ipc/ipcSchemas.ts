@@ -1,7 +1,5 @@
 import type {
-  AppContext,
   PostprocessMode,
-  PostprocessRequest,
   PostprocessStyle,
   TranscriptionSessionRequest,
 } from "@voice/backend-client";
@@ -784,76 +782,6 @@ export function parseApplyHistoryRetentionInput(
   return result;
 }
 
-export function parsePostprocessInput(input: unknown): PostprocessRequest {
-  if (!isRecord(input)) {
-    throw new Error("Postprocess input must be an object");
-  }
-  if (
-    typeof input.installationId !== "string" ||
-    input.installationId.length === 0
-  ) {
-    throw new Error("Postprocess input requires installationId");
-  }
-  if (typeof input.rawText !== "string") {
-    throw new Error("Postprocess input requires rawText");
-  }
-  if (typeof input.selectedText !== "string") {
-    throw new Error("Postprocess input requires selectedText");
-  }
-  if (!isRecord(input.appContext)) {
-    throw new Error("Postprocess input requires appContext");
-  }
-  if (
-    typeof input.mode !== "string" ||
-    !POSTPROCESS_MODES.includes(input.mode as PostprocessMode)
-  ) {
-    throw new Error("Postprocess input requires a valid mode");
-  }
-  if (
-    typeof input.language !== "string" ||
-    !BACKEND_LANGUAGES.includes(input.language as BackendLanguage)
-  ) {
-    throw new Error("Postprocess input requires a valid language");
-  }
-  if (
-    typeof input.style !== "string" ||
-    !POSTPROCESS_STYLES.includes(input.style as PostprocessStyle)
-  ) {
-    throw new Error("Postprocess input requires a valid style");
-  }
-  if (!Array.isArray(input.dictionaryTerms)) {
-    throw new Error("Postprocess input requires dictionaryTerms array");
-  }
-
-  const appContext = input.appContext as unknown as AppContext;
-  const base: PostprocessRequest = {
-    installationId: input.installationId,
-    rawText: input.rawText,
-    selectedText: input.selectedText,
-    appContext,
-    mode: input.mode as PostprocessMode,
-    language: input.language as BackendLanguage,
-    style: input.style as PostprocessStyle,
-    dictionaryTerms:
-      input.dictionaryTerms as PostprocessRequest["dictionaryTerms"],
-  };
-
-  if (input.targetLanguage !== undefined) {
-    if (
-      typeof input.targetLanguage !== "string" ||
-      !TARGET_LANGUAGES.includes(input.targetLanguage as "zh-CN" | "en-US")
-    ) {
-      throw new Error("Postprocess input requires a valid targetLanguage");
-    }
-    return {
-      ...base,
-      targetLanguage: input.targetLanguage as "zh-CN" | "en-US",
-    };
-  }
-
-  return base;
-}
-
 /** 解析来自 Settings 页的 「WS 测试」请求体，仅校验必填字段。 */
 export function parseTestWebSocketInput(input: unknown): WsServerConfig {
   if (!isRecord(input)) {
@@ -863,40 +791,6 @@ export function parseTestWebSocketInput(input: unknown): WsServerConfig {
     throw new Error("WS test input requires non-empty url");
   }
   const result: WsServerConfig = { url: input.url };
-  if (typeof input.proxy === "string" && input.proxy.trim().length > 0) {
-    result.proxy = input.proxy;
-  }
-  if (
-    typeof input.proxyUsername === "string" &&
-    input.proxyUsername.length > 0
-  ) {
-    result.proxyUsername = input.proxyUsername;
-  }
-  if (
-    typeof input.proxyPassword === "string" &&
-    input.proxyPassword.length > 0
-  ) {
-    result.proxyPassword = input.proxyPassword;
-  }
-  return result;
-}
-
-/** 解析来自 Settings 页的「后处理 API 测试」请求体；AOSO API 只要求 baseUrl。 */
-export function parseTestLlmInput(input: unknown): LlmModelConfig {
-  if (!isRecord(input)) {
-    throw new Error("LLM test input must be an object");
-  }
-  if (typeof input.baseUrl !== "string" || input.baseUrl.trim().length === 0) {
-    throw new Error("LLM test input requires non-empty baseUrl");
-  }
-  const result: LlmModelConfig = {
-    baseUrl: input.baseUrl,
-    apiKey: typeof input.apiKey === "string" ? input.apiKey : "",
-    modelName:
-      typeof input.modelName === "string" && input.modelName.trim().length > 0
-        ? input.modelName
-        : "AOSO API",
-  };
   if (typeof input.proxy === "string" && input.proxy.trim().length > 0) {
     result.proxy = input.proxy;
   }

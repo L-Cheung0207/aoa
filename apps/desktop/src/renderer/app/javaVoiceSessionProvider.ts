@@ -1,12 +1,10 @@
 import {
   encodePcm16ToBase64,
-  type PostProcessInput,
-  type PostProcessOutput,
-  type PostProcessService,
   type TranscriptionEvent,
   type TranscriptionProvider,
   type TranscriptionStartInput,
 } from "@voice/ai";
+import type { PostprocessResult } from "@voice/backend-client";
 import { JAVA_VOICE_WS_URL, type AudioFrame } from "@voice/shared";
 
 type JavaVoiceAction = "insert" | "replace_selection" | "show_result";
@@ -39,54 +37,21 @@ type JavaVoiceMessage =
   | JavaVoiceError;
 
 const JAVA_VOICE_STOP_TIMEOUT_MS = 10000;
+const JAVA_VOICE_SESSION_START_TIMEOUT_MS = 10000;
 
 export interface CreateJavaVoiceSessionProviderOptions {
   url?: string;
   WebSocketConstructor?: typeof WebSocket;
 }
 
-export interface JavaVoicePostprocessBridge extends PostProcessService {
-  takeResult(): PostProcessOutput | undefined;
-}
-
 export function createJavaVoiceSessionProvider(
   options: CreateJavaVoiceSessionProviderOptions = {},
-): {
-  transcriptionProvider: TranscriptionProvider;
-  postProcessService: JavaVoicePostprocessBridge;
-} {
-  let lastResult: PostProcessOutput | undefined;
-
-  const setLastResult = (result: PostProcessOutput): void => {
-    lastResult = result;
-  };
-
-  const clearLastResult = (): void => {
-    lastResult = undefined;
-  };
-
-  return {
-    transcriptionProvider: createJavaVoiceTranscriptionProvider({
-      ...options,
-      onStart: clearLastResult,
-      onResult: setLastResult,
-    }),
-    postProcessService: {
-      takeResult: () => lastResult,
-      process: async (input) => {
-        const result = lastResult ?? createFallbackPostprocessResult(input);
-        lastResult = undefined;
-        return result;
-      },
-    },
-  };
+): TranscriptionProvider {
+  return createJavaVoiceTranscriptionProvider(options);
 }
 
 function createJavaVoiceTranscriptionProvider(
-  options: CreateJavaVoiceSessionProviderOptions & {
-    onStart(): void;
-    onResult(result: PostProcessOutput): void;
-  },
+  options: CreateJavaVoiceSessionProviderOptions,
 ): TranscriptionProvider {
   const listeners = new Set<(event: TranscriptionEvent) => void>();
   const WebSocketConstructor = options.WebSocketConstructor ?? WebSocket;
@@ -97,6 +62,9 @@ function createJavaVoiceTranscriptionProvider(
   let finalResult: JavaVoiceFinalResult | undefined;
   let sessionError: Error | undefined;
   let stopResolver: (() => void) | undefined;
+  let startResolver: (() => void) | undefined;
+  let startRejecter: ((error: Error) => void) | undefined;
+  let sessionStarted = false;
 
   const emit = (event: TranscriptionEvent): void => {
     for (const listener of listeners) {
@@ -111,17 +79,35 @@ function createJavaVoiceTranscriptionProvider(
     socket.send(JSON.stringify(payload));
   };
 
-  const cleanup = (): void => {
+  const rejectStartWaiter = (error: Error): void => {
+    startRejecter?.(error);
+    startResolver = undefined;
+    startRejecter = undefined;
+  };
+
+  const cleanup = (error?: Error): void => {
+    if (error) {
+      rejectStartWaiter(error);
+    }
     if (socket && socket.readyState !== WebSocket.CLOSED) {
       socket.close();
     }
     socket = undefined;
     stopResolver = undefined;
+    startResolver = undefined;
+    startRejecter = undefined;
+    sessionStarted = false;
   };
 
   const resolveStopWaiter = (): void => {
     stopResolver?.();
     stopResolver = undefined;
+  };
+
+  const resolveStartWaiter = (): void => {
+    startResolver?.();
+    startResolver = undefined;
+    startRejecter = undefined;
   };
 
   return {
@@ -137,7 +123,7 @@ function createJavaVoiceTranscriptionProvider(
       sequence = 0;
       finalResult = undefined;
       sessionError = undefined;
-      options.onStart();
+      sessionStarted = false;
 
       console.log(
         `[java-voice] connecting url=${url} sessionId=${sessionId} mode=${input.mode ?? "direct"}`,
@@ -150,17 +136,29 @@ function createJavaVoiceTranscriptionProvider(
         if (!message) {
           return;
         }
+        if (message.type === "session_started") {
+          sessionId = message.sessionId ?? sessionId;
+          sessionStarted = true;
+          console.log(`[java-voice] session_started sessionId=${sessionId}`);
+          emit({ type: "started" });
+          resolveStartWaiter();
+          return;
+        }
         if (message.type === "partial_transcript") {
           emit({ type: "partial", text: message.text ?? "" });
           return;
         }
         if (message.type === "final_result") {
+          const result = toPostprocessOutput(message);
           console.log(
             `[java-voice] final_result sessionId=${message.sessionId ?? sessionId} action=${message.action ?? "insert"} transcriptLength=${message.transcript?.length ?? 0} textLength=${message.text?.length ?? 0}`,
           );
           finalResult = message;
-          options.onResult(toPostprocessOutput(message));
-          emit({ type: "final", text: getFinalTranscriptText(message) });
+          emit({
+            type: "final",
+            text: getFinalTranscriptText(message),
+            result,
+          });
           resolveStopWaiter();
           return;
         }
@@ -172,6 +170,7 @@ function createJavaVoiceTranscriptionProvider(
             `[java-voice] server error sessionId=${sessionId} code=${message.code ?? ""} message=${message.message ?? ""}`,
           );
           emit({ type: "error", error: sessionError });
+          rejectStartWaiter(sessionError);
           resolveStopWaiter();
         }
       });
@@ -179,6 +178,11 @@ function createJavaVoiceTranscriptionProvider(
       activeSocket.addEventListener("close", () => {
         console.log(`[java-voice] closed sessionId=${sessionId}`);
         socket = undefined;
+        if (!sessionStarted) {
+          rejectStartWaiter(
+            new Error("Java voice WebSocket closed before session started"),
+          );
+        }
         resolveStopWaiter();
       });
 
@@ -186,6 +190,7 @@ function createJavaVoiceTranscriptionProvider(
         sessionError = new Error("Java voice WebSocket error");
         console.error(`[java-voice] websocket error sessionId=${sessionId}`);
         emit({ type: "error", error: sessionError });
+        rejectStartWaiter(sessionError);
         resolveStopWaiter();
       });
 
@@ -200,18 +205,25 @@ function createJavaVoiceTranscriptionProvider(
         console.log(
           `[java-voice] session_start sent sessionId=${sessionId} mode=${input.mode ?? "direct"} language=${input.language}`,
         );
-        emit({ type: "started" });
+        await waitForSessionStarted(
+          () => sessionStarted,
+          (resolve, reject) => {
+            startResolver = resolve;
+            startRejecter = reject;
+          },
+          JAVA_VOICE_SESSION_START_TIMEOUT_MS,
+        );
       } catch (error) {
         console.error(
           `[java-voice] connect failed sessionId=${sessionId} url=${url}`,
           error,
         );
-        cleanup();
+        cleanup(error instanceof Error ? error : new Error(String(error)));
         throw error;
       }
     },
     sendAudio: (frame: AudioFrame) => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (!socket || socket.readyState !== WebSocket.OPEN || !sessionStarted) {
         return;
       }
       sequence += 1;
@@ -262,7 +274,7 @@ function createJavaVoiceTranscriptionProvider(
       } catch {
         // Ignore cancel send failures; the socket is being torn down anyway.
       }
-      cleanup();
+      cleanup(new Error("Java voice session cancelled"));
     },
   };
 }
@@ -285,7 +297,7 @@ function buildSessionStart(
   };
 }
 
-function toPostprocessOutput(message: JavaVoiceFinalResult): PostProcessOutput {
+function toPostprocessOutput(message: JavaVoiceFinalResult): PostprocessResult {
   return {
     action: message.action ?? "insert",
     finalText: getFinalResultText(message),
@@ -310,18 +322,6 @@ function firstNonBlank(...values: Array<string | undefined>): string {
     }
   }
   return values.find((value) => value !== undefined) ?? "";
-}
-
-function createFallbackPostprocessResult(
-  input: PostProcessInput,
-): PostProcessOutput {
-  return {
-    action: input.selectedText ? "replace_selection" : "insert",
-    finalText: input.rawText,
-    confidence: 0,
-    usedDictionaryTermIds: [],
-    warnings: ["Java voice service did not return a postprocess result"],
-  };
 }
 
 function waitForOpen(socket: WebSocket): Promise<void> {
@@ -352,13 +352,40 @@ function waitForSessionEnd(
   if (isEnded()) {
     return Promise.resolve();
   }
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  return new Promise<void>((resolve, reject) => {
+    timeout = globalThis.setTimeout(() => {
       reject(new Error("Java voice session timed out waiting for final result"));
     }, timeoutMs);
     registerResolver(resolve);
   }).finally(() => {
-    stopResolver = undefined;
+    if (timeout !== undefined) {
+      globalThis.clearTimeout(timeout);
+    }
+  });
+}
+
+function waitForSessionStarted(
+  isStarted: () => boolean,
+  registerWaiter: (
+    resolve: () => void,
+    reject: (error: Error) => void,
+  ) => void,
+  timeoutMs: number,
+): Promise<void> {
+  if (isStarted()) {
+    return Promise.resolve();
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  return new Promise<void>((resolve, reject) => {
+    timeout = globalThis.setTimeout(() => {
+      reject(new Error("Java voice session timed out waiting for session_started"));
+    }, timeoutMs);
+    registerWaiter(resolve, reject);
+  }).finally(() => {
+    if (timeout !== undefined) {
+      globalThis.clearTimeout(timeout);
+    }
   });
 }
 

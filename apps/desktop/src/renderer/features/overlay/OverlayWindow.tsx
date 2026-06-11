@@ -69,6 +69,8 @@ type OverlayText = {
   networkMessage: string;
   micTitle: string;
   micMessage: string;
+  noSelectionTitle?: string;
+  noSelectionMessage?: string;
   help: string;
   retry: string;
   busyTitle: string;
@@ -262,6 +264,8 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     micTitle: "Microphone unavailable",
     micMessage:
       "Voice Assistant cannot access your microphone. Another app may be using it, or access may be blocked by system or security settings.",
+    noSelectionTitle: "No selected text detected",
+    noSelectionMessage: "Select text first, then use Smart Rewrite.",
     help: "Get help",
     retry: "Retry",
     busyTitle: "Voice Assistant is still processing your previous transcription",
@@ -358,6 +362,15 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         {...(props.onOpenMicrophoneHelp
           ? { onHelp: props.onOpenMicrophoneHelp }
           : {})}
+      />
+    );
+  }
+
+  if (state === "error" && props.reason === "no_selection") {
+    return (
+      <NoSelectionErrorHint
+        text={text}
+        {...(props.onCancel ? { onDismiss: props.onCancel } : {})}
       />
     );
   }
@@ -533,6 +546,11 @@ interface MicrophoneErrorHintProps {
   text: OverlayText;
   onDismiss?(): void;
   onHelp?(): void;
+}
+
+interface NoSelectionErrorHintProps {
+  text: OverlayText;
+  onDismiss?(): void;
 }
 
 function ShortcutHelpPanel({
@@ -725,6 +743,75 @@ function MicrophoneErrorHint({
             {text.help}
           </button>
         </footer>
+      </section>
+    </main>
+  );
+}
+
+function NoSelectionErrorHint({
+  text,
+  onDismiss,
+}: NoSelectionErrorHintProps): React.JSX.Element {
+  const fallbackTextParts = text.errors.no_selection.split(/[,\uFF0C]/);
+  const fallbackTitle =
+    fallbackTextParts[0]?.trim() || text.errors.no_selection;
+  const fallbackMessage = fallbackTextParts.slice(1).join("\uFF0C").trim();
+  const title = text.noSelectionTitle ?? fallbackTitle;
+  const message =
+    text.noSelectionMessage ?? (fallbackMessage || undefined);
+
+  return (
+    <main className="selection-error-shell">
+      <section
+        className="selection-error-hint"
+        role="alertdialog"
+        aria-modal="false"
+        aria-label={title}
+      >
+        <span className="selection-error-hint__glow" aria-hidden="true" />
+        {onDismiss ? (
+          <button
+            type="button"
+            className="selection-error-hint__close"
+            aria-label={text.closeHint}
+            title={text.close}
+            onClick={onDismiss}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M6 6l12 12M18 6 6 18"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
+          </button>
+        ) : null}
+        <div className="selection-error-hint__body">
+          <span className="selection-error-hint__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path
+                d="M12 5.1 20.25 19H3.75L12 5.1Z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M12 10.2v4.2M12 17.2v.1"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.1"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+          <div className="selection-error-hint__copy">
+            <strong>{title}</strong>
+            {message ? <p>{message}</p> : null}
+          </div>
+        </div>
       </section>
     </main>
   );

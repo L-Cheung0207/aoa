@@ -30,16 +30,26 @@ describe("bootstrap overlay visibility", () => {
 
   it("hides the overlay for idle and shows it only after listening is reported", () => {
     expect(resolveOverlayVisibility("idle")).toBe("hide");
+    expect(resolveOverlayVisibility("success")).toBe("hide");
     expect(resolveOverlayVisibility("listening")).toBe("show");
+    expect(resolveOverlayVisibility("canceled")).toBe("show");
+    expect(resolveOverlayVisibility("processing")).toBe("show");
+    expect(resolveOverlayVisibility("inserting")).toBe("show");
+    expect(resolveOverlayVisibility("result")).toBe("show");
   });
 
   it("shows microphone errors even when no recording pill was visible yet", () => {
     expect(resolveOverlayVisibility("error", "mic")).toBe("show");
+    expect(resolveOverlayVisibility("error", "no_selection")).toBe("show");
     expect(resolveOverlayVisibility("error", "transcription")).toBe("keep");
   });
 
-  it("shows the overlay as soon as a shortcut is accepted", () => {
+  it("defers idle starts to the renderer and shows already-active shortcuts", () => {
     expect(resolveShortcutTriggerOverlayAction()).toBe("show");
+    expect(resolveShortcutTriggerOverlayAction("direct", "idle")).toBe("defer");
+    expect(resolveShortcutTriggerOverlayAction("direct", "success")).toBe("defer");
+    expect(resolveShortcutTriggerOverlayAction("processSelection", "idle")).toBe("defer");
+    expect(resolveShortcutTriggerOverlayAction("processSelection", "listening")).toBe("show");
   });
 
   it("keeps the microphone error layout stable when the shortcut is pressed again", () => {
@@ -75,7 +85,7 @@ describe("bootstrap overlay visibility", () => {
     });
   });
 
-  it("keeps the taller pill layout throughout listening to avoid jitter", () => {
+  it("keeps tall enough layouts for listening and thinking states", () => {
     expect(resolveOverlayWindowLayout("listening", "direct")).toBe("translatePill");
     expect(
       resolveOverlayWindowLayout("listening", "direct", {
@@ -85,14 +95,15 @@ describe("bootstrap overlay visibility", () => {
     expect(resolveOverlayWindowLayout("listening", "translate")).toBe("translatePill");
     expect(resolveOverlayWindowLayout("listening", "processSelection")).toBe("translatePill");
     expect(resolveOverlayWindowLayout("listening", undefined)).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("translatePill");
+    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("thinkingPill");
+    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("thinkingPill");
     expect(
       resolveOverlayWindowLayout("processing", "translate", {
         busyHintVisible: true
       })
     ).toBe("thinkingPill");
     expect(resolveOverlayWindowLayout("error", undefined, { reason: "mic" })).toBe("micError");
+    expect(resolveOverlayWindowLayout("error", undefined, { reason: "no_selection" })).toBe("selectionError");
     expect(resolveOverlayWindowLayout("canceled", "translate")).toBe("canceledPill");
     expect(resolveOverlayWindowLayout("result", "translate")).toBe("result");
     expect(resolveOverlayWindowLayout("shortcutHelp", undefined)).toBe("shortcutHelp");

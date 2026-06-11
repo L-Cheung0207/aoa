@@ -74,8 +74,8 @@ export interface SettingsText {
     developerMode: string;
     developerModeDescription: string;
     asrWebSocketDescription: string;
-    postprocessApi: string;
-    postprocessApiDescription: string;
+    apiAddress: string;
+    apiAddressDescription: string;
     apiDisplayName: string;
     apiDisplayNameDescription: string;
     wsProxyOptional: string;
@@ -175,10 +175,10 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     connection: {
       developerMode: "开发者模式",
       developerModeDescription:
-        "开启后可填写 ASR WebSocket 与后处理 API；关闭时使用内置 Java 语音服务。",
+        "开启后可填写 Java 语音服务 API 地址；关闭时使用内置 Java 语音服务。",
       asrWebSocketDescription: "语音识别即时转写连接地址。",
-      postprocessApi: "后处理 API",
-      postprocessApiDescription: "润色、翻译等 HTTP 后处理服务地址。",
+      apiAddress: "API地址",
+      apiAddressDescription: "Java 语音服务地址，由服务端完成识别与 LLM 后处理。",
       apiDisplayName: "API 显示名称",
       apiDisplayNameDescription: "仅用于界面展示，可选。",
       wsProxyOptional: "WS 代理（可选）",
@@ -193,11 +193,11 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
       emptyDirect: "留空表示直连。",
       optionalEmptyDirect: "可选。留空表示直连。",
       wsService: "WS 服务",
-      apiService: "后处理 API",
+      apiService: "API地址",
       wsMissing: "请先填写 WebSocket 地址。",
-      apiMissing: "请先填写后处理 API 地址。",
+      apiMissing: "请先填写 API 地址。",
       testingWs: "正在测试 WS 服务...",
-      testingApi: "正在测试后处理 API...",
+      testingApi: "正在测试 API...",
       connectionSucceeded: "连接成功",
       connectionFailed: "连接失败：",
       connectionException: "连接异常：",
@@ -296,10 +296,10 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     connection: {
       developerMode: "開發者模式",
       developerModeDescription:
-        "開啟後可填寫 ASR WebSocket 與後處理 API；關閉時使用內置 Java 語音服務。",
+        "開啟後可填寫 Java 語音服務 API 地址；關閉時使用內置 Java 語音服務。",
       asrWebSocketDescription: "語音識別即時轉寫連線地址。",
-      postprocessApi: "後處理 API",
-      postprocessApiDescription: "潤色、翻譯等 HTTP 後處理服務地址。",
+      apiAddress: "API 地址",
+      apiAddressDescription: "Java 語音服務地址，由服務端完成識別與 LLM 後處理。",
       apiDisplayName: "API 顯示名稱",
       apiDisplayNameDescription: "僅用於介面展示，可選。",
       wsProxyOptional: "WS 代理（可選）",
@@ -314,11 +314,11 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
       emptyDirect: "留空表示直連。",
       optionalEmptyDirect: "可選。留空表示直連。",
       wsService: "WS 服務",
-      apiService: "後處理 API",
+      apiService: "API 地址",
       wsMissing: "請先填寫 WebSocket 地址。",
-      apiMissing: "請先填寫後處理 API 地址。",
+      apiMissing: "請先填寫 API 地址。",
       testingWs: "正在測試 WS 服務...",
-      testingApi: "正在測試後處理 API...",
+      testingApi: "正在測試 API...",
       connectionSucceeded: "連線成功",
       connectionFailed: "連線失敗：",
       connectionException: "連線異常：",
@@ -428,11 +428,11 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     connection: {
       developerMode: "Developer Mode",
       developerModeDescription:
-        "Show ASR WebSocket and postprocess API settings. When off, Typeless uses the built-in Java voice service.",
+        "Show the Java voice service API address. When off, Typeless uses the built-in Java voice service.",
       asrWebSocketDescription: "Realtime speech recognition WebSocket address.",
-      postprocessApi: "Postprocess API",
-      postprocessApiDescription:
-        "HTTP service address for polishing, translation, and related actions.",
+      apiAddress: "API Address",
+      apiAddressDescription:
+        "Java voice service address. Recognition and LLM postprocessing run on the server.",
       apiDisplayName: "API Display Name",
       apiDisplayNameDescription:
         "Only used for display in the interface. Optional.",
@@ -448,11 +448,11 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
       emptyDirect: "Leave blank to connect directly.",
       optionalEmptyDirect: "Optional. Leave blank to connect directly.",
       wsService: "WS service",
-      apiService: "Postprocess API",
+      apiService: "API address",
       wsMissing: "Please enter the WebSocket address first.",
-      apiMissing: "Please enter the postprocess API address first.",
+      apiMissing: "Please enter the API address first.",
       testingWs: "Testing WS service...",
-      testingApi: "Testing postprocess API...",
+      testingApi: "Testing API...",
       connectionSucceeded: "connected",
       connectionFailed: "connection failed: ",
       connectionException: "connection error: ",

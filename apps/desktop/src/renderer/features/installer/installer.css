@@ -242,7 +242,7 @@
   align-items: center;
   justify-content: space-between;
   height: 91px;
-  padding: 0 52px 24px;
+  padding: 0 calc((100% - 553px) / 2) 24px;
   box-sizing: border-box;
 }
 

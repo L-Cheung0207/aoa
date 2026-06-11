@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PostProcessInput, PostProcessService } from "@voice/ai";
+import type { TranscriptionEvent, TranscriptionStartInput } from "@voice/ai";
 import type { PostprocessResult } from "@voice/backend-client";
 import type {
   AudioFrame,
@@ -16,6 +16,12 @@ import {
   type VoiceOperationSettings,
   type VoiceTextTarget
 } from "./voiceOperationController";
+
+type PostProcessInput = Record<string, unknown>;
+
+interface PostProcessService {
+  process(input: PostProcessInput): Promise<PostprocessResult>;
+}
 
 function createFrame(timestampMs: number): AudioFrame {
   return {
@@ -73,22 +79,25 @@ class FakeRecorderService implements RecorderService {
 }
 
 class FakeTranscriptionProvider {
-  private listeners = new Set<(event: { type: string; text?: string }) => void>();
-  public startInputs: unknown[] = [];
+  private listeners = new Set<(event: TranscriptionEvent) => void>();
+  public startInputs: TranscriptionStartInput[] = [];
   public frames: AudioFrame[] = [];
   public stopCount = 0;
   public cancelCount = 0;
 
-  constructor(private readonly finalText: string) {}
+  constructor(
+    private readonly finalText: string,
+    private readonly finalResult?: PostprocessResult
+  ) {}
 
-  subscribe(listener: (event: { type: string; text?: string }) => void): () => void {
+  subscribe(listener: (event: TranscriptionEvent) => void): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   }
 
-  async start(input: unknown): Promise<void> {
+  async start(input: TranscriptionStartInput): Promise<void> {
     this.startInputs.push(input);
     this.emit({ type: "started" });
   }
@@ -99,7 +108,11 @@ class FakeTranscriptionProvider {
 
   async stop(): Promise<void> {
     this.stopCount += 1;
-    this.emit({ type: "final", text: this.finalText });
+    this.emit(
+      this.finalResult
+        ? { type: "final", text: this.finalText, result: this.finalResult }
+        : { type: "final", text: this.finalText }
+    );
     this.emit({ type: "stopped" });
   }
 
@@ -108,7 +121,7 @@ class FakeTranscriptionProvider {
     this.emit({ type: "stopped" });
   }
 
-  private emit(event: { type: string; text?: string }): void {
+  private emit(event: TranscriptionEvent): void {
     for (const listener of this.listeners) {
       listener(event);
     }
@@ -197,11 +210,15 @@ describe("voice operation controller", () => {
     recorder.emitFrame(frame);
     await controller.handleToggle("direct");
 
-    expect(transcriptionProvider.startInputs).toEqual([
+    expect(transcriptionProvider.startInputs).toMatchObject([
       {
         installationId: "inst_test",
         language: "en-US",
-        sampleRate: 16000
+        sampleRate: 16000,
+        mode: "direct",
+        selectedText: "",
+        postprocessMode: "clean",
+        targetLanguage: "zh-CN"
       }
     ]);
     expect(transcriptionProvider.frames).toEqual([frame]);
@@ -236,11 +253,12 @@ describe("voice operation controller", () => {
 
     await controller.handleToggle("direct");
 
-    expect(transcriptionProvider.startInputs).toEqual([
+    expect(transcriptionProvider.startInputs).toMatchObject([
       {
         installationId: "inst_test",
         language: "cantonese",
-        sampleRate: 16000
+        sampleRate: 16000,
+        mode: "direct"
       }
     ]);
   });
@@ -281,15 +299,19 @@ describe("voice operation controller", () => {
 
   it("uses Right Alt + Space to process selected text through ASR then LLM", async () => {
     const recorder = new FakeRecorderService();
-    const transcriptionProvider = new FakeTranscriptionProvider("make this shorter");
-    const displayedResults: PostprocessResult[] = [];
-    const postProcessService = createPostProcessService({
-      action: "replace_selection",
+    const result: PostprocessResult = {
+      action: "show_result",
       finalText: "Shorter text.",
       confidence: 0.9,
       usedDictionaryTermIds: [],
       warnings: []
-    });
+    };
+    const transcriptionProvider = new FakeTranscriptionProvider(
+      "make this shorter",
+      result
+    );
+    const displayedResults: PostprocessResult[] = [];
+    const postProcessService = createPostProcessService(result);
     const textTarget = createTextTarget("This is the old selected text.");
     const controller = createVoiceOperationController({
       recorder,
@@ -310,46 +332,40 @@ describe("voice operation controller", () => {
     await controller.handleToggle("processSelection");
     await controller.handleToggle("direct");
 
-    expect(postProcessService.requests).toEqual([
+    expect(transcriptionProvider.startInputs).toMatchObject([
       {
         installationId: "inst_test",
-        rawText: "make this shorter",
         selectedText: "This is the old selected text.",
         appContext: {
           platform: "windows",
           appName: "chrome.exe",
           windowTitle: "Docs"
         },
-        mode: "clean",
+        mode: "processSelection",
         language: "en-US",
-        style: "natural",
-        targetLanguage: "zh-CN",
-        dictionaryTerms: []
+        postprocessMode: "clean",
+        targetLanguage: "zh-CN"
       }
     ]);
-    expect(displayedResults).toEqual([
-      {
-        action: "replace_selection",
-        finalText: "Shorter text.",
-        confidence: 0.9,
-        usedDictionaryTermIds: [],
-        warnings: []
-      }
-    ]);
+    expect(displayedResults).toEqual([result]);
     expect(textTarget.replacements).toEqual([]);
     expect(textTarget.inserted).toEqual([]);
   });
 
   it("uses Right Alt + Right Shift to translate ASR text through LLM and insert it", async () => {
     const recorder = new FakeRecorderService();
-    const transcriptionProvider = new FakeTranscriptionProvider("meeting tomorrow at 3");
-    const postProcessService = createPostProcessService({
+    const result: PostprocessResult = {
       action: "insert",
       finalText: "明天下午三点开会。",
       confidence: 0.9,
       usedDictionaryTermIds: [],
       warnings: []
-    });
+    };
+    const transcriptionProvider = new FakeTranscriptionProvider(
+      "meeting tomorrow at 3",
+      result
+    );
+    const postProcessService = createPostProcessService(result);
     const textTarget = createTextTarget();
     const controller = createVoiceOperationController({
       recorder,
@@ -367,23 +383,29 @@ describe("voice operation controller", () => {
     await controller.handleToggle("translate");
     await controller.handleToggle("direct");
 
-    expect(postProcessService.requests.map((request) => request.mode)).toEqual(["translate"]);
-    expect(postProcessService.requests.map((request) => request.targetLanguage)).toEqual([
-      "zh-CN"
+    expect(transcriptionProvider.startInputs).toMatchObject([
+      {
+        mode: "translate",
+        postprocessMode: "translate",
+        targetLanguage: "zh-CN"
+      }
     ]);
     expect(textTarget.inserted).toEqual(["明天下午三点开会。"]);
   });
-
   it("translates Chinese ASR to English for Right Alt + Right Shift", async () => {
     const recorder = new FakeRecorderService();
-    const transcriptionProvider = new FakeTranscriptionProvider("明天下午三点开会");
-    const postProcessService = createPostProcessService({
+    const result: PostprocessResult = {
       action: "insert",
       finalText: "Meeting tomorrow at 3 PM.",
       confidence: 0.9,
       usedDictionaryTermIds: [],
       warnings: []
-    });
+    };
+    const transcriptionProvider = new FakeTranscriptionProvider(
+      "明天下午三点开会",
+      result
+    );
+    const postProcessService = createPostProcessService(result);
     const textTarget = createTextTarget();
     const settings = createSettings();
     settings.language = "mandarin";
@@ -404,18 +426,17 @@ describe("voice operation controller", () => {
     await controller.handleToggle("translate");
     await controller.handleToggle("direct");
 
-    expect(postProcessService.requests).toMatchObject([
+    expect(transcriptionProvider.startInputs).toMatchObject([
       {
-        rawText: "明天下午三点开会",
         selectedText: "",
         mode: "translate",
-        language: "zh-CN",
+        language: "mandarin",
+        postprocessMode: "translate",
         targetLanguage: "en-US"
       }
     ]);
     expect(textTarget.inserted).toEqual(["Meeting tomorrow at 3 PM."]);
   });
-
   it("ignores another combo mode while listening", async () => {
     const recorder = new FakeRecorderService();
     const transcriptionProvider = new FakeTranscriptionProvider("unused");
@@ -446,7 +467,11 @@ describe("voice operation controller", () => {
     await controller.handleToggle("translate");
 
     expect(cancelledMode).toBeUndefined();
-    expect(controller.getSnapshot()).toEqual({ state: "listening", mode: "direct" });
+    expect(controller.getSnapshot()).toEqual({
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "ready"
+    });
     expect(recorder.stopCount).toBe(0);
     expect(transcriptionProvider.stopCount).toBe(0);
   });
@@ -490,17 +515,21 @@ describe("voice operation controller", () => {
     expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
   });
 
-  it("uses Right Alt + Space without selected text by sending only ASR text to the LLM", async () => {
+  it("fails process selection without selected text before starting audio", async () => {
     const recorder = new FakeRecorderService();
-    const transcriptionProvider = new FakeTranscriptionProvider("summarize today's plan");
-    const displayedResults: PostprocessResult[] = [];
-    const postProcessService = createPostProcessService({
-      action: "insert",
+    const result: PostprocessResult = {
+      action: "show_result",
       finalText: "Today: finish the release plan.",
       confidence: 0.9,
       usedDictionaryTermIds: [],
       warnings: []
-    });
+    };
+    const transcriptionProvider = new FakeTranscriptionProvider(
+      "summarize today's plan",
+      result
+    );
+    const displayedResults: PostprocessResult[] = [];
+    const postProcessService = createPostProcessService(result);
     const textTarget = createTextTarget("");
     const controller = createVoiceOperationController({
       recorder,
@@ -519,33 +548,18 @@ describe("voice operation controller", () => {
     });
 
     await controller.handleToggle("processSelection");
-    await controller.handleToggle("direct");
 
-    expect(postProcessService.requests).toEqual([
-      {
-        installationId: "inst_test",
-        rawText: "summarize today's plan",
-        selectedText: "",
-        appContext: {
-          platform: "windows",
-          appName: "notepad.exe",
-          windowTitle: "notes.txt"
-        },
-        mode: "clean",
-        language: "en-US",
-        style: "natural",
-        targetLanguage: "zh-CN",
-        dictionaryTerms: []
-      }
-    ]);
-    expect(displayedResults.map((result) => result.finalText)).toEqual([
-      "Today: finish the release plan."
-    ]);
+    expect(controller.getSnapshot()).toEqual({
+      state: "error",
+      mode: undefined,
+      reason: "no_selection"
+    });
+    expect(recorder.starts).toEqual([]);
+    expect(transcriptionProvider.startInputs).toEqual([]);
+    expect(displayedResults).toEqual([]);
     expect(textTarget.inserted).toEqual([]);
     expect(textTarget.replacements).toEqual([]);
-    expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
   });
-
   it("uses the voice input key to finish process selection", async () => {
     const recorder = new FakeRecorderService();
     const transcriptionProvider = new FakeTranscriptionProvider("done");
@@ -576,7 +590,8 @@ describe("voice operation controller", () => {
     await controller.handleToggle("translate");
     expect(controller.getSnapshot()).toEqual({
       state: "listening",
-      mode: "processSelection"
+      mode: "processSelection",
+      transcriptionStatus: "ready"
     });
     expect(recorder.stopCount).toBe(0);
     expect(transcriptionProvider.stopCount).toBe(0);
@@ -587,14 +602,14 @@ describe("voice operation controller", () => {
     expect(transcriptionProvider.stopCount).toBe(1);
   });
 
-  it("marks the error reason as transcription when the ASR provider reports an error", async () => {
+  it("keeps listening and marks transcription unavailable when the ASR provider reports an error", async () => {
     const recorder = new FakeRecorderService();
     class ErroringProvider extends FakeTranscriptionProvider {
       emitError(): void {
         for (const listener of (this as unknown as {
-          listeners: Set<(event: { type: string }) => void>;
+          listeners: Set<(event: TranscriptionEvent) => void>;
         }).listeners) {
-          listener({ type: "error" });
+          listener({ type: "error", error: new Error("ASR failed") });
         }
       }
     }
@@ -619,26 +634,134 @@ describe("voice operation controller", () => {
     });
 
     await controller.handleToggle("direct");
+    const beforeRevision = controller.getSnapshotRevision();
     transcriptionProvider.emitError();
     await Promise.resolve();
 
     expect(controller.getSnapshot()).toEqual({
-      state: "error",
-      mode: undefined,
-      reason: "transcription"
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "unavailable"
     });
-    expect(recorder.cancelCount).toBe(1);
-    expect(transcriptionProvider.cancelCount).toBe(1);
+    expect(controller.getSnapshotRevision()).toBeGreaterThan(beforeRevision);
+    expect(recorder.cancelCount).toBe(0);
+    expect(transcriptionProvider.cancelCount).toBe(0);
   });
 
-  it("marks the error reason as postprocess when LLM fails during processSelection", async () => {
+  it("marks transcription ready and bumps the snapshot revision after retry succeeds", async () => {
     const recorder = new FakeRecorderService();
-    const transcriptionProvider = new FakeTranscriptionProvider("shorten this");
-    const postProcessService: PostProcessService = {
-      process: async () => {
-        throw new Error("LLM_FAILED");
+    class RetryableProvider extends FakeTranscriptionProvider {
+      emitError(): void {
+        for (const listener of (this as unknown as {
+          listeners: Set<(event: TranscriptionEvent) => void>;
+        }).listeners) {
+          listener({ type: "error", error: new Error("ASR failed") });
+        }
       }
+    }
+    const transcriptionProvider = new RetryableProvider("irrelevant");
+    const controller = createVoiceOperationController({
+      recorder,
+      transcriptionProvider,
+      postProcessService: createPostProcessService({
+        action: "insert",
+        finalText: "unused",
+        confidence: 0,
+        usedDictionaryTermIds: [],
+        warnings: []
+      }),
+      textTarget: createTextTarget(),
+      settings: createSettings(),
+      getAppContext: async () => ({
+        platform: "windows",
+        appName: "notepad.exe",
+        windowTitle: "notes.txt"
+      })
+    });
+
+    await controller.handleToggle("direct");
+    transcriptionProvider.emitError();
+    await Promise.resolve();
+    const unavailableRevision = controller.getSnapshotRevision();
+
+    await expect(controller.retryTranscription()).resolves.toBe(true);
+
+    expect(controller.getSnapshot()).toEqual({
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "ready"
+    });
+    expect(controller.getSnapshotRevision()).toBeGreaterThan(unavailableRevision);
+  });
+
+  it("keeps transcription unavailable and bumps the snapshot revision after retry fails", async () => {
+    const recorder = new FakeRecorderService();
+    class RetryFailingProvider extends FakeTranscriptionProvider {
+      public failNextStart = false;
+
+      override async start(input: TranscriptionStartInput): Promise<void> {
+        if (this.failNextStart) {
+          this.failNextStart = false;
+          throw new Error("retry failed");
+        }
+        await super.start(input);
+      }
+
+      emitError(): void {
+        for (const listener of (this as unknown as {
+          listeners: Set<(event: TranscriptionEvent) => void>;
+        }).listeners) {
+          listener({ type: "error", error: new Error("ASR failed") });
+        }
+      }
+    }
+    const transcriptionProvider = new RetryFailingProvider("irrelevant");
+    const controller = createVoiceOperationController({
+      recorder,
+      transcriptionProvider,
+      postProcessService: createPostProcessService({
+        action: "insert",
+        finalText: "unused",
+        confidence: 0,
+        usedDictionaryTermIds: [],
+        warnings: []
+      }),
+      textTarget: createTextTarget(),
+      settings: createSettings(),
+      getAppContext: async () => ({
+        platform: "windows",
+        appName: "notepad.exe",
+        windowTitle: "notes.txt"
+      })
+    });
+
+    await controller.handleToggle("direct");
+    transcriptionProvider.emitError();
+    await Promise.resolve();
+    const unavailableRevision = controller.getSnapshotRevision();
+    transcriptionProvider.failNextStart = true;
+
+    await expect(controller.retryTranscription()).resolves.toBe(false);
+
+    expect(controller.getSnapshot()).toEqual({
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "unavailable"
+    });
+    expect(controller.getSnapshotRevision()).toBeGreaterThan(unavailableRevision);
+  });
+
+  it("marks the error reason as postprocess when provider returns a failed postprocess result", async () => {
+    const recorder = new FakeRecorderService();
+    const result: PostprocessResult = {
+      action: "show_result",
+      finalText: "Shorter text.",
+      confidence: 0.9,
+      usedDictionaryTermIds: [],
+      warnings: []
     };
+    const transcriptionProvider = new FakeTranscriptionProvider("shorten this", result);
+    const postProcessService = createPostProcessService(result);
     const textTarget = createTextTarget("The old text.");
     const controller = createVoiceOperationController({
       recorder,
@@ -650,7 +773,10 @@ describe("voice operation controller", () => {
         platform: "windows",
         appName: "notepad.exe",
         windowTitle: "notes.txt"
-      })
+      }),
+      onPostprocessResult: () => {
+        throw new Error("LLM_FAILED");
+      }
     });
 
     await controller.handleToggle("processSelection");
@@ -662,7 +788,6 @@ describe("voice operation controller", () => {
       reason: "postprocess"
     });
   });
-
   it("marks the error reason as insertion when text insertion fails in direct mode", async () => {
     const recorder = new FakeRecorderService();
     const transcriptionProvider = new FakeTranscriptionProvider("hello");
@@ -707,7 +832,7 @@ describe("voice operation controller", () => {
     const transcriptionProvider = new FakeTranscriptionProvider("never");
     let resolveStop: (() => void) | undefined;
     let stopStarted = 0;
-    // 模拟 ASR stop 永久挂起（网络卡、后端无响应等），制造 processing 阶段的"关不掉"场景。
+    // Simulate ASR stop hanging forever to cover stuck processing recovery.
     transcriptionProvider.stop = async () => {
       stopStarted += 1;
       await new Promise<void>((resolve) => {
@@ -737,7 +862,7 @@ describe("voice operation controller", () => {
     await controller.handleToggle("direct");
     expect(controller.getSnapshot().state).toBe("listening");
 
-    // 第一次触发 stop，但 transcription.stop 会挂起 → 状态机停留在 processing。
+    // First toggle starts stop, but transcription.stop hangs and leaves processing active.
     const stuckPromise = controller.handleToggle("direct");
     for (let i = 0; i < 10; i += 1) {
       await Promise.resolve();
@@ -745,11 +870,11 @@ describe("voice operation controller", () => {
     expect(stopStarted).toBe(1);
     expect(controller.getSnapshot().state).toBe("processing");
 
-    // 用户再次按 Right ALT（direct），必须能把状态机强制推回 idle。
+    // Pressing Right ALT again must force the controller back to idle.
     await controller.handleToggle("direct");
     expect(controller.getSnapshot()).toEqual({ state: "idle", mode: undefined });
 
-    // 清理挂起的 Promise，避免 vitest 泄漏告警。
+    // Resolve the hanging promise to avoid Vitest leak warnings.
     resolveStop?.();
     await stuckPromise;
     expect(textTarget.inserted).toEqual([]);
@@ -788,7 +913,7 @@ describe("voice operation controller", () => {
     });
 
     await controller.handleToggle("direct");
-    // 触发停止链路，走到 inserting 阶段后卡住。
+    // Trigger the stop flow and hang after entering inserting.
     const stuckPromise = controller.handleToggle("direct");
     for (let i = 0; i < 20; i += 1) {
       await Promise.resolve();
@@ -805,7 +930,7 @@ describe("voice operation controller", () => {
 
   it("gracefully finishes a direct session when ASR returns an empty final text (silence)", async () => {
     const recorder = new FakeRecorderService();
-    // transcription provider 在服务端下发 code=0 且 voice_text_str="" 时会如实 emit final:""。
+    // Provider emits final:"" when the server returns code=0 and voice_text_str="".
     const transcriptionProvider = new FakeTranscriptionProvider("");
     const postProcessService = createPostProcessService({
       action: "insert",
@@ -831,7 +956,7 @@ describe("voice operation controller", () => {
     await controller.handleToggle("direct");
     await controller.handleToggle("direct");
 
-    // 空文本不应触发 insert-text（否则会触发 "Insert text is required"）。
+    // Empty text must not call insert-text, which would reject with "Insert text is required".
     expect(textTarget.inserted).toEqual([]);
     expect(postProcessService.requests).toEqual([]);
     expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
@@ -962,16 +1087,15 @@ describe("voice operation controller", () => {
     await controller.handleToggle("processSelection");
     await controller.handleToggle("direct");
 
-    // 空 raw 不应调用 postprocess（浪费 LLM），也不应触发 replace/insert。
+    // Empty raw text must skip postprocess and avoid replace/insert calls.
     expect(postProcessService.requests).toEqual([]);
     expect(textTarget.replacements).toEqual([]);
     expect(textTarget.inserted).toEqual([]);
     expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
   });
 
-  it("启动进行中（provider.start 未完成）再次 toggle 不会启动麦克风或踩入 stop/cancel 竞态", async () => {
+  it("queues stop when toggled while provider.start is still pending", async () => {
     const recorder = new FakeRecorderService();
-    // provider.start 人为挂起，模拟 WS 还在 connecting。
     let releaseStart: (() => void) | undefined;
     let startCount = 0;
     let stopCount = 0;
@@ -1014,37 +1138,36 @@ describe("voice operation controller", () => {
       })
     });
 
-    // 第一次 toggle：开始启动，provider.start 还在 await。不等它完成。
     const firstToggle = controller.handleToggle("direct");
-    // 微任务没有同步 flush，显式 await 一次让 startSession 的 machine.send 跑到 listening。
     await Promise.resolve();
-    expect(controller.getSnapshot().state).toBe("listening");
+    expect(controller.getSnapshot()).toMatchObject({
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "starting"
+    });
 
-    // 第二次 toggle：此时 starting 标记仍为 true，应重置 UI，但 provider ready 前麦克风尚未启动。
     const secondToggle = controller.handleToggle("direct");
     await secondToggle;
     expect(recorder.cancelCount).toBe(0);
-    expect(recorder.getState()).toBe("idle");
-    expect(controller.getSnapshot()).toEqual({ state: "idle", mode: undefined });
-    // provider 侧仍等启动收尾后再 cancel，避免 WS 未 open 就 send finished 帧。
+    expect(recorder.getState()).toBe("listening");
+    expect(controller.getSnapshot()).toMatchObject({
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "starting"
+    });
     expect(stopCount).toBe(0);
     expect(cancelCount).toBe(0);
 
-    // 让 provider.start resolve，启动收尾 finally 里会触发 cancelSession。
     releaseStart?.();
     await firstToggle;
 
     expect(startCount).toBe(1);
-    // 收尾时走 cancelSession → provider.cancel 必被调一次，recorder 仍不需要 cancel。
-    expect(cancelCount).toBe(1);
+    expect(stopCount).toBe(1);
+    expect(cancelCount).toBe(0);
     expect(recorder.cancelCount).toBe(0);
-    // 全程不应发生 stopSession（避免「WS 未 open 就 send finished 帧」）。
-    expect(stopCount).toBe(0);
-    // 状态机应回到 idle。
-    expect(controller.getSnapshot().state).toBe("idle");
+    expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
   });
-
-  it("启动会话时先调 transcriptionProvider.start 再调 recorder.start，避免 WS 未 ready 时丢帧", async () => {
+  it("starts the recorder before starting transcription", async () => {
     const order: string[] = [];
     const recorder: RecorderService = {
       getState: () => "idle",
@@ -1085,10 +1208,9 @@ describe("voice operation controller", () => {
 
     await controller.handleToggle("direct");
 
-    expect(order).toEqual(["provider.start", "recorder.start"]);
+    expect(order).toEqual(["recorder.start", "provider.start"]);
   });
-
-  it("provider.start 失败时不会取消尚未启动的 recorder，错误计为 transcription", async () => {
+  it("cancels the started recorder when provider.start fails", async () => {
     let recorderCancelCount = 0;
     const recorder: RecorderService = {
       getState: () => "idle",
@@ -1127,11 +1249,9 @@ describe("voice operation controller", () => {
       })
     });
 
-    // handleToggle 自身会吞掉 startSession 抛出的异常（避免 unhandled rejection），
-    // 这里直接等它正常 resolve，然后查 snapshot 即可。
     await controller.handleToggle("direct");
 
-    expect(recorderCancelCount).toBe(0);
+    expect(recorderCancelCount).toBe(1);
     expect(controller.getSnapshot()).toEqual({
       state: "error",
       mode: undefined,

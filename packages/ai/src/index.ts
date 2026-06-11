@@ -1,5 +1,4 @@
 export { createMockTranscriptionProvider } from "./transcription/MockTranscriptionProvider";
-export { createPostProcessService } from "./postprocess/PostProcessService";
 export { createRealtimeTranscriptionProvider } from "./transcription/RealtimeTranscriptionProvider";
 export {
   createBrowserTranscriptionSocketFactory,
@@ -7,11 +6,6 @@ export {
 } from "./transcription/DefaultTranscriptionProvider";
 export { encodePcm16ToBase64 } from "./transcription/transcriptionTypes";
 export type { TranscriptionStartInput } from "./transcription/transcriptionTypes";
-export type {
-  PostProcessInput,
-  PostProcessOutput,
-  PostProcessService,
-} from "./postprocess/postProcessTypes";
 export type {
   RealtimeSocket,
   RealtimeSocketFactory,

@@ -12,7 +12,6 @@ export type {
   FeatureFlags,
   PlatformName,
   PostprocessMode,
-  PostprocessRequest,
   PostprocessResult,
   PostprocessStyle,
   ServiceStatusSnapshot,

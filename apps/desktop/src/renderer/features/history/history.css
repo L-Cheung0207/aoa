@@ -239,9 +239,9 @@
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) auto;
   align-items: start;
-  gap: 12px;
-  min-height: 48px;
-  padding: 10px 12px;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 12px;
   background: #fff;
   border-bottom: 1px solid #ededed;
 }
@@ -275,7 +275,7 @@
   margin: 0;
   color: #4b5563;
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
@@ -289,13 +289,13 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .history-row__actions button {
-  min-width: 28px;
-  height: 32px;
-  padding: 0 10px;
+  min-width: 26px;
+  height: 28px;
+  padding: 0 8px;
   color: #202020;
   background: #f1f1f1;
   border: 0;
@@ -325,8 +325,8 @@
 }
 
 .history-row__icon-button {
-  width: 34px;
-  min-width: 34px;
+  width: 30px;
+  min-width: 30px;
   padding: 0;
 }
 

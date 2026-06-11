@@ -52,10 +52,6 @@ import {
 import { createInsertService } from "./insertion/insertService";
 import { registerIpcRoutes } from "./ipc/ipcRoutes";
 import { createNativeBridge } from "./native/nativeBridge";
-import {
-  createAosoPostprocessClient,
-  createLlmPostprocessService,
-} from "./postprocess/llmPostprocessService";
 import { createSelectionService } from "./selection/selectionService";
 import {
   createEscCancelController,
@@ -145,7 +141,7 @@ export function resolveOverlayVisibility(
     case "idle":
       return "hide";
     case "error":
-      return reason === "mic" ? "show" : "keep";
+      return reason === "mic" || reason === "no_selection" ? "show" : "keep";
     default:
       return "keep";
   }
@@ -178,11 +174,8 @@ export function resolveOverlayWindowLayout(
   if (state === "error" && options.reason === "mic") {
     return "micError";
   }
-  if (
-    (state === "processing" || state === "inserting") &&
-    !options.busyHintVisible
-  ) {
-    return "translatePill";
+  if (state === "error" && options.reason === "no_selection") {
+    return "selectionError";
   }
   if (state === "processing" || state === "inserting" || state === "error") {
     return "thinkingPill";
@@ -193,7 +186,22 @@ export function resolveOverlayWindowLayout(
 /** 隱藏延遲：success/idle 直接 0ms 即時隱藏，避免短暫閃現 Thinking 後的預設膠囊面板。 */
 export type ShortcutTriggerOverlayAction = "defer" | "show";
 
-export function resolveShortcutTriggerOverlayAction(): ShortcutTriggerOverlayAction {
+export function resolveShortcutTriggerOverlayAction(
+  mode?: RecordingMode,
+  lastState?: string,
+): ShortcutTriggerOverlayAction {
+  if (
+    mode === "direct" &&
+    (lastState === "idle" || lastState === "success")
+  ) {
+    return "defer";
+  }
+  if (
+    mode === "processSelection" &&
+    (lastState === "idle" || lastState === "success" || lastState === "error")
+  ) {
+    return "defer";
+  }
   return "show";
 }
 
@@ -314,10 +322,6 @@ export async function bootstrap(): Promise<void> {
   applyLaunchAtLogin(initialSettings.appBehavior.launchAtLogin);
   const installationId = getOrCreateInstallationId({ adapter: storeAdapter });
   const backendClient = createMockBackendClient();
-  const postprocessService = createLlmPostprocessService({
-    getSettings: () => configStore.get(),
-    postprocessClient: createAosoPostprocessClient(),
-  });
   const nativeBridge = createNativeBridge({
     loadHelper: () => ({
       copySelectionToClipboard,
@@ -374,7 +378,6 @@ export async function bootstrap(): Promise<void> {
     insertService,
     selectionService,
     backendClient,
-    postprocessService,
     transcriptionService,
     uninstallService,
     updateService,
@@ -527,7 +530,7 @@ export async function bootstrap(): Promise<void> {
         },
       );
       applyOverlayWindowLayout(overlayWindow, layout);
-      if (resolveShortcutTriggerOverlayAction() === "show") {
+      if (resolveShortcutTriggerOverlayAction(mode, lastRecordingState) === "show") {
         overlayWindow.showInactive();
         overlayWindowFollower.start(layout);
       }
