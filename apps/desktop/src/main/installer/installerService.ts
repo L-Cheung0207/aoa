@@ -155,8 +155,14 @@ function runSilentInstaller(input: {
     child.stderr?.on("data", (chunk: Buffer) => {
       output += chunk.toString();
     });
-    child.on("error", reject);
-    child.on("close", (code) => {
+    child.on("error", (error) => {
+      reject(
+        new Error(
+          `Installer failed to start. Payload: ${input.payloadPath}. Install dir: ${input.installDir}. ${error.message}`,
+        ),
+      );
+    });
+    child.on("close", (code, signal) => {
       if (code === 0) {
         resolve({
           ok: true,
@@ -166,9 +172,30 @@ function runSilentInstaller(input: {
       }
       reject(
         new Error(
-          `Installer exited with code ${code ?? "unknown"}${output ? `: ${output}` : ""}`,
+          `Installer failed (${formatExitStatus(code, signal)}). Payload: ${input.payloadPath}. Install dir: ${input.installDir}.${formatInstallerOutput(output)}`,
         ),
       );
     });
   });
+}
+
+function formatExitStatus(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): string {
+  const formattedCode =
+    code === null ? "code unknown" : `code ${code}${formatHexExitCode(code)}`;
+  return signal ? `${formattedCode}, signal ${signal}` : formattedCode;
+}
+
+function formatHexExitCode(code: number): string {
+  if (code < 0) {
+    return "";
+  }
+  return ` / 0x${code.toString(16).padStart(8, "0")}`;
+}
+
+function formatInstallerOutput(output: string): string {
+  const trimmed = output.trim();
+  return trimmed ? ` Output: ${trimmed}` : "";
 }

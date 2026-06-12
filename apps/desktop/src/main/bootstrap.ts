@@ -1,7 +1,8 @@
-import os, { homedir, tmpdir } from "node:os";
+import os, { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
+import { spawn, type SpawnOptions } from "node:child_process";
 import {
   app,
   BrowserWindow,
@@ -12,7 +13,6 @@ import {
   nativeTheme,
   safeStorage,
   session,
-  shell,
 } from "electron";
 import ElectronStore from "electron-store";
 import electronUpdater from "electron-updater";
@@ -28,10 +28,14 @@ import {
   copySelectionToClipboard,
   focusWindow,
   getForegroundWindowHandle,
+  muteOtherAppsForRecording,
+  isEditableTargetFocused,
   pasteFromClipboard,
+  restoreOtherAppsAudio,
   startKeyboardHook,
   typeText,
 } from "@voice/native-helper";
+import { createAudioDuckingService } from "./audio/audioDuckingService";
 import { createClipboardService } from "./clipboard/clipboardService";
 import {
   createConfigStore,
@@ -147,6 +151,13 @@ export function resolveOverlayVisibility(
   }
 }
 
+export function shouldRunScheduledOverlayHide(
+  currentState: string,
+  currentReason?: string,
+): boolean {
+  return resolveOverlayVisibility(currentState, currentReason) === "hide";
+}
+
 export function resolveOverlayWindowLayout(
   state: string,
   _mode: RecordingMode | undefined,
@@ -177,7 +188,25 @@ export function resolveOverlayWindowLayout(
   if (state === "error" && options.reason === "no_selection") {
     return "selectionError";
   }
-  if (state === "processing" || state === "inserting" || state === "error") {
+  if (
+    (state === "processing" || state === "inserting") &&
+    !options.busyHintVisible
+  ) {
+    return "translatePill";
+  }
+  if (
+    (state === "processing" || state === "inserting") &&
+    options.busyHintVisible
+  ) {
+    return "busyHint";
+  }
+  if (state === "processing" || state === "inserting") {
+    return "thinkingPill";
+  }
+  if (state === "error" && options.reason === "transcription") {
+    return "busyHint";
+  }
+  if (state === "error") {
     return "thinkingPill";
   }
   return "pill";
@@ -216,6 +245,7 @@ export function resolveShortcutTriggerOverlayLayout(
   lastState: string,
   mode: RecordingMode,
   options: {
+    activeMode?: RecordingMode;
     reason?: string;
   } = {},
 ): OverlayWindowLayout {
@@ -255,7 +285,7 @@ export function formatShortcutHelpLabel(shortcut: string): string {
 }
 
 export function shouldShowShortcutHelpForState(state: string): boolean {
-  return state === "idle";
+  return state === "idle" || state === "success";
 }
 
 export function applyNativeTheme(theme: AppSettings["ui"]["theme"]): void {
@@ -272,6 +302,56 @@ export function applyLaunchAtLogin(launchAtLogin: boolean): void {
 const OVERLAY_HIDE_DELAY_MS = 0;
 const SELECTION_COPY_DELAY_MS = 80;
 const INSTALL_TARGET_PRODUCT_NAME = "Voice Assistant";
+const OPEN_HOME_ON_LAUNCH_ARGS = new Set(["--open-home", "/open-home"]);
+
+export function shouldOpenHomeOnLaunch(argv: readonly string[]): boolean {
+  return argv.some((arg) => OPEN_HOME_ON_LAUNCH_ARGS.has(arg.toLowerCase()));
+}
+
+export function launchInstalledAppHome(input: {
+  installDir: string;
+  productName?: string;
+  spawnProcess?: typeof spawn;
+}): void {
+  const spawnProcess = input.spawnProcess ?? spawn;
+  const productName = input.productName ?? INSTALL_TARGET_PRODUCT_NAME;
+  const child = spawnProcess(
+    join(input.installDir, `${productName}.exe`),
+    ["--open-home"],
+    {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+    } satisfies SpawnOptions,
+  );
+  child.unref();
+}
+
+interface InstallerLaunchWindow {
+  isDestroyed(): boolean;
+  hide(): void;
+  destroy(): void;
+}
+
+export function handoffInstallerLaunch(input: {
+  installerWindow?: InstallerLaunchWindow | null;
+  installDir: string;
+  launch?: (input: { installDir: string }) => void;
+  exitApp?: (exitCode: number) => void;
+}): void {
+  const installerWindow = input.installerWindow;
+  if (installerWindow && !installerWindow.isDestroyed()) {
+    installerWindow.hide();
+    installerWindow.destroy();
+  }
+
+  const launch = input.launch ?? launchInstalledAppHome;
+  const exitApp = input.exitApp ?? ((exitCode: number) => app.exit(exitCode));
+  setTimeout(() => {
+    launch({ installDir: input.installDir });
+    exitApp(0);
+  }, 0);
+}
 
 export async function bootstrap(): Promise<void> {
   registerWindowControlIpc(ipcMain);
@@ -286,8 +366,21 @@ export async function bootstrap(): Promise<void> {
     return;
   }
   if (shouldOpenUninstallWindow(process.argv)) {
-    registerUninstallOnlyIpc(createAppUninstallService());
-    openUninstallWindow();
+    console.log(`[bootstrap] opening uninstall window argv=${JSON.stringify(process.argv)}`);
+    let uninstallConfirmed = false;
+    registerUninstallOnlyIpc(createAppUninstallService(), {
+      onFinish: () => {
+        uninstallConfirmed = true;
+        app.exit(0);
+      },
+    });
+    openUninstallWindow({
+      onClosed: () => {
+        if (!uninstallConfirmed) {
+          app.exit(1);
+        }
+      },
+    });
     return;
   }
   installMediaPermissionHandlers(session.defaultSession);
@@ -329,6 +422,9 @@ export async function bootstrap(): Promise<void> {
       typeText,
       getForegroundWindowHandle,
       focusWindow,
+      isEditableTargetFocused,
+      muteOtherAppsForRecording,
+      restoreOtherAppsAudio,
     }),
   });
   const clipboardService = createClipboardService({ clipboard });
@@ -343,9 +439,16 @@ export async function bootstrap(): Promise<void> {
     nativeBridge,
     copyDelayMs: SELECTION_COPY_DELAY_MS,
   });
+  const audioDuckingService = createAudioDuckingService({
+    bridge: nativeBridge,
+    getSettings: () => configStore.get(),
+    getExcludedProcessIds: () => getCurrentAppProcessIds(),
+  });
   let insertTargetWindowHandle: string | undefined;
   let lastRecordingState = "idle";
+  let lastRecordingMode: RecordingMode | undefined;
   let lastRecordingReason: string | undefined;
+  let pendingHideTimer: NodeJS.Timeout | undefined;
   let refreshTrayTooltip = (_state: string): void => {};
   const historyStore = createFileHistoryStore({
     rootDir: join(app.getPath("userData"), "history"),
@@ -395,6 +498,7 @@ export async function bootstrap(): Promise<void> {
       applyLaunchAtLogin(settings.appBehavior.launchAtLogin);
       configureShortcuts(settings.shortcuts);
       refreshTrayTooltip(lastRecordingState);
+      audioDuckingService.handleSettingsChanged(settings);
       broadcastSettingsChanged(settings);
     },
     onHistoryRecordCreated: (record) => {
@@ -406,10 +510,50 @@ export async function bootstrap(): Promise<void> {
   });
   console.log("[bootstrap] IPC 路由已註冊");
 
-  const overlayWindow = createOverlayWindow();
+  const overlayWindow = createOverlayWindow({ theme: initialSettings.ui.theme });
   blockHomeWindowAltSpaceMenu(overlayWindow);
   const overlayWindowFollower = createOverlayWindowFollower(overlayWindow);
   console.log("[bootstrap] 懸浮窗已建立");
+
+  const cancelPendingOverlayHide = (): void => {
+    if (!pendingHideTimer) {
+      return;
+    }
+    clearTimeout(pendingHideTimer);
+    pendingHideTimer = undefined;
+  };
+
+  const showOverlayWithLayout = (layout: OverlayWindowLayout): void => {
+    cancelPendingOverlayHide();
+    applyOverlayWindowLayout(overlayWindow, layout);
+    if (!overlayWindow.isVisible()) {
+      overlayWindow.showInactive();
+    }
+    overlayWindowFollower.start(layout);
+  };
+
+  const scheduleOverlayHide = (state: string): void => {
+    cancelPendingOverlayHide();
+    pendingHideTimer = setTimeout(() => {
+      pendingHideTimer = undefined;
+      if (overlayWindow.isDestroyed()) {
+        return;
+      }
+      if (!shouldRunScheduledOverlayHide(lastRecordingState, lastRecordingReason)) {
+        console.log(
+          `[bootstrap] 跳過過期懸浮窗隱藏（scheduled=${state}, current=${lastRecordingState}）`,
+        );
+        return;
+      }
+      if (overlayWindow.isVisible()) {
+        console.log(
+          `[bootstrap] 延遲 ${OVERLAY_HIDE_DELAY_MS}ms 後隱藏懸浮窗（state=${state}）`,
+        );
+        overlayWindowFollower.stop();
+        overlayWindow.hide();
+      }
+    }, OVERLAY_HIDE_DELAY_MS);
+  };
 
   // 訂閱主程序 ASR 轉寫事件，序列化後轉發給 renderer，ipcTranscriptionProvider 會反序列化。
   transcriptionService.subscribe((event) => {
@@ -474,6 +618,8 @@ export async function bootstrap(): Promise<void> {
     },
   });
   app.on("will-quit", () => {
+    cancelPendingOverlayHide();
+    void audioDuckingService.restore();
     overlayWindowFollower.stop();
     shortcutCaptureSession.stop();
     escCancelController.dispose();
@@ -484,19 +630,21 @@ export async function bootstrap(): Promise<void> {
       console.log(`[bootstrap] 快捷鍵錄入中，忽略 toggle mode=${mode}`);
       return;
     }
+    cancelPendingOverlayHide();
     console.log(`[bootstrap] handleToggle 觸發，mode=${mode}`);
     void (async () => {
       if (shouldReplayMicErrorOverlay(lastRecordingState, lastRecordingReason)) {
         const layout = resolveShortcutTriggerOverlayLayout(
           lastRecordingState,
           mode,
-          lastRecordingReason ? { reason: lastRecordingReason } : {},
+          {
+            ...(lastRecordingMode !== undefined
+              ? { activeMode: lastRecordingMode }
+              : {}),
+            ...(lastRecordingReason ? { reason: lastRecordingReason } : {}),
+          },
         );
-        applyOverlayWindowLayout(overlayWindow, layout);
-        if (!overlayWindow.isVisible()) {
-          overlayWindow.showInactive();
-        }
-        overlayWindowFollower.start(layout);
+        showOverlayWithLayout(layout);
         console.log("[bootstrap] microphone error overlay already active; replay only");
         return;
       }
@@ -524,15 +672,18 @@ export async function bootstrap(): Promise<void> {
         lastRecordingState,
         mode,
         {
+          ...(lastRecordingMode !== undefined
+            ? { activeMode: lastRecordingMode }
+            : {}),
           ...(lastRecordingReason !== undefined
             ? { reason: lastRecordingReason }
             : {}),
         },
       );
-      applyOverlayWindowLayout(overlayWindow, layout);
       if (resolveShortcutTriggerOverlayAction(mode, lastRecordingState) === "show") {
-        overlayWindow.showInactive();
-        overlayWindowFollower.start(layout);
+        showOverlayWithLayout(layout);
+      } else {
+        applyOverlayWindowLayout(overlayWindow, layout);
       }
       overlayWindow.webContents.send("voice:toggle-recording", { mode });
       console.log(`[bootstrap] 已傳送 voice:toggle-recording，mode=${mode}`);
@@ -544,9 +695,7 @@ export async function bootstrap(): Promise<void> {
       return;
     }
     const layout = resolveOverlayWindowLayout("shortcutHelp", undefined);
-    applyOverlayWindowLayout(overlayWindow, layout);
-    overlayWindow.showInactive();
-    overlayWindowFollower.start(layout);
+    showOverlayWithLayout(layout);
     shortcutHelpVisible = true;
     overlayWindow.webContents.send("voice:shortcut-help", {
       direct: formatShortcutHelpLabel(currentShortcuts.toggleRecording),
@@ -696,9 +845,7 @@ export async function bootstrap(): Promise<void> {
     onOpenSettings: () => openHomeWindow({ section: "settings" }),
     onCheckUpdates: () => openHomeWindow({ section: "about", showUpdates: true }),
     onOpenAbout: () => openHomeWindow({ section: "about" }),
-    onOpenUninstall: () => openUninstallWindow(),
     onQuit: () => app.quit(),
-    versionLabel: `v${app.getVersion()}`,
     iconPath: trayIconPath,
   });
   refreshTrayTooltip = (state) => {
@@ -798,9 +945,12 @@ export async function bootstrap(): Promise<void> {
     });
   });
 
+  if (shouldOpenHomeOnLaunch(process.argv)) {
+    openHomeWindow();
+  }
+
   // 監聽 renderer 上報的錄音狀態，更新托盤 tooltip（僅開啟/關閉兩態），並控制懸浮窗顯隱。
   // 用定時器控制代碼保證"快速切換"場景下最終顯隱意圖以最後一次 state 為準，不會出現閃爍或延遲隱藏。
-  let pendingHideTimer: NodeJS.Timeout | undefined;
   ipcMain.on(
     "voice:report-recording-state",
     (
@@ -817,7 +967,13 @@ export async function bootstrap(): Promise<void> {
     ) => {
       const state = typeof update?.state === "string" ? update.state : "idle";
       lastRecordingState = state;
+      lastRecordingMode =
+        state === "idle" || state === "success" ? undefined : update?.mode;
       lastRecordingReason = state === "error" ? update?.reason : undefined;
+      audioDuckingService.handleRecordingState({
+        state,
+        mode: update?.mode,
+      });
       if (state !== "idle" && state !== "shortcutHelp") {
         shortcutHelpVisible = false;
       }
@@ -833,9 +989,6 @@ export async function bootstrap(): Promise<void> {
         recordingLimitWarning: update?.recordingLimitWarning === true,
         busyHintVisible: update?.busyHintVisible === true,
       });
-      applyOverlayWindowLayout(overlayWindow, layout);
-      overlayWindowFollower.updateLayout(layout);
-
       if (shouldEnableEscCancelForState(state)) {
         escCancelController.enable();
       } else {
@@ -843,33 +996,13 @@ export async function bootstrap(): Promise<void> {
       }
 
       if (visibility === "show") {
-        if (pendingHideTimer) {
-          clearTimeout(pendingHideTimer);
-          pendingHideTimer = undefined;
-        }
-        if (!overlayWindow.isVisible()) {
-          overlayWindow.showInactive();
-        }
-        overlayWindowFollower.start(layout);
+        showOverlayWithLayout(layout);
       } else if (visibility === "hide") {
-        if (pendingHideTimer) {
-          clearTimeout(pendingHideTimer);
-        }
-        pendingHideTimer = setTimeout(() => {
-          pendingHideTimer = undefined;
-          if (overlayWindow.isDestroyed()) {
-            return;
-          }
-          if (overlayWindow.isVisible()) {
-            console.log(
-              `[bootstrap] 延遲 ${OVERLAY_HIDE_DELAY_MS}ms 後隱藏懸浮窗（state=${state}）`,
-            );
-            overlayWindowFollower.stop();
-            overlayWindow.hide();
-          }
-        }, OVERLAY_HIDE_DELAY_MS);
+        scheduleOverlayHide(state);
       } else {
+        cancelPendingOverlayHide();
         if (overlayWindow.isVisible()) {
+          applyOverlayWindowLayout(overlayWindow, layout);
           overlayWindowFollower.start(layout);
         }
       }
@@ -917,9 +1050,7 @@ function createAppUninstallService(): UninstallService {
   return createUninstallService({
     app,
     executablePath: process.execPath,
-    pid: process.pid,
     platform: process.platform,
-    tempDir: tmpdir(),
   });
 }
 
@@ -931,12 +1062,37 @@ function createAppInstallerService(): InstallerService {
   });
 }
 
-function registerUninstallOnlyIpc(uninstallService: UninstallService): void {
+function getCurrentAppProcessIds(): number[] {
+  const processIds = new Set<number>([process.pid]);
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      continue;
+    }
+    const rendererProcessId = window.webContents.getOSProcessId();
+    if (rendererProcessId > 0) {
+      processIds.add(rendererProcessId);
+    }
+  }
+  return [...processIds];
+}
+
+function registerUninstallOnlyIpc(
+  uninstallService: UninstallService,
+  options: { onFinish?: () => void } = {},
+): void {
   ipcMain.handle("voice:perform-uninstall", () =>
     uninstallService.performUninstall(),
   );
+  ipcMain.handle("voice:cancel-uninstall", () => {
+    app.exit(1);
+    return undefined;
+  });
   ipcMain.handle("voice:finish-uninstall", () => {
-    app.quit();
+    if (options.onFinish) {
+      options.onFinish();
+    } else {
+      app.quit();
+    }
     return undefined;
   });
 }
@@ -971,7 +1127,7 @@ function registerInstallerOnlyIpc(installerService: InstallerService): void {
   ipcMain.handle("voice:installer-install", (_event, input) => {
     return installerService.install(parseInstallerShellInstallInput(input));
   });
-  ipcMain.handle("voice:installer-launch", (_event, input) => {
+  ipcMain.handle("voice:installer-launch", (event, input) => {
     const installDir =
       typeof input === "object" &&
       input !== null &&
@@ -979,8 +1135,10 @@ function registerInstallerOnlyIpc(installerService: InstallerService): void {
       typeof input.installDir === "string"
         ? input.installDir
         : installerService.getDefaults().installDir;
-    void shell.openPath(join(installDir, `${INSTALL_TARGET_PRODUCT_NAME}.exe`));
-    app.quit();
+    handoffInstallerLaunch({
+      installerWindow: BrowserWindow.fromWebContents(event.sender),
+      installDir,
+    });
     return undefined;
   });
 }
@@ -1010,11 +1168,27 @@ function openInstallerWindow(): void {
   });
 }
 
-function openUninstallWindow(): void {
+function openUninstallWindow(
+  options: { onClosed?: () => void } = {},
+): void {
   const uninstallWindow = createUninstallWindow();
-  uninstallWindow.once("ready-to-show", () => {
+  const showUninstallWindow = (): void => {
+    if (uninstallWindow.isDestroyed()) {
+      return;
+    }
     uninstallWindow.show();
     uninstallWindow.focus();
+  };
+  if (options.onClosed) {
+    uninstallWindow.once("closed", options.onClosed);
+  }
+  uninstallWindow.once("ready-to-show", showUninstallWindow);
+  uninstallWindow.webContents.once("did-finish-load", showUninstallWindow);
+  uninstallWindow.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
+    console.error(
+      `[bootstrap] uninstall window failed to load code=${errorCode} description=${errorDescription}`,
+    );
+    showUninstallWindow();
   });
 }
 

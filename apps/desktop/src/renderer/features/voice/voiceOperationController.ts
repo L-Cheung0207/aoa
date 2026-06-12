@@ -84,6 +84,7 @@ interface ActiveSession {
   startedAt: string;
   startedAtMs: number;
   audioFrames: Int16Array[];
+  recordedTranscriptionFrames: AudioFrame[];
   pendingTranscriptionFrames: AudioFrame[];
   transcriptionReady: boolean;
   transcriptionUnavailable: boolean;
@@ -243,6 +244,10 @@ export function createVoiceOperationController(
   const unsubscribeRecorder = options.recorder.subscribe((event) => {
     if (event.type === "frame") {
       activeSession?.audioFrames.push(new Int16Array(event.frame.pcm));
+      activeSession?.recordedTranscriptionFrames.push({
+        ...event.frame,
+        pcm: new Int16Array(event.frame.pcm),
+      });
       const session = activeSession;
       if (!session) {
         return;
@@ -289,7 +294,6 @@ export function createVoiceOperationController(
           return;
         }
         fail("transcription");
-        activeSession = undefined;
         void (async () => {
           await options.recorder.cancel();
           await options.transcriptionProvider.cancel();
@@ -302,6 +306,7 @@ export function createVoiceOperationController(
 
   const startTranscriptionForSession = async (
     session: ActiveSession,
+    optionsOverride: { replayRecordedFrames?: boolean } = {},
   ): Promise<boolean> => {
     updateTranscriptionStatus(session, { ready: false, unavailable: false });
     try {
@@ -324,7 +329,10 @@ export function createVoiceOperationController(
       }
       updateTranscriptionStatus(session, { ready: true, unavailable: false });
       try {
-        for (const frame of session.pendingTranscriptionFrames) {
+        const framesToSend = optionsOverride.replayRecordedFrames
+          ? session.recordedTranscriptionFrames
+          : session.pendingTranscriptionFrames;
+        for (const frame of framesToSend) {
           options.transcriptionProvider.sendAudio(frame);
         }
       } catch (sendError) {
@@ -370,6 +378,7 @@ export function createVoiceOperationController(
       startedAt: startedAt.toISOString(),
       startedAtMs: startedAt.getTime(),
       audioFrames: [],
+      recordedTranscriptionFrames: [],
       pendingTranscriptionFrames: [],
       transcriptionReady: false,
       transcriptionUnavailable: false,
@@ -385,6 +394,7 @@ export function createVoiceOperationController(
     let transcriptionStarted = false;
     let shouldCancelAfterStart = false;
     let shouldStopAfterStart = false;
+    let keepSessionForRetry = false;
     try {
       stage = "recorder";
       recorderStartRequested = true;
@@ -416,7 +426,8 @@ export function createVoiceOperationController(
       console.error(`[voice] 會話啟動失敗 stage=${stage}`, error);
       const cancelledDuringStart = pendingCancelAfterStart;
       clearRecordingLimitTimer();
-      activeSession = undefined;
+      keepSessionForRetry =
+        stage === "transcription" && activeSession !== undefined;
       // recorder 啟動失敗或啟動後流程失敗時需關麥，避免麥克風一直佔用。
       if (recorderStarted || stage === "recorder") {
         try {
@@ -439,9 +450,13 @@ export function createVoiceOperationController(
         }
       }
       if (cancelledDuringStart) {
+        activeSession = undefined;
         machine.send({ type: "reset" });
         snapshotRevision += 1;
         return;
+      }
+      if (!keepSessionForRetry) {
+        activeSession = undefined;
       }
       fail(stage === "recorder" ? "mic" : stageToReason(stage));
       // 啟動失敗時已經把狀態機推到 error，pendingCancelAfterStart 無意義，清掉。
@@ -483,6 +498,7 @@ export function createVoiceOperationController(
 
     let stage: "recorder" | "transcription" | "postprocess" | "insertion" =
       "recorder";
+    let keepSessionForRetry = false;
     try {
       await options.recorder.stop();
       if (activeSession !== session) {
@@ -539,10 +555,11 @@ export function createVoiceOperationController(
         return;
       }
       console.error(`[voice] 停止會話在階段=${stage} 失敗`, error);
+      keepSessionForRetry = stage === "transcription";
       fail(stageToReason(stage));
       throw error;
     } finally {
-      if (activeSession === session) {
+      if (activeSession === session && !keepSessionForRetry) {
         activeSession = undefined;
         finalTranscript = "";
         finalPostprocessResult = undefined;
@@ -725,13 +742,78 @@ export function createVoiceOperationController(
     retryTranscription: async () => {
       const snapshot = machine.getSnapshot();
       const session = activeSession;
-      if (snapshot.state !== "listening" || !session) {
+      if (!session) {
         return false;
       }
-      if (session.transcriptionReady && !session.transcriptionUnavailable) {
-        return true;
+      if (snapshot.state === "listening") {
+        if (session.transcriptionReady && !session.transcriptionUnavailable) {
+          return true;
+        }
+        try {
+          await options.transcriptionProvider.cancel();
+        } catch (error) {
+          console.warn("[voice] 重試前清理舊轉寫會話失敗（忽略）", error);
+        }
+        return startTranscriptionForSession(session, {
+          replayRecordedFrames: true,
+        });
       }
-      return startTranscriptionForSession(session);
+      if (snapshot.state !== "error" || snapshot.reason !== "transcription") {
+        return false;
+      }
+
+      machine.send({ type: "retry", mode: session.mode });
+      snapshotRevision += 1;
+      finalTranscript = "";
+      finalPostprocessResult = undefined;
+      updateTranscriptionStatus(session, { ready: false, unavailable: false });
+      let stage: "transcription" | "postprocess" | "insertion" =
+        "transcription";
+      try {
+        try {
+          await options.transcriptionProvider.cancel();
+        } catch (error) {
+          console.warn("[voice] 重試前清理舊轉寫會話失敗（忽略）", error);
+        }
+        const started = await startTranscriptionForSession(session, {
+          replayRecordedFrames: true,
+        });
+        if (!started) {
+          throw new Error("Transcription session is unavailable");
+        }
+        await options.transcriptionProvider.stop();
+        machine.send({ type: "insert" });
+        stage = session.mode === "direct" ? "insertion" : "postprocess";
+        const finalText = await applyFinalText(
+          options,
+          session,
+          finalTranscript,
+          finalPostprocessResult,
+          (nextStage) => {
+            stage = nextStage;
+          },
+        );
+        if (activeSession !== session) {
+          return false;
+        }
+        machine.send({ type: "success" });
+        emitHistoryRecord(options, session, {
+          status: finalTranscript.trim() ? "completed" : "no_audio",
+          transcript: finalTranscript,
+          finalText,
+          endedAt: getNow(),
+        });
+        activeSession = undefined;
+        finalTranscript = "";
+        finalPostprocessResult = undefined;
+        return true;
+      } catch (error) {
+        if (activeSession === session) {
+          console.error(`[voice] 重試轉寫在階段=${stage} 失敗`, error);
+          fail(stageToReason(stage));
+        }
+        return false;
+      }
     },
     undoCancel: async () => {
       const snapshot = machine.getSnapshot();
@@ -823,17 +905,28 @@ async function applyFinalText(
       console.log("[voice] 服務端最終文本為空，跳過插入與展示");
       return "";
     }
-    if (
-      session.mode === "processSelection" &&
-      result.action === "show_result"
-    ) {
-      console.log("[voice] processSelection action=show_result，展示结果浮层");
-      options.onPostprocessResult?.({
-        mode: "processSelection",
-        rawText,
-        selectedText: session.selectedText,
-        result,
-      });
+    if (session.mode === "processSelection" && session.selectedText) {
+      setStage("insertion");
+      try {
+        await options.textTarget.replaceSelection(
+          result.finalText,
+          session.selectedText,
+        );
+      } catch (error) {
+        console.warn(
+          "[voice] processSelection replaceSelection failed, showing result overlay",
+          error,
+        );
+        if (!options.onPostprocessResult) {
+          throw error;
+        }
+        options.onPostprocessResult({
+          mode: "processSelection",
+          rawText,
+          selectedText: session.selectedText,
+          result,
+        });
+      }
     } else {
       setStage("insertion");
       await applyPostProcessResult(options.textTarget, session, result);

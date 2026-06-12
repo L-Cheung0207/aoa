@@ -25,6 +25,16 @@ describe("native helper package wrapper", () => {
       focusWindow: (windowHandle) => {
         calls.push(`focus:${windowHandle}`);
       },
+      isEditableTargetFocused: () => {
+        calls.push("editable");
+        return true;
+      },
+      muteOtherAppsForRecording: (excludedProcessIds) => {
+        calls.push(`mute:${excludedProcessIds.join(",")}`);
+      },
+      restoreOtherAppsAudio: () => {
+        calls.push("restore-audio");
+      },
       recognizeRightAltHotkey: () => "direct"
     };
 
@@ -35,8 +45,19 @@ describe("native helper package wrapper", () => {
     await helper.typeText("hello");
     expect(await helper.getForegroundWindowHandle()).toBe("handle-1");
     await helper.focusWindow("handle-1");
+    await expect(helper.isEditableTargetFocused()).resolves.toBe(true);
+    await helper.muteOtherAppsForRecording([100, 200]);
+    await helper.restoreOtherAppsAudio();
 
-    expect(calls).toEqual(["paste", "copy", "type:hello", "focus:handle-1"]);
+    expect(calls).toEqual([
+      "paste",
+      "copy",
+      "type:hello",
+      "focus:handle-1",
+      "editable",
+      "mute:100,200",
+      "restore-audio"
+    ]);
   });
 
   it("throws a clear error when the native addon is missing", async () => {
@@ -53,6 +74,13 @@ describe("native helper package wrapper", () => {
       typeText: (text) => calls.push(text),
       getForegroundWindowHandle: () => "lazy-handle",
       focusWindow: (windowHandle) => calls.push(windowHandle),
+      isEditableTargetFocused: () => {
+        calls.push("editable");
+        return true;
+      },
+      muteOtherAppsForRecording: (excludedProcessIds) =>
+        calls.push(`mute:${excludedProcessIds.join(",")}`),
+      restoreOtherAppsAudio: () => calls.push("restore-audio"),
       recognizeRightAltHotkey: () => "direct"
     }));
 
@@ -61,23 +89,58 @@ describe("native helper package wrapper", () => {
     await helper.typeText("typed");
     expect(await helper.getForegroundWindowHandle()).toBe("lazy-handle");
     await helper.focusWindow("lazy-handle");
+    await expect(helper.isEditableTargetFocused()).resolves.toBe(true);
+    await helper.muteOtherAppsForRecording([300]);
+    await helper.restoreOtherAppsAudio();
 
-    expect(calls).toEqual(["paste", "copy", "typed", "lazy-handle"]);
-  });
-
-  it("prefers packaged node binary before cargo debug dll candidates", () => {
-    expect(getNativeAddonCandidatePaths("C:\\app\\packages\\native-helper")).toEqual([
-      "C:\\app\\packages\\native-helper\\dist\\voice_native_helper.node",
-      "C:\\app\\packages\\native-helper\\target\\debug\\voice_native_helper.node",
-      "C:\\app\\packages\\native-helper\\target\\debug\\voice_native_helper.dll"
+    expect(calls).toEqual([
+      "paste",
+      "copy",
+      "typed",
+      "lazy-handle",
+      "editable",
+      "mute:300",
+      "restore-audio"
     ]);
   });
 
-  it("loads the first existing native addon candidate", () => {
+  it("reports unsupported audio ducking when addon does not implement it", async () => {
+    const helper = createNativeHelperBinding({
+      pasteFromClipboard: () => undefined,
+      typeText: () => undefined
+    });
+
+    await expect(helper.muteOtherAppsForRecording([100])).rejects.toThrow(
+      "NATIVE_HELPER_UNAVAILABLE"
+    );
+    await expect(helper.restoreOtherAppsAudio()).rejects.toThrow(
+      "NATIVE_HELPER_UNAVAILABLE"
+    );
+  });
+
+  it("reports unsupported editable target detection when addon does not implement it", async () => {
+    const helper = createNativeHelperBinding({
+      pasteFromClipboard: () => undefined,
+      typeText: () => undefined
+    });
+
+    await expect(helper.isEditableTargetFocused()).rejects.toThrow(
+      "NATIVE_HELPER_UNAVAILABLE"
+    );
+  });
+
+  it("prefers cargo debug node binary before the copied dist binary in source builds", () => {
+    expect(getNativeAddonCandidatePaths("C:\\app\\packages\\native-helper")).toEqual([
+      "C:\\app\\packages\\native-helper\\target\\debug\\voice_native_helper.node",
+      "C:\\app\\packages\\native-helper\\dist\\voice_native_helper.node"
+    ]);
+  });
+
+  it("loads the first existing node addon candidate", () => {
     const loaded: string[] = [];
     const loader = createNativeAddonLoader({
       packageRoot: "C:\\app\\packages\\native-helper",
-      exists: (path) => path.endsWith("voice_native_helper.dll"),
+      exists: (path) => path.endsWith("target\\debug\\voice_native_helper.node"),
       requireFile: (path) => {
         loaded.push(path);
         return {
@@ -90,8 +153,23 @@ describe("native helper package wrapper", () => {
 
     expect(loader()).toBeDefined();
     expect(loaded).toEqual([
-      "C:\\app\\packages\\native-helper\\target\\debug\\voice_native_helper.dll"
+      "C:\\app\\packages\\native-helper\\target\\debug\\voice_native_helper.node"
     ]);
+  });
+
+  it("does not try to require the cargo dll directly", () => {
+    const loaded: string[] = [];
+    const loader = createNativeAddonLoader({
+      packageRoot: "C:\\app\\packages\\native-helper",
+      exists: (path) => path.endsWith("voice_native_helper.dll"),
+      requireFile: (path) => {
+        loaded.push(path);
+        return {};
+      }
+    });
+
+    expect(loader()).toBeUndefined();
+    expect(loaded).toEqual([]);
   });
 
   it("exposes hotkey recognition through the native helper binding", () => {

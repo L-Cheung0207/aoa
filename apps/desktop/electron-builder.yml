@@ -39,10 +39,13 @@ nsis:
   oneClick: false
   perMachine: false
   allowElevation: false
-  allowToChangeInstallationDirectory: false
+  allowToChangeInstallationDirectory: true
   createDesktopShortcut: false
   createStartMenuShortcut: true
   shortcutName: Voice Assistant
   artifactName: "${productName} Setup ${version}.${ext}"
   include: installer.nsh
+  installerLanguages:
+    - zh_TW
+  language: "1028"
   runAfterFinish: false

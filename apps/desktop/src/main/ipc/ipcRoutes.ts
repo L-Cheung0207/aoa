@@ -84,6 +84,7 @@ export interface IpcRouteHandlers {
   stopTranscription(): Promise<TranscriptionStopResult>;
   cancelTranscription(): Promise<void>;
   performUninstall(): Promise<UninstallResult>;
+  cancelUninstall(): void;
   finishUninstall(): void;
   checkForUpdates(): Promise<UpdateCheckResult>;
   restartToUpdate(): void;
@@ -169,6 +170,24 @@ export function createIpcRouteHandlers(
       console.log(
         `[ipc] replaceSelectedText result ok=${result.ok} strategy=${result.strategy} message=${result.ok ? "" : result.message}`
       );
+      if (result.ok && expectedSelectedText !== undefined) {
+        const selectedTextAfterReplacement =
+          await dependencies.selectionService.getSelectedText(targetWindowHandle);
+        if (
+          selectedTextAfterReplacement &&
+          normalizeSelectionText(selectedTextAfterReplacement) ===
+            normalizeSelectionText(expectedSelectedText)
+        ) {
+          console.warn(
+            "[ipc] replaceSelectedText blocked: selected text was not replaced"
+          );
+          return createReplacementFailure(
+            result.strategy,
+            text,
+            "Selected text was not replaced"
+          );
+        }
+      }
       return result;
     },
     bootstrapClient: async () => {
@@ -207,6 +226,9 @@ export function createIpcRouteHandlers(
     stopTranscription: () => dependencies.transcriptionService.stop(),
     cancelTranscription: () => dependencies.transcriptionService.cancel(),
     performUninstall: () => dependencies.uninstallService.performUninstall(),
+    cancelUninstall: () => {
+      dependencies.quitApp();
+    },
     finishUninstall: () => {
       dependencies.quitApp();
     },
@@ -321,6 +343,10 @@ export function registerIpcRoutes(
   ipcMain.handle("voice:stop-transcription", () => handlers.stopTranscription());
   ipcMain.handle("voice:cancel-transcription", () => handlers.cancelTranscription());
   ipcMain.handle("voice:perform-uninstall", () => handlers.performUninstall());
+  ipcMain.handle("voice:cancel-uninstall", () => {
+    handlers.cancelUninstall();
+    return undefined;
+  });
   ipcMain.handle("voice:finish-uninstall", () => {
     handlers.finishUninstall();
     return undefined;

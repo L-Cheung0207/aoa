@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { BrowserWindow, screen } from "electron";
+import type { AppSettings } from "@voice/shared";
 
 export type OverlayWindowLayout =
   | "pill"
@@ -7,6 +8,7 @@ export type OverlayWindowLayout =
   | "recordingLimitWarning"
   | "canceledPill"
   | "thinkingPill"
+  | "busyHint"
   | "micError"
   | "selectionError"
   | "shortcutHelp"
@@ -51,13 +53,18 @@ interface OverlayWindowFollowerOptions {
   syncLayout?: (window: OverlayWindowTarget, layout: OverlayWindowLayout) => void;
 }
 
+export interface CreateOverlayWindowOptions {
+  theme?: AppSettings["ui"]["theme"];
+}
+
 const OVERLAY_LAYOUT_SIZE: Record<OverlayWindowLayout, { width: number; height: number }> = {
   /** 仅容纳状态点与音量条的「胶囊」型面板。 */
   pill: { width: 160, height: 40 },
   translatePill: { width: 184, height: 70 },
   recordingLimitWarning: { width: 420, height: 196 },
   canceledPill: { width: 184, height: 40 },
-  thinkingPill: { width: 380, height: 196 },
+  thinkingPill: { width: 184, height: 70 },
+  busyHint: { width: 380, height: 196 },
   micError: { width: 360, height: 168 },
   selectionError: { width: 360, height: 112 },
   shortcutHelp: { width: 340, height: 258 },
@@ -166,7 +173,20 @@ export function createOverlayWindowFollower(
   };
 }
 
-export function createOverlayWindow(): BrowserWindow {
+function appendThemeQuery(
+  url: string,
+  theme: AppSettings["ui"]["theme"] | undefined
+): string {
+  if (!theme) {
+    return url;
+  }
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}theme=${encodeURIComponent(theme)}`;
+}
+
+export function createOverlayWindow(
+  options: CreateOverlayWindowOptions = {}
+): BrowserWindow {
   const window = new BrowserWindow({
     title: "",
     width: OVERLAY_LAYOUT_SIZE.pill.width,
@@ -201,9 +221,11 @@ export function createOverlayWindow(): BrowserWindow {
   window.setAlwaysOnTop(true, "screen-saver");
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    window.loadURL(process.env.ELECTRON_RENDERER_URL);
+    window.loadURL(appendThemeQuery(process.env.ELECTRON_RENDERER_URL, options.theme));
   } else {
-    window.loadFile(join(__dirname, "../renderer/index.html"));
+    window.loadFile(join(__dirname, "../renderer/index.html"), {
+      ...(options.theme ? { query: { theme: options.theme } } : {})
+    });
   }
 
   return window;

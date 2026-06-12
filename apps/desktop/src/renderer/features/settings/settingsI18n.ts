@@ -4,6 +4,7 @@ import type {
   RecordingLanguage,
   WaveformStyle,
 } from "@voice/shared";
+import { DEFAULT_INTERFACE_LANGUAGE } from "@voice/shared";
 
 export interface SettingsOption<T extends string> {
   key: string;
@@ -137,9 +138,9 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     appearance: {
       theme: "主题",
-      themeDescription: "默认使用深色主题；浅色主题更适合白天。",
-      darkTheme: "深色（默认）",
-      lightTheme: "浅色（白色）",
+      themeDescription: "默认使用浅色主题；深色主题适合夜间。",
+      darkTheme: "深色",
+      lightTheme: "浅色（默认）",
     },
     shortcuts: {
       voiceInput: "语音输入",
@@ -206,9 +207,9 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     options: {
       interfaceLanguages: [
-        { key: "简体中文（中国大陆）", value: "zh-CN" },
-        { key: "繁體中文（香港/澳門）", value: "zh-TW" },
-        { key: "English (United States)", value: "en-US" },
+        { key: "简体中文", value: "zh-CN" },
+        { key: "繁體中文", value: "zh-TW" },
+        { key: "English", value: "en-US" },
       ],
       recordingLanguages: [
         { key: "自动 (Auto)", value: "auto" },
@@ -258,9 +259,9 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     appearance: {
       theme: "主題",
-      themeDescription: "預設使用深色主題；淺色主題更適合白天。",
-      darkTheme: "深色（預設）",
-      lightTheme: "淺色（白色）",
+      themeDescription: "預設使用淺色主題；深色主題適合夜間。",
+      darkTheme: "深色",
+      lightTheme: "淺色（預設）",
     },
     shortcuts: {
       voiceInput: "語音輸入",
@@ -327,9 +328,9 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     options: {
       interfaceLanguages: [
-        { key: "簡體中文（中國大陸）", value: "zh-CN" },
-        { key: "繁體中文（香港/澳門）", value: "zh-TW" },
-        { key: "English (United States)", value: "en-US" },
+        { key: "簡體中文", value: "zh-CN" },
+        { key: "繁體中文", value: "zh-TW" },
+        { key: "English", value: "en-US" },
       ],
       recordingLanguages: [
         { key: "自動 (Auto)", value: "auto" },
@@ -381,9 +382,9 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     appearance: {
       theme: "Theme",
       themeDescription:
-        "Dark is the default; light works better during the day.",
-      darkTheme: "Dark (Default)",
-      lightTheme: "Light (White)",
+        "Light is the default; dark works better at night.",
+      darkTheme: "Dark",
+      lightTheme: "Light (Default)",
     },
     shortcuts: {
       voiceInput: "Voice Input",
@@ -461,9 +462,9 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     options: {
       interfaceLanguages: [
-        { key: "Simplified Chinese (Mainland China)", value: "zh-CN" },
-        { key: "Traditional Chinese (Hong Kong/Macau)", value: "zh-TW" },
-        { key: "English (United States)", value: "en-US" },
+        { key: "Simplified Chinese", value: "zh-CN" },
+        { key: "Traditional Chinese", value: "zh-TW" },
+        { key: "English", value: "en-US" },
       ],
       recordingLanguages: [
         { key: "Auto", value: "auto" },
@@ -493,5 +494,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
 export function getSettingsText(
   language: InterfaceLanguage | undefined,
 ): SettingsText {
-  return SETTINGS_TEXT[language ?? "zh-CN"] ?? SETTINGS_TEXT["zh-CN"];
+  return (
+    SETTINGS_TEXT[language ?? DEFAULT_INTERFACE_LANGUAGE] ??
+    SETTINGS_TEXT[DEFAULT_INTERFACE_LANGUAGE]
+  );
 }

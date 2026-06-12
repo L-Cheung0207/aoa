@@ -1,12 +1,16 @@
+pub mod audio;
 pub mod active_window;
+pub mod editable_target;
 pub mod input;
 pub mod keyboard;
 
 use std::sync::{Mutex, OnceLock};
 
 static HOTKEY_RECOGNIZER: OnceLock<Mutex<keyboard::RightAltHotkeyRecognizer>> = OnceLock::new();
+#[cfg(feature = "node-addon")]
 static KEYBOARD_HOOK: OnceLock<Mutex<Option<keyboard::HookHandle>>> = OnceLock::new();
 
+#[cfg(feature = "node-addon")]
 fn keyboard_hook_slot() -> &'static Mutex<Option<keyboard::HookHandle>> {
     KEYBOARD_HOOK.get_or_init(|| Mutex::new(None))
 }
@@ -85,6 +89,24 @@ pub fn get_foreground_window_handle() -> napi::Result<Option<String>> {
 #[napi_derive::napi]
 pub fn focus_window(window_handle: String) -> napi::Result<()> {
     active_window::focus_window(&window_handle).map_err(to_napi_error)
+}
+
+#[cfg(feature = "node-addon")]
+#[napi_derive::napi]
+pub fn is_editable_target_focused() -> napi::Result<bool> {
+    editable_target::is_editable_target_focused().map_err(to_napi_error)
+}
+
+#[cfg(feature = "node-addon")]
+#[napi_derive::napi]
+pub fn mute_other_apps_for_recording(excluded_process_ids: Vec<u32>) -> napi::Result<()> {
+    audio::mute_other_apps_for_recording(&excluded_process_ids).map_err(to_napi_error)
+}
+
+#[cfg(feature = "node-addon")]
+#[napi_derive::napi]
+pub fn restore_other_apps_audio() -> napi::Result<()> {
+    audio::restore_other_apps_audio().map_err(to_napi_error)
 }
 
 #[cfg(feature = "node-addon")]

@@ -26,7 +26,7 @@ export function UninstallPage(): React.JSX.Element {
           }, 900);
           return;
         }
-        setState("done");
+        void window.voiceAI.finishUninstall();
       })
       .catch((uninstallError: unknown) => {
         runningRef.current = false;
@@ -40,7 +40,7 @@ export function UninstallPage(): React.JSX.Element {
   };
 
   const closeWindow = (): void => {
-    window.voiceAI.controlHomeWindow("close");
+    void window.voiceAI.cancelUninstall();
   };
 
   const finishUninstall = (): void => {
@@ -146,7 +146,7 @@ function WindowControls(): React.JSX.Element {
         className="uninstall-window-controls__button uninstall-window-controls__button--close"
         type="button"
         aria-label="关闭"
-        onClick={() => window.voiceAI.controlHomeWindow("close")}
+        onClick={() => void window.voiceAI.cancelUninstall()}
       >
         <span className="uninstall-window-controls__icon uninstall-window-controls__icon--close" />
       </button>

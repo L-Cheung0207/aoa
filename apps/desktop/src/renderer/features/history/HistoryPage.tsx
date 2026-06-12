@@ -8,6 +8,11 @@ import type {
 } from "@voice/shared";
 import { retryHistoryRecord } from "./historyRetry";
 import { getHistoryText, type HistoryText } from "./historyI18n";
+import {
+  getResultOverlayText,
+  ResultOverlayPanel,
+  type ResultOverlayContent,
+} from "../overlay/ResultOverlayPanel";
 
 type HistoryFilter = "all" | "dictation" | "translate" | "rewrite";
 
@@ -321,6 +326,7 @@ export function HistoryPage({
       ) : null}
       {answerRecord ? (
         <HistoryAnswerDialog
+          language={language}
           record={answerRecord}
           text={text}
           onClose={() => setAnswerRecord(undefined)}
@@ -451,50 +457,42 @@ function HistoryRecordRow({
 }
 
 function HistoryAnswerDialog({
+  language,
   record,
   text,
   onClose
 }: {
+  language: InterfaceLanguage | undefined;
   record: HistoryRecord;
   text: HistoryText;
   onClose(): void;
 }): React.JSX.Element {
-  const prompt = getHistoryRecordListText(record, text);
-  const answer = getHistoryRecordAnswerText(record) || text.statusLabels[record.status];
+  const result = toHistoryResultOverlayContent(record, text);
 
   return (
     <div className="history-answer-modal" role="presentation">
-      <section
-        className="history-answer-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="history-answer-title"
-        aria-describedby="history-answer-content"
-      >
-        <button
-          className="history-answer-dialog__close"
-          type="button"
-          aria-label={text.close}
-          onClick={onClose}
-        >
-          ×
-        </button>
-        <h2 id="history-answer-title">{text.answer}</h2>
-        <div className="history-answer-dialog__prompt">
-          <span>{text.input}</span>
-          <p>{prompt}</p>
-        </div>
-        <div className="history-answer-dialog__content" id="history-answer-content">
-          {answer}
-        </div>
-        <div className="history-answer-dialog__actions">
-          <button type="button" onClick={onClose}>
-            {text.close}
-          </button>
-        </div>
-      </section>
+      <ResultOverlayPanel
+        result={result}
+        text={getResultOverlayText(language)}
+        onDismiss={onClose}
+      />
     </div>
   );
+}
+
+function toHistoryResultOverlayContent(
+  record: HistoryRecord,
+  text: HistoryText,
+): ResultOverlayContent {
+  const transcript = record.transcript.trim();
+  const selectedText = record.selectedText?.trim() ?? "";
+
+  return {
+    rawText: transcript || selectedText || text.statusLabels[record.status],
+    selectedText: transcript ? selectedText : "",
+    finalText: getHistoryRecordAnswerText(record) || text.statusLabels[record.status],
+    warnings: [],
+  };
 }
 
 function DownloadIcon(): React.JSX.Element {

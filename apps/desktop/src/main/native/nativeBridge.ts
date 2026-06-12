@@ -10,11 +10,16 @@ export interface NativeHelperBinding {
   typeText(text: string): Promise<void>;
   getForegroundWindowHandle(): Promise<string | undefined>;
   focusWindow(windowHandle: string): Promise<void>;
+  isEditableTargetFocused(): Promise<boolean>;
+  muteOtherAppsForRecording(excludedProcessIds: number[]): Promise<void>;
+  restoreOtherAppsAudio(): Promise<void>;
 }
 
 export interface NativeBridge extends NativeInputBridge {
   copySelectionToClipboard(): Promise<void>;
   getForegroundWindowHandle(): Promise<string | undefined>;
+  muteOtherAppsForRecording(excludedProcessIds: number[]): Promise<void>;
+  restoreOtherAppsAudio(): Promise<void>;
 }
 
 export interface CreateNativeBridgeOptions {
@@ -48,6 +53,18 @@ export function createNativeBridge(options: CreateNativeBridgeOptions = {}): Nat
     focusWindow: async (windowHandle) => {
       const helper = getWindowsHelper(platform, loadHelper);
       await helper.focusWindow(windowHandle);
+    },
+    isEditableTargetFocused: async () => {
+      const helper = getWindowsHelper(platform, loadHelper);
+      return helper.isEditableTargetFocused();
+    },
+    muteOtherAppsForRecording: async (excludedProcessIds) => {
+      const helper = getWindowsHelper(platform, loadHelper);
+      await helper.muteOtherAppsForRecording(excludedProcessIds);
+    },
+    restoreOtherAppsAudio: async () => {
+      const helper = getWindowsHelper(platform, loadHelper);
+      await helper.restoreOtherAppsAudio();
     }
   };
 }
@@ -95,6 +112,9 @@ function isNativeHelperBinding(candidate: unknown): candidate is NativeHelperBin
     typeof maybeBinding.copySelectionToClipboard === "function" &&
     typeof maybeBinding.typeText === "function" &&
     typeof maybeBinding.getForegroundWindowHandle === "function" &&
-    typeof maybeBinding.focusWindow === "function"
+    typeof maybeBinding.focusWindow === "function" &&
+    typeof maybeBinding.isEditableTargetFocused === "function" &&
+    typeof maybeBinding.muteOtherAppsForRecording === "function" &&
+    typeof maybeBinding.restoreOtherAppsAudio === "function"
   );
 }

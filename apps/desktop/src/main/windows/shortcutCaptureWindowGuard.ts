@@ -6,8 +6,8 @@ const SC_KEYMENU = 0xf100;
 
 interface WindowAltSpaceGuardState {
   alwaysBlock: boolean;
-  getCaptureTarget?: () => BrowserWindow | undefined;
-  isCaptureActive?: () => boolean;
+  getCaptureTarget: (() => BrowserWindow | undefined) | undefined;
+  isCaptureActive: (() => boolean) | undefined;
   nativeHooksInstalled: boolean;
   rendererHooksInstalled: boolean;
   systemMenuListenerInstalled: boolean;
@@ -81,6 +81,8 @@ function getOrCreateGuardState(window: BrowserWindow): WindowAltSpaceGuardState 
   }
   const state: WindowAltSpaceGuardState = {
     alwaysBlock: false,
+    getCaptureTarget: undefined,
+    isCaptureActive: undefined,
     nativeHooksInstalled: false,
     rendererHooksInstalled: false,
     systemMenuListenerInstalled: false,

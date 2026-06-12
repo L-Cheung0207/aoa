@@ -6,9 +6,7 @@ export interface CreateTrayOptions {
   onOpenSettings(): void;
   onCheckUpdates(): void;
   onOpenAbout(): void;
-  onOpenUninstall(): void;
   onQuit(): void;
-  versionLabel: string;
   /** Tray icon file path; falls back to an empty icon when missing or invalid. */
   iconPath?: string;
 }
@@ -31,9 +29,7 @@ export function createTrayMenuTemplate(
     | "onOpenSettings"
     | "onCheckUpdates"
     | "onOpenAbout"
-    | "onOpenUninstall"
     | "onQuit"
-    | "versionLabel"
   >
 ): MenuItemConstructorOptions[] {
   return [
@@ -41,8 +37,6 @@ export function createTrayMenuTemplate(
     { label: "设置", click: options.onOpenSettings },
     { label: "检查更新", click: options.onCheckUpdates },
     { label: "关于", click: options.onOpenAbout },
-    { label: "卸载", click: options.onOpenUninstall },
-    { label: options.versionLabel, enabled: false },
     { type: "separator" },
     { label: "退出", click: options.onQuit }
   ];

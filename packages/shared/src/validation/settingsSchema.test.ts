@@ -11,7 +11,8 @@ describe("settings schema", () => {
 
     expect(settings.backend.mode).toBe("mock");
     expect(settings.backend.baseUrl).toBe("http://127.0.0.1:8787");
-    expect(settings.ui.language).toBe("zh-CN");
+    expect(settings.ui.theme).toBe("light");
+    expect(settings.ui.language).toBe("zh-TW");
     expect(settings.audio.interactionSounds).toBe(true);
     expect(settings.audio.muteOtherAudioDuringRecording).toBe(true);
     expect(settings.appBehavior.launchAtLogin).toBe(true);

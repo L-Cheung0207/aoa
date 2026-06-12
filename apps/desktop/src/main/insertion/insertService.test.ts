@@ -27,7 +27,8 @@ describe("insert service", () => {
     const nativeBridge: NativeInputBridge = {
       pasteFromClipboard: async () => undefined,
       typeText: async () => undefined,
-      focusWindow: async () => undefined
+      focusWindow: async () => undefined,
+      isEditableTargetFocused: async () => true
     };
     const service = createInsertService({
       clipboard,
@@ -48,7 +49,8 @@ describe("insert service", () => {
         throw new Error("paste rejected");
       },
       typeText: async () => undefined,
-      focusWindow: async () => undefined
+      focusWindow: async () => undefined,
+      isEditableTargetFocused: async () => true
     };
     const service = createInsertService({
       clipboard,
@@ -76,7 +78,8 @@ describe("insert service", () => {
       typeText: async (text) => {
         typed.push(text);
       },
-      focusWindow: async () => undefined
+      focusWindow: async () => undefined,
+      isEditableTargetFocused: async () => true
     };
     const service = createInsertService({
       clipboard,
@@ -104,6 +107,10 @@ describe("insert service", () => {
       },
       focusWindow: async (windowHandle) => {
         calls.push(`focus:${windowHandle}`);
+      },
+      isEditableTargetFocused: async () => {
+        calls.push("editable");
+        return true;
       }
     };
     const service = createInsertService({
@@ -130,10 +137,12 @@ describe("insert service", () => {
     expect(result).toEqual({ ok: true, strategy: "native" });
     expect(calls).toEqual([
       "focus:12345",
+      "editable",
       "write:fallback text",
       "paste",
       "restore:previous",
       "focus:12345",
+      "editable",
       "type:fallback text"
     ]);
   });
@@ -148,6 +157,10 @@ describe("insert service", () => {
       typeText: async () => undefined,
       focusWindow: async (windowHandle) => {
         calls.push(`focus:${windowHandle}`);
+      },
+      isEditableTargetFocused: async () => {
+        calls.push("editable");
+        return true;
       }
     };
     const service = createInsertService({
@@ -174,10 +187,51 @@ describe("insert service", () => {
     expect(result).toEqual({ ok: true, strategy: "clipboard" });
     expect(calls).toEqual([
       "focus:12345",
+      "editable",
       "write:hello cursor",
       "paste",
       "restore:previous"
     ]);
+  });
+
+  it("returns fallback text without pasting when the focused target is not editable", async () => {
+    const calls: string[] = [];
+    const clipboard = createClipboardService("previous");
+    const nativeBridge: NativeInputBridge = {
+      pasteFromClipboard: async () => {
+        calls.push("paste");
+      },
+      typeText: async () => {
+        calls.push("type");
+      },
+      focusWindow: async (windowHandle) => {
+        calls.push(`focus:${windowHandle}`);
+      },
+      isEditableTargetFocused: async () => {
+        calls.push("editable");
+        return false;
+      }
+    };
+    const service = createInsertService({
+      clipboard,
+      nativeBridge,
+      restoreClipboardDelayMs: 0
+    });
+
+    const result = await service.insertText("answer popup text", {
+      strategy: "clipboard",
+      targetWindowHandle: "12345"
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      strategy: "clipboard",
+      fallbackText: "answer popup text",
+      errorCode: "insert_failed",
+      message: "Focused target is not editable"
+    });
+    expect(calls).toEqual(["focus:12345", "editable"]);
+    expect(clipboard.writes).toEqual([]);
   });
 
   it("continues clipboard paste when target window focus cannot be restored", async () => {
@@ -191,6 +245,10 @@ describe("insert service", () => {
       focusWindow: async (windowHandle) => {
         calls.push(`focus:${windowHandle}`);
         throw new Error("focus rejected");
+      },
+      isEditableTargetFocused: async () => {
+        calls.push("editable");
+        return true;
       }
     };
     const service = createInsertService({
@@ -217,6 +275,7 @@ describe("insert service", () => {
     expect(result).toEqual({ ok: true, strategy: "clipboard" });
     expect(calls).toEqual([
       "focus:12345",
+      "editable",
       "write:fallback paste",
       "paste",
       "restore:previous"

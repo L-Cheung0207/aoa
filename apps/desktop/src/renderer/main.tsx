@@ -43,9 +43,7 @@ function resolveInitialOnboardingStep(): number | undefined {
 const route = resolveRoute();
 const initialTheme = resolveInitialTheme();
 const initialOnboardingStep = resolveInitialOnboardingStep();
-if (initialTheme) {
-  document.documentElement.dataset.theme = initialTheme;
-}
+document.documentElement.dataset.theme = initialTheme ?? "light";
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

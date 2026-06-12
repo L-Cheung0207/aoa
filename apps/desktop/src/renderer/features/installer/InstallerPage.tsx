@@ -11,6 +11,7 @@ const INSTALL_PROGRESS_STEPS = [
   { percent: 86, label: "正在创建快捷方式..." },
   { percent: 94, label: "正在完成最后配置..." },
 ] as const;
+const FIRST_INSTALL_PROGRESS_LABEL = INSTALL_PROGRESS_STEPS[0].label;
 
 function AssistantMark(): React.JSX.Element {
   return (
@@ -63,8 +64,8 @@ export function InstallerPage(): React.JSX.Element {
   const [launchAtLogin, setLaunchAtLogin] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
   const [progressPercent, setProgressPercent] = useState(INSTALL_PROGRESS_START);
-  const [progressLabel, setProgressLabel] = useState(
-    INSTALL_PROGRESS_STEPS[0].label,
+  const [progressLabel, setProgressLabel] = useState<string>(
+    FIRST_INSTALL_PROGRESS_LABEL,
   );
   const canInstall = state === "ready" && agreed && installDir.trim().length > 0;
 
@@ -106,10 +107,10 @@ export function InstallerPage(): React.JSX.Element {
     let currentPercent = INSTALL_PROGRESS_START;
     let stepIndex = 0;
     setProgressPercent(currentPercent);
-    setProgressLabel(INSTALL_PROGRESS_STEPS[stepIndex].label);
+    setProgressLabel(FIRST_INSTALL_PROGRESS_LABEL);
 
     const timer = window.setInterval(() => {
-      const currentStep = INSTALL_PROGRESS_STEPS[stepIndex];
+      const currentStep = INSTALL_PROGRESS_STEPS[stepIndex]!;
 
       if (currentPercent < currentStep.percent) {
         currentPercent = Math.min(currentPercent + 4, currentStep.percent);
@@ -119,7 +120,7 @@ export function InstallerPage(): React.JSX.Element {
 
       if (stepIndex < INSTALL_PROGRESS_STEPS.length - 1) {
         stepIndex += 1;
-        setProgressLabel(INSTALL_PROGRESS_STEPS[stepIndex].label);
+        setProgressLabel(INSTALL_PROGRESS_STEPS[stepIndex]!.label);
       }
     }, 520);
 
@@ -148,7 +149,7 @@ export function InstallerPage(): React.JSX.Element {
     }
     setError(undefined);
     setProgressPercent(INSTALL_PROGRESS_START);
-    setProgressLabel(INSTALL_PROGRESS_STEPS[0].label);
+    setProgressLabel(FIRST_INSTALL_PROGRESS_LABEL);
     setState("installing");
     void window.voiceAI
       .installFromShell({

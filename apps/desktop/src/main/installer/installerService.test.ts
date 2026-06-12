@@ -97,4 +97,33 @@ describe("installer shell service", () => {
       }),
     );
   });
+
+  it("reports installer path, install dir, signal, and output on failure", async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout?: EventEmitter;
+      stderr?: EventEmitter;
+    };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const spawn = vi.fn(() => child);
+    const service = createInstallerService({
+      productName: "Voice Assistant",
+      resourcesPath: "C:/app/resources",
+      localAppData: "C:/Users/Alex/AppData/Local",
+      spawn,
+      existsSync: () => true,
+    });
+
+    const installPromise = service.install({
+      installDir: "C:/Tools",
+      createDesktopShortcut: true,
+      launchAtLogin: true,
+    });
+    child.stderr.emit("data", Buffer.from("native crash"));
+    child.emit("close", 3221225477, "SIGSEGV");
+
+    await expect(installPromise).rejects.toThrow(
+      "Installer failed (code 3221225477 / 0xc0000005, signal SIGSEGV). Payload: C:\\app\\resources\\installer-shell-payload\\app-setup.exe. Install dir: C:\\Tools\\Voice Assistant. Output: native crash",
+    );
+  });
 });

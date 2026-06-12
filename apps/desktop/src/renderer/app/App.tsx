@@ -10,6 +10,7 @@ import type {
   RecordingMode,
   WaveformStyle,
 } from "@voice/shared";
+import { DEFAULT_INTERFACE_LANGUAGE } from "@voice/shared";
 import { createBrowserRecorderAdapter } from "../features/recorder/browserRecorderAdapter";
 import { createRecorderService } from "../features/recorder/recorderService";
 import type {
@@ -73,7 +74,9 @@ export function App(): React.JSX.Element {
   const [showModeHint, setShowModeHint] = useState(false);
   const [waveformStyle, setWaveformStyle] =
     useState<WaveformStyle>("waveform-sunset");
-  const [uiLanguage, setUiLanguage] = useState<InterfaceLanguage>("zh-CN");
+  const [uiLanguage, setUiLanguage] = useState<InterfaceLanguage>(
+    DEFAULT_INTERFACE_LANGUAGE,
+  );
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [projectionNowMs, setProjectionNowMs] = useState(() => Date.now());
   const [controllerSnapshot, setControllerSnapshot] =
@@ -101,9 +104,6 @@ export function App(): React.JSX.Element {
   const showBusyHint = overlayProjection.busyHintVisible;
   const shortcutHelp = overlayProjection.shortcutHelp;
   const networkErrorDismissed = overlayState.networkDismissed;
-  const canRetryNetworkError =
-    controllerSnapshot.state === "listening" &&
-    controllerSnapshot.transcriptionStatus === "unavailable";
   // Keep controller bundle in component scope for overlay callbacks.
   const bundleRef = useRef<ControllerBundle | undefined>(undefined);
   const showModeHintRef = useRef(false);
@@ -212,17 +212,20 @@ export function App(): React.JSX.Element {
   const retryNetworkError = (): void => {
     const mode = lastRecordingModeRef.current;
     setDisplayedResult(undefined);
-    const controller = bundleRef.current?.controller;
-    if (!controller) {
+    const bundle = bundleRef.current;
+    if (!bundle) {
       return;
     }
+    const controller = bundle.controller;
     const snapshot = controller.getSnapshot();
-    if (
-      snapshot.state !== "listening" ||
-      snapshot.transcriptionStatus !== "unavailable"
-    ) {
+    const retryableListening =
+      snapshot.state === "listening" &&
+      snapshot.transcriptionStatus === "unavailable";
+    const retryableError =
+      snapshot.state === "error" && snapshot.reason === "transcription";
+    if (!retryableListening && !retryableError) {
       console.warn(
-        `[voice] network retry ignored; state=${snapshot.state} transcriptionStatus=${snapshot.transcriptionStatus ?? "none"}`,
+        `[voice] network retry ignored; state=${snapshot.state} reason=${snapshot.reason ?? "none"} transcriptionStatus=${snapshot.transcriptionStatus ?? "none"}`,
       );
       return;
     }
@@ -269,6 +272,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     return window.voiceAI.onSettingsChanged((settings) => {
       console.log("[voice] settings changed; rebuilding controller config");
+      document.documentElement.dataset.theme = settings.ui.theme;
       setUiLanguage(settings.ui.language);
       setSettingsRevision((current) => current + 1);
     });
@@ -289,6 +293,7 @@ export function App(): React.JSX.Element {
         console.log(
           `[voice] renderer config developer.enabled=${settings.developer.enabled} javaVoiceWsUrl=${appConfig.javaVoiceWsUrl}`,
         );
+        document.documentElement.dataset.theme = settings.ui.theme;
         setWaveformStyle(settings.recording.waveformStyle);
         setUiLanguage(settings.ui.language);
         bundle = buildController({
@@ -610,9 +615,7 @@ export function App(): React.JSX.Element {
       {...(reason === "transcription" && !networkErrorDismissed
         ? {
             onDismissNetworkError: dismissNetworkError,
-            ...(canRetryNetworkError
-              ? { onRetryNetworkError: retryNetworkError }
-              : {}),
+            onRetryNetworkError: retryNetworkError,
           }
         : {})}
       onOpenMicrophoneHelp={openMicrophoneHelp}

@@ -48,6 +48,8 @@ describe("OverlayWindow result panel", () => {
     expect(html).toContain("--bar-weight:");
     expect(html).toContain("--bar-phase:");
     expect(html).toContain("--bar-opacity:");
+    expect(html).toContain("transform:scaleY(");
+    expect(html).toContain("transform:scaleY(1.000)");
   });
 
   it("renders all waveform styles with the shared pill waveform structure", () => {

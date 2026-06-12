@@ -4,6 +4,9 @@ export interface DefaultSettingsOptions {
   isPackaged: boolean;
 }
 
+export const DEFAULT_INTERFACE_LANGUAGE: AppSettings["ui"]["language"] =
+  "zh-TW";
+
 const AOSO_SERVER_HOST = "172.30.21.67:9066";
 export const AOSO_HTTP_BASE_URL = `http://${AOSO_SERVER_HOST}`;
 
@@ -22,8 +25,8 @@ export function createDefaultSettings(
   return {
     schemaVersion: 1,
     ui: {
-      theme: "dark",
-      language: "zh-CN",
+      theme: "light",
+      language: DEFAULT_INTERFACE_LANGUAGE,
     },
     audio: {
       interactionSounds: true,

@@ -17,6 +17,7 @@ export type RecordingEvent =
   | { type: "undoCancel" }
   | { type: "stop" }
   | { type: "insert" }
+  | { type: "retry"; mode: RecordingMode }
   | { type: "success" }
   | { type: "fail"; reason: VoiceErrorReason }
   | { type: "reset" };
@@ -73,7 +74,8 @@ const transitions: Record<ControllerRecordingState, TransitionMap> = {
   },
   error: {
     reset: "idle",
-    start: "listening"
+    start: "listening",
+    retry: "processing"
   }
 };
 
@@ -96,7 +98,7 @@ export function createRecordingStateMachine(): RecordingStateMachine {
       }
 
       const nextMode: RecordingMode | undefined = (() => {
-        if (event.type === "start") {
+        if (event.type === "start" || event.type === "retry") {
           return event.mode;
         }
         if (MODE_CLEARING_STATES.has(next)) {

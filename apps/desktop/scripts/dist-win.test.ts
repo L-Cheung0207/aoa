@@ -2,16 +2,43 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  createDistInstallerShellCommands,
   createDistWinCommands,
   createInstallerShellCommands,
   removeLegacyInstallerShellArtifacts,
   resolveInstallerPayloadSetupPath,
+  validateInstallerPayloadSetup,
 } from "./dist-win.mjs";
 
 describe("desktop Windows distribution script", () => {
-  it("builds the native helper before packaging the Electron app", () => {
+  it("builds the native helper before packaging the single-layer NSIS installer", () => {
     const scriptUrl = new URL("./dist-win.mjs", import.meta.url);
     const commands = createDistWinCommands(scriptUrl);
+    const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
+    const packageRoot = fileURLToPath(new URL("..", scriptUrl));
+
+    expect(commands).toEqual([
+      {
+        command: "pnpm",
+        args: ["--filter", "@voice/native-helper", "build:native"],
+        cwd: workspaceRoot,
+      },
+      {
+        command: "pnpm",
+        args: ["run", "build"],
+        cwd: packageRoot,
+      },
+      {
+        command: "electron-builder",
+        args: ["--win", "nsis", "--config", "electron-builder.yml"],
+        cwd: packageRoot,
+      },
+    ]);
+  });
+
+  it("can build the legacy installer shell distribution explicitly", () => {
+    const scriptUrl = new URL("./dist-win.mjs", import.meta.url);
+    const commands = createDistInstallerShellCommands(scriptUrl);
     const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
     const packageRoot = fileURLToPath(new URL("..", scriptUrl));
 
@@ -87,6 +114,17 @@ describe("desktop Windows distribution script", () => {
         cwd: packageRoot,
       },
     ]);
+  });
+
+  it("rejects a tiny NSIS stub instead of preparing an empty payload", () => {
+    expect(() =>
+      validateInstallerPayloadSetup("C:/app/dist-electron/Voice Assistant Setup 0.1.0.exe", {
+        statSync: () => ({ size: 552_515 }),
+        readdirSync: () => ["@voicedesktop-0.1.0-x64.nsis.7z"],
+      }),
+    ).toThrow(
+      "Installer payload looks incomplete: C:/app/dist-electron/Voice Assistant Setup 0.1.0.exe is only 552515 bytes and dist-electron contains @voicedesktop-0.1.0-x64.nsis.7z.",
+    );
   });
 
   it("removes stale outer installer artifacts that used the old file name", () => {

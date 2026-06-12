@@ -4,11 +4,15 @@ import {
   applyLaunchAtLogin,
   applyNativeTheme,
   formatShortcutHelpLabel,
+  handoffInstallerLaunch,
+  launchInstalledAppHome,
   formatTrayTooltip,
   resolveShortcutTriggerOverlayLayout,
   resolveShortcutTriggerOverlayAction,
   resolveOverlayVisibility,
   resolveOverlayWindowLayout,
+  shouldRunScheduledOverlayHide,
+  shouldOpenHomeOnLaunch,
   shouldReplayMicErrorOverlay,
   shouldShowShortcutHelpForState
 } from "./bootstrap";
@@ -38,6 +42,14 @@ describe("bootstrap overlay visibility", () => {
     expect(resolveOverlayVisibility("result")).toBe("show");
   });
 
+  it("drops stale delayed hides after the overlay has become active again", () => {
+    expect(shouldRunScheduledOverlayHide("success")).toBe(true);
+    expect(shouldRunScheduledOverlayHide("idle")).toBe(true);
+    expect(shouldRunScheduledOverlayHide("processing")).toBe(false);
+    expect(shouldRunScheduledOverlayHide("listening")).toBe(false);
+    expect(shouldRunScheduledOverlayHide("error", "transcription")).toBe(false);
+  });
+
   it("shows microphone errors even when no recording pill was visible yet", () => {
     expect(resolveOverlayVisibility("error", "mic")).toBe("show");
     expect(resolveOverlayVisibility("error", "no_selection")).toBe("show");
@@ -61,6 +73,28 @@ describe("bootstrap overlay visibility", () => {
     expect(shouldReplayMicErrorOverlay("error", "mic")).toBe(true);
     expect(shouldReplayMicErrorOverlay("error", "transcription")).toBe(false);
     expect(shouldReplayMicErrorOverlay("idle", "mic")).toBe(false);
+  });
+
+  it("keeps the compact layout when a shortcut stops active listening", () => {
+    expect(resolveShortcutTriggerOverlayLayout("listening", "direct")).toBe("translatePill");
+    expect(
+      resolveShortcutTriggerOverlayLayout("listening", "translate", {
+        activeMode: "translate"
+      })
+    ).toBe("translatePill");
+  });
+
+  it("keeps the listening layout when a shortcut targets a different active mode", () => {
+    expect(
+      resolveShortcutTriggerOverlayLayout("listening", "translate", {
+        activeMode: "processSelection"
+      })
+    ).toBe("translatePill");
+  });
+
+  it("keeps the compact layout when a shortcut is pressed during processing", () => {
+    expect(resolveShortcutTriggerOverlayLayout("processing", "direct")).toBe("translatePill");
+    expect(resolveShortcutTriggerOverlayLayout("inserting", "translate")).toBe("translatePill");
   });
 
   it("syncs native menus with the configured app theme", () => {
@@ -95,13 +129,13 @@ describe("bootstrap overlay visibility", () => {
     expect(resolveOverlayWindowLayout("listening", "translate")).toBe("translatePill");
     expect(resolveOverlayWindowLayout("listening", "processSelection")).toBe("translatePill");
     expect(resolveOverlayWindowLayout("listening", undefined)).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("thinkingPill");
-    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("thinkingPill");
+    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("translatePill");
+    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("translatePill");
     expect(
       resolveOverlayWindowLayout("processing", "translate", {
         busyHintVisible: true
       })
-    ).toBe("thinkingPill");
+    ).toBe("busyHint");
     expect(resolveOverlayWindowLayout("error", undefined, { reason: "mic" })).toBe("micError");
     expect(resolveOverlayWindowLayout("error", undefined, { reason: "no_selection" })).toBe("selectionError");
     expect(resolveOverlayWindowLayout("canceled", "translate")).toBe("canceledPill");
@@ -115,14 +149,74 @@ describe("bootstrap overlay visibility", () => {
     expect(formatShortcutHelpLabel("RightAlt+RightShift")).toBe("Alt+Shift");
   });
 
-  it("shows shortcut help only while no recording state is active", () => {
+  it("shows shortcut help while idle or after a successful recording", () => {
     expect(shouldShowShortcutHelpForState("idle")).toBe(true);
-    expect(shouldShowShortcutHelpForState("success")).toBe(false);
+    expect(shouldShowShortcutHelpForState("success")).toBe(true);
     expect(shouldShowShortcutHelpForState("listening")).toBe(false);
     expect(shouldShowShortcutHelpForState("processing")).toBe(false);
     expect(shouldShowShortcutHelpForState("inserting")).toBe(false);
     expect(shouldShowShortcutHelpForState("result")).toBe(false);
     expect(shouldShowShortcutHelpForState("error")).toBe(false);
     expect(shouldShowShortcutHelpForState("canceled")).toBe(false);
+  });
+});
+
+describe("installer launch handoff", () => {
+  it("detects explicit home launch arguments", () => {
+    expect(shouldOpenHomeOnLaunch(["app.exe", "--open-home"])).toBe(true);
+    expect(shouldOpenHomeOnLaunch(["app.exe", "/open-home"])).toBe(true);
+    expect(shouldOpenHomeOnLaunch(["app.exe"])).toBe(false);
+  });
+
+  it("starts the installed app with a home launch argument", () => {
+    const child = { unref: vi.fn() };
+    const spawnProcess = vi.fn(() => child);
+
+    launchInstalledAppHome({
+      installDir: "C:/Tools/Voice Assistant",
+      spawnProcess: spawnProcess as never,
+    });
+
+    expect(spawnProcess).toHaveBeenCalledWith(
+      expect.stringContaining("Voice Assistant.exe"),
+      ["--open-home"],
+      expect.objectContaining({
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      }),
+    );
+    expect(child.unref).toHaveBeenCalled();
+  });
+
+  it("hides and destroys the installer window before deferred launch and immediate exit", () => {
+    vi.useFakeTimers();
+    const window = {
+      isDestroyed: vi.fn(() => false),
+      hide: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const launch = vi.fn();
+    const exitApp = vi.fn();
+
+    handoffInstallerLaunch({
+      installerWindow: window,
+      installDir: "C:/Tools/Voice Assistant",
+      launch,
+      exitApp,
+    });
+
+    expect(window.hide).toHaveBeenCalled();
+    expect(window.destroy).toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+    expect(exitApp).not.toHaveBeenCalled();
+
+    vi.runOnlyPendingTimers();
+
+    expect(launch).toHaveBeenCalledWith({
+      installDir: "C:/Tools/Voice Assistant",
+    });
+    expect(exitApp).toHaveBeenCalledWith(0);
+    vi.useRealTimers();
   });
 });

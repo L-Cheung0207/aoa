@@ -5,9 +5,10 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??=
@@ -33,7 +34,16 @@ export function createDistWinCommands(scriptUrl = import.meta.url) {
       command: "electron-builder",
       args: ["--win", "nsis", "--config", "electron-builder.yml"],
       cwd: packageRoot
-    },
+    }
+  ];
+}
+
+export function createDistInstallerShellCommands(scriptUrl = import.meta.url) {
+  const packageRoot = fileURLToPath(new URL("..", scriptUrl));
+  const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
+
+  return [
+    ...createDistWinCommands(scriptUrl),
     {
       command: "node",
       args: ["scripts/dist-win.mjs", "--prepare-installer-shell-payload"],
@@ -65,21 +75,44 @@ export function resolveInstallerPayloadSetupPath(packageRoot, options = {}) {
   return join(packageRoot, "dist-electron", `Voice Assistant Setup ${version}.exe`);
 }
 
+const MIN_EMBEDDED_NSIS_PAYLOAD_BYTES = 10 * 1024 * 1024;
+
+export function validateInstallerPayloadSetup(setupPath, options = {}) {
+  const getStats = options.statSync ?? statSync;
+  const listDir = options.readdirSync ?? readdirSync;
+  const setupSize = getStats(setupPath).size;
+  const externalPackages = listDir(dirname(setupPath)).filter((fileName) =>
+    fileName.endsWith(".nsis.7z")
+  );
+
+  if (
+    setupSize < MIN_EMBEDDED_NSIS_PAYLOAD_BYTES ||
+    externalPackages.length > 0
+  ) {
+    throw new Error(
+      `Installer payload looks incomplete: ${setupPath} is only ${setupSize} bytes` +
+        (externalPackages.length > 0
+          ? ` and ${basename(dirname(setupPath))} contains ${externalPackages.join(", ")}`
+          : "") +
+        ". Remove dist-electron and rebuild the inner NSIS installer before preparing the installer shell payload."
+    );
+  }
+}
+
 export function prepareInstallerShellPayload(scriptUrl = import.meta.url) {
   const packageRoot = fileURLToPath(new URL("..", scriptUrl));
   const payloadRoot = join(packageRoot, "dist-installer-shell-payload");
+  const setupPath = resolveInstallerPayloadSetupPath(packageRoot);
+  validateInstallerPayloadSetup(setupPath);
   rmSync(payloadRoot, { recursive: true, force: true });
   mkdirSync(payloadRoot, { recursive: true });
-  copyFileSync(
-    resolveInstallerPayloadSetupPath(packageRoot),
-    join(payloadRoot, "app-setup.exe")
-  );
+  copyFileSync(setupPath, join(payloadRoot, "app-setup.exe"));
   writeFileSync(
     join(payloadRoot, "installer-shell.json"),
     JSON.stringify({ mode: "installer-shell" }, null, 2)
   );
-  rmSync(resolveInstallerPayloadSetupPath(packageRoot), { force: true });
-  rmSync(`${resolveInstallerPayloadSetupPath(packageRoot)}.blockmap`, {
+  rmSync(setupPath, { force: true });
+  rmSync(`${setupPath}.blockmap`, {
     force: true
   });
 }
@@ -133,7 +166,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(0);
   }
   if (process.argv.includes("--installer-shell")) {
-    process.exit(runDistWin(createInstallerShellCommands()));
+    process.exit(runDistWin(createDistInstallerShellCommands()));
   }
   if (process.argv.includes("--remove-legacy-installer-shell-artifacts")) {
     removeLegacyInstallerShellArtifacts(fileURLToPath(new URL("..", import.meta.url)));

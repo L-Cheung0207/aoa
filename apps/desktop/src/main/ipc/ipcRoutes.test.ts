@@ -352,6 +352,7 @@ describe("ipc route handlers", () => {
       targetWindowHandle?: string;
     }> = [];
     const selectionCalls: Array<string | undefined> = [];
+    const selectionReads = ["old\r\nselection", ""];
     const insertService: InsertService = {
       insertText: async (text, options) => {
         insertCalls.push({
@@ -368,7 +369,7 @@ describe("ipc route handlers", () => {
         selectionService: {
           getSelectedText: async (targetWindowHandle) => {
             selectionCalls.push(targetWindowHandle);
-            return "old\r\nselection";
+            return selectionReads.shift() ?? "";
           }
         },
         getInsertTargetWindowHandle: () => "target-123"
@@ -381,7 +382,60 @@ describe("ipc route handlers", () => {
     });
 
     expect(result).toEqual({ ok: true, strategy: "clipboard" });
-    expect(selectionCalls).toEqual(["target-123"]);
+    expect(selectionCalls).toEqual(["target-123", "target-123"]);
+    expect(insertCalls).toEqual([
+      {
+        text: "replacement",
+        strategy: "clipboard",
+        targetWindowHandle: "target-123"
+      }
+    ]);
+  });
+
+  it("reports replacement failure when the selected text remains after paste", async () => {
+    const insertCalls: Array<{
+      text: string;
+      strategy: string;
+      targetWindowHandle?: string;
+    }> = [];
+    const selectionReads = ["old selection", "old selection"];
+    const selectionCalls: Array<string | undefined> = [];
+    const insertService: InsertService = {
+      insertText: async (text, options) => {
+        insertCalls.push({
+          text,
+          strategy: options.strategy,
+          targetWindowHandle: options.targetWindowHandle
+        });
+        return { ok: true, strategy: options.strategy };
+      }
+    };
+    const handlers = createIpcRouteHandlers(
+      createDeps({
+        insertService,
+        selectionService: {
+          getSelectedText: async (targetWindowHandle) => {
+            selectionCalls.push(targetWindowHandle);
+            return selectionReads.shift() ?? "";
+          }
+        },
+        getInsertTargetWindowHandle: () => "target-123"
+      })
+    );
+
+    const result = await handlers.replaceSelectedText({
+      text: "replacement",
+      expectedSelectedText: "old selection"
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      strategy: "clipboard",
+      fallbackText: "replacement",
+      errorCode: "insert_failed",
+      message: "Selected text was not replaced"
+    });
+    expect(selectionCalls).toEqual(["target-123", "target-123"]);
     expect(insertCalls).toEqual([
       {
         text: "replacement",
@@ -539,6 +593,19 @@ describe("ipc route handlers", () => {
     );
 
     handlers.finishUninstall();
+
+    expect(quitCalls).toEqual(["quit"]);
+  });
+
+  it("cancels uninstall by quitting the app", () => {
+    const quitCalls: string[] = [];
+    const handlers = createIpcRouteHandlers(
+      createDeps({
+        quitApp: () => quitCalls.push("quit")
+      })
+    );
+
+    handlers.cancelUninstall();
 
     expect(quitCalls).toEqual(["quit"]);
   });

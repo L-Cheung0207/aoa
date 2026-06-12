@@ -81,13 +81,17 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "allowElevation": false,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "shortcutName": "Voice Assistant",
       "artifactName": "${productName} Setup ${version}.${ext}",
       "include": "installer.nsh",
+      "installerLanguages": [
+        "zh_TW"
+      ],
+      "language": "1028",
       "runAfterFinish": false
     }
   }

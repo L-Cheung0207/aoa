@@ -26,6 +26,7 @@ export type { AudioFrame } from "./types/audio";
 export {
   AOSO_HTTP_BASE_URL,
   BUNDLED_ASR_WS_URL,
+  DEFAULT_INTERFACE_LANGUAGE,
   JAVA_VOICE_WS_URL,
   MISCONFIGURED_AOSO_ASR_WS_URL,
   createDefaultSettings,

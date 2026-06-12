@@ -47,7 +47,7 @@ describe("uninstall service", () => {
     });
   });
 
-  it("writes and launches a hidden cleanup script for the packaged Windows uninstaller", async () => {
+  it("lets the waiting NSIS uninstaller continue after packaged Windows confirmation", async () => {
     const options = createOptions({
       app: {
         isPackaged: true,
@@ -64,38 +64,12 @@ describe("uninstall service", () => {
 
     const result = await service.performUninstall();
 
-    expect(options.writeFile).toHaveBeenCalledTimes(1);
-    const [scriptPath, scriptContent] = vi.mocked(options.writeFile).mock
-      .calls[0] as [string, string];
-    expect(scriptPath).toContain("voice-assistant-uninstall-1234.ps1");
-    expect(scriptContent).toContain(
-      "$UninstallerPath = 'C:\\Program Files\\Voice Assistant\\Uninstall Voice Assistant.exe'",
-    );
-    expect(scriptContent).toContain("Start-Process");
-    expect(scriptContent).toContain("/currentuser");
-    expect(scriptContent).toContain("--delete-app-data");
-    expect(scriptContent).toContain(
-      "'C:\\Program Files\\Voice Assistant'",
-    );
-    expect(scriptContent).toContain(
-      "'C:\\Users\\Alex\\AppData\\Roaming\\Voice Assistant'",
-    );
-    expect(scriptContent).toContain("Remove-Item -LiteralPath $_ -Recurse -Force");
-    expect(scriptContent).toContain("Remove-Item -LiteralPath $PSCommandPath");
-    expect(options.spawnDetached).toHaveBeenCalledWith(
-      "powershell.exe",
-      expect.arrayContaining(["-File", scriptPath]),
-      expect.objectContaining({
-        detached: true,
-        cwd: options.tempDir,
-        stdio: "ignore",
-        windowsHide: true,
-      }),
-    );
+    expect(options.writeFile).not.toHaveBeenCalled();
+    expect(options.spawnDetached).not.toHaveBeenCalled();
     expect(result).toEqual({
       ok: true,
       mode: "packaged",
-      launchedCleanup: true,
+      launchedCleanup: false,
       cleanupPaths: [
         "C:\\Program Files\\Voice Assistant",
         "C:\\Users\\Alex\\AppData\\Roaming\\Voice Assistant",

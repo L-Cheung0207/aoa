@@ -144,6 +144,7 @@ export interface VoiceAIAPI {
   stopTranscription(): Promise<TranscriptionStopResult>;
   cancelTranscription(): Promise<void>;
   performUninstall(): Promise<UninstallResult>;
+  cancelUninstall(): Promise<void>;
   finishUninstall(): Promise<void>;
   getInstallerDefaults(): Promise<InstallerShellDefaults>;
   selectInstallerDirectory(defaultPath: string): Promise<InstallerSelectDirectoryResult>;
@@ -227,6 +228,7 @@ export const voiceAI: VoiceAIAPI = {
   stopTranscription: () => ipcRenderer.invoke("voice:stop-transcription"),
   cancelTranscription: () => ipcRenderer.invoke("voice:cancel-transcription"),
   performUninstall: () => ipcRenderer.invoke("voice:perform-uninstall"),
+  cancelUninstall: () => ipcRenderer.invoke("voice:cancel-uninstall"),
   finishUninstall: () => ipcRenderer.invoke("voice:finish-uninstall"),
   getInstallerDefaults: () => ipcRenderer.invoke("voice:installer-get-defaults"),
   selectInstallerDirectory: (defaultPath) =>

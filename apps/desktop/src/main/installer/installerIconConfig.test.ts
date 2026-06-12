@@ -14,11 +14,19 @@ describe("desktop installer icon configuration", () => {
 
     expect(packageJson).toContain('"from": "resources/app-icon.ico"');
     expect(packageJson).toContain('"icon": "resources/app-icon.ico"');
+    expect(packageJson).toContain('"installerLanguages"');
+    expect(packageJson).toContain('"zh_TW"');
+    expect(packageJson).toContain('"language": "1028"');
     expect(packageJson).not.toContain("resources/tray-icon.ico");
 
     expect(electronBuilderConfig).toContain("from: resources/app-icon.ico");
     expect(electronBuilderConfig).toContain("to: app-icon.ico");
     expect(electronBuilderConfig).toContain("icon: resources/app-icon.ico");
+    expect(electronBuilderConfig).toContain("allowToChangeInstallationDirectory: true");
+    expect(electronBuilderConfig).toContain("installerLanguages:");
+    expect(electronBuilderConfig).toContain("- zh_TW");
+    expect(electronBuilderConfig).toContain('language: "1028"');
+    expect(electronBuilderConfig).toContain("runAfterFinish: false");
     expect(electronBuilderConfig).not.toContain("resources/tray-icon.ico");
 
     expect(bootstrap).toContain('"app-icon.ico"');

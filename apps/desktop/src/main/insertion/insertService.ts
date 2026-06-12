@@ -11,6 +11,7 @@ export interface NativeInputBridge {
   pasteFromClipboard(): Promise<void>;
   typeText(text: string): Promise<void>;
   focusWindow(windowHandle: string): Promise<void>;
+  isEditableTargetFocused(): Promise<boolean>;
 }
 
 export type InsertResult =
@@ -67,6 +68,10 @@ export function createInsertService(options: CreateInsertServiceOptions): Insert
           return clipboardResult;
         }
 
+        if (clipboardResult.message === "Focused target is not editable") {
+          return clipboardResult;
+        }
+
         console.warn(
           "[insert] auto strategy: clipboard paste failed, falling back to native typing"
         );
@@ -94,6 +99,14 @@ async function insertWithNativeText(
 ): Promise<InsertResult> {
   try {
     await focusTargetWindow(nativeBridge, targetWindowHandle);
+    const editable = await verifyEditableTarget(nativeBridge, targetWindowHandle);
+    if (!editable) {
+      return createFailureResult(
+        "native",
+        text,
+        new Error("Focused target is not editable")
+      );
+    }
     await nativeBridge.typeText(text);
     console.log("[insert] ✅ native typeText 已执行");
     return { ok: true, strategy: "native" };
@@ -109,10 +122,18 @@ async function insertWithClipboard(
   strategy: InsertStrategy,
   targetWindowHandle: string | undefined
 ): Promise<InsertResult> {
-  const snapshot = options.clipboard.backup();
-
+  let snapshot: ClipboardSnapshot | undefined;
   try {
     await focusTargetWindow(options.nativeBridge, targetWindowHandle);
+    const editable = await verifyEditableTarget(options.nativeBridge, targetWindowHandle);
+    if (!editable) {
+      return createFailureResult(
+        strategy,
+        text,
+        new Error("Focused target is not editable")
+      );
+    }
+    snapshot = options.clipboard.backup();
     options.clipboard.writeText(text);
     await options.nativeBridge.pasteFromClipboard();
     await delay(options.restoreClipboardDelayMs);
@@ -122,7 +143,9 @@ async function insertWithClipboard(
     console.error("[insert] ❌ clipboard paste 插入失败", error);
     return createFailureResult(strategy, text, error);
   } finally {
-    await options.clipboard.restore(snapshot);
+    if (snapshot) {
+      await options.clipboard.restore(snapshot);
+    }
   }
 }
 
@@ -143,6 +166,26 @@ async function focusTargetWindow(
       `[insert] ⚠️ 恢复目标窗口焦点失败，继续尝试对当前焦点粘贴 handle=${targetWindowHandle}`,
       error
     );
+  }
+}
+
+async function verifyEditableTarget(
+  nativeBridge: NativeInputBridge,
+  targetWindowHandle: string | undefined
+): Promise<boolean> {
+  if (!targetWindowHandle) {
+    return true;
+  }
+
+  try {
+    const editable = await nativeBridge.isEditableTargetFocused();
+    if (!editable) {
+      console.warn("[insert] focused target is not editable; skipping insert");
+    }
+    return editable;
+  } catch (error) {
+    console.warn("[insert] editable target check failed; continuing insert", error);
+    return true;
   }
 }
 

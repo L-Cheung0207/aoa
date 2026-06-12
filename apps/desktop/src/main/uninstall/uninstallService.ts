@@ -1,6 +1,4 @@
-import { mkdir, writeFile as writeFileFs } from "node:fs/promises";
-import { dirname, join, normalize, parse, resolve } from "node:path";
-import { spawn, type SpawnOptions } from "node:child_process";
+import { dirname, normalize, resolve } from "node:path";
 
 export interface UninstallResult {
   ok: true;
@@ -25,16 +23,7 @@ interface ElectronAppLike {
 export interface CreateUninstallServiceOptions {
   app: ElectronAppLike;
   executablePath: string;
-  pid: number;
   platform: NodeJS.Platform;
-  tempDir: string;
-  ensureDirectory?: (path: string) => Promise<void>;
-  writeFile?: (path: string, content: string) => Promise<void>;
-  spawnDetached?: (
-    command: string,
-    args: string[],
-    options: SpawnOptions,
-  ) => void;
 }
 
 export function createUninstallService(
@@ -67,11 +56,6 @@ export function createUninstallService(
 
       const installDir = dirname(options.executablePath);
       assertSafeInstallDirectory(installDir);
-      const executableName = parse(options.executablePath).name;
-      const uninstallerPath = join(
-        installDir,
-        `Uninstall ${executableName}.exe`,
-      );
       const cleanupPaths = uniquePaths([
         installDir,
         options.app.getPath("userData"),
@@ -80,66 +64,15 @@ export function createUninstallService(
       for (const cleanupPath of cleanupPaths) {
         assertSafeCleanupDirectory(cleanupPath);
       }
-      const scriptPath = join(
-        options.tempDir,
-        `voice-assistant-uninstall-${options.pid}.ps1`,
-      );
-      await ensureParentDirectory(scriptPath, options.ensureDirectory);
-      await (options.writeFile ?? writeFileFs)(
-        scriptPath,
-        buildWindowsCleanupScript({
-          pid: options.pid,
-          uninstallerPath,
-          cleanupPaths,
-        }),
-      );
-      const spawnDetached = options.spawnDetached ?? defaultSpawnDetached;
-      spawnDetached(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-WindowStyle",
-          "Hidden",
-          "-File",
-          scriptPath,
-        ],
-        {
-          detached: true,
-          cwd: options.tempDir,
-          stdio: "ignore",
-          windowsHide: true,
-        },
-      );
 
       return {
         ok: true,
         mode: "packaged",
-        launchedCleanup: true,
+        launchedCleanup: false,
         cleanupPaths,
       };
     },
   };
-}
-
-function defaultSpawnDetached(
-  command: string,
-  args: string[],
-  options: SpawnOptions,
-): void {
-  spawn(command, args, options).unref();
-}
-
-async function ensureParentDirectory(
-  path: string,
-  ensureDirectory = defaultEnsureDirectory,
-): Promise<void> {
-  await ensureDirectory(dirname(path));
-}
-
-async function defaultEnsureDirectory(path: string): Promise<void> {
-  await mkdir(path, { recursive: true });
 }
 
 function uniquePaths(paths: string[]): string[] {
@@ -171,44 +104,4 @@ function assertSafeCleanupDirectory(
       `Refusing to uninstall from unsafe ${label}: ${path}`,
     );
   }
-}
-
-function buildWindowsCleanupScript(options: {
-  pid: number;
-  uninstallerPath: string;
-  cleanupPaths: string[];
-}): string {
-  const cleanupPathEntries = options.cleanupPaths
-    .map((path) => `  ${toPowerShellString(path)}`)
-    .join("\n");
-
-  return `\
-$ErrorActionPreference = "SilentlyContinue"
-$UninstallerPath = ${toPowerShellString(options.uninstallerPath)}
-$CleanupPaths = @(
-${cleanupPathEntries}
-)
-
-try {
-  Wait-Process -Id ${options.pid} -Timeout 30
-} catch {}
-
-Start-Sleep -Milliseconds 600
-
-if (Test-Path -LiteralPath $UninstallerPath) {
-  Start-Process -FilePath $UninstallerPath -ArgumentList @('/currentuser', '/S', '--delete-app-data') -Wait -WindowStyle Hidden
-}
-
-$CleanupPaths |
-  Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
-  ForEach-Object {
-    Remove-Item -LiteralPath $_ -Recurse -Force
-  }
-
-Remove-Item -LiteralPath $PSCommandPath -Force
-`;
-}
-
-function toPowerShellString(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
 }

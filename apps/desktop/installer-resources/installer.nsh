@@ -1,4 +1,18 @@
 !include LogicLib.nsh
+!include MUI2.nsh
+!include nsDialogs.nsh
+!include FileFunc.nsh
+
+!define VOICE_OPTIONS_PAGE_TITLE "安装选项"
+!define VOICE_OPTIONS_PAGE_SUBTITLE "选择要启用的附加功能。"
+!define VOICE_AGREEMENT_FILE "terms.txt"
+!define VOICE_DESKTOP_SHORTCUT_TEXT "创建桌面图标"
+!define VOICE_LAUNCH_AT_LOGIN_TEXT "开机自动启动"
+!define VOICE_INSTALL_DIR_REQUIRED_TEXT "请选择有效的安装位置。"
+!define VOICE_DIR_NOT_WRITABLE_TEXT "当前安装位置不可写，请选择其他位置。"
+!define VOICE_DISK_SPACE_UNKNOWN_TEXT "无法读取安装磁盘空间，请选择其他位置或检查磁盘状态。"
+!define VOICE_DISK_SPACE_REQUIRED_TEXT "磁盘空间不足。请确保安装盘至少有 ${VOICE_MIN_FREE_SPACE_MB} MB 可用空间。"
+!define VOICE_MIN_FREE_SPACE_MB 500
 
 !define VOICE_UNINSTALL_REGISTRY_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}"
 !define VOICE_UNINSTALL_FILENAME "Uninstall ${PRODUCT_FILENAME}.exe"
@@ -6,6 +20,9 @@
 !ifndef BUILD_UNINSTALLER
 Var VoiceCreateDesktopShortcut
 Var VoiceLaunchAtLogin
+Var VoiceDesktopShortcutCheckbox
+Var VoiceLaunchAtLoginCheckbox
+!endif
 
 !macro customCheckAppRunning
   Push $0
@@ -17,8 +34,8 @@ Var VoiceLaunchAtLogin
   StrCpy $0 "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
   IfFileExists "$0" 0 voice_check_taskkill
 
-  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_INSTALL_DIR", t"$INSTDIR")'
-  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_EXE_NAME", t"${APP_EXECUTABLE_FILENAME}")'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, t)i ("VOICE_INSTALL_DIR", "$INSTDIR").r3'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, t)i ("VOICE_EXE_NAME", "${APP_EXECUTABLE_FILENAME}").r3'
   nsExec::ExecToStack `"$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='SilentlyContinue'; $$d=[IO.Path]::GetFullPath($$env:VOICE_INSTALL_DIR).TrimEnd('\'); $$n=$$env:VOICE_EXE_NAME; function vp { @(Get-CimInstance Win32_Process | Where-Object { $$_.ProcessId -ne $$PID -and (($$_.Name -ieq $$n) -or ($$_.ExecutablePath -and [IO.Path]::GetFullPath($$_.ExecutablePath).StartsWith($$d,[StringComparison]::OrdinalIgnoreCase))) }) }; $$deadline=(Get-Date).AddSeconds(8); while((Get-Date) -lt $$deadline){ $$ps=vp; if($$ps.Count -eq 0){ exit 0 }; foreach($$proc in $$ps){ $$p=Get-Process -Id $$proc.ProcessId; if($$p -and $$p.MainWindowHandle -ne 0){ [void]$$p.CloseMainWindow() } }; Start-Sleep -Milliseconds 500 }; $$deadline=(Get-Date).AddSeconds(25); while((Get-Date) -lt $$deadline){ $$ps=vp; if($$ps.Count -eq 0){ exit 0 }; foreach($$proc in $$ps){ Stop-Process -Id $$proc.ProcessId -Force }; Start-Sleep -Milliseconds 500 }; if((vp).Count -eq 0){ exit 0 }; exit 1"`
   Pop $1
   Pop $2
@@ -51,20 +68,36 @@ voice_check_taskkill_loop:
   ${EndIf}
 
 voice_check_done:
-  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_INSTALL_DIR", p0)'
-  System::Call 'kernel32::SetEnvironmentVariable(t"VOICE_EXE_NAME", p0)'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, p)i ("VOICE_INSTALL_DIR", 0).r3'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, p)i ("VOICE_EXE_NAME", 0).r3'
   Pop $3
   Pop $2
   Pop $1
   Pop $0
 !macroend
 
+!ifndef BUILD_UNINSTALLER
 !macro customInit
   !ifndef INSTALL_MODE_PER_ALL_USERS
     !insertmacro setInstallModePerUser
   !endif
   Call VoiceReadShellOptions
   Call VoiceRepairLegacyUninstallRegistry
+!macroend
+
+!macro licensePage
+  !insertmacro MUI_PAGE_LICENSE "${BUILD_RESOURCES_DIR}\${VOICE_AGREEMENT_FILE}"
+!macroend
+
+!macro customPageAfterChangeDir
+  Page custom VoiceInstallerOptionsPageCreate VoiceInstallerOptionsPageLeave
+!macroend
+
+!macro customFinishPage
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_TEXT "运行 Voice Assistant"
+  !define MUI_FINISHPAGE_RUN_FUNCTION "VoiceStartAppAfterFinish"
+  !insertmacro MUI_PAGE_FINISH
 !macroend
 
 !macro customInstall
@@ -77,17 +110,12 @@ voice_check_done:
 !macroend
 !endif
 
-!macro customUnInit
-  ${IfNot} ${Silent}
-    IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 +3
-      Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall'
-      Quit
-  ${EndIf}
-!macroend
-
 !macro customUnInstall
   Delete "$newDesktopLink"
   Delete "$SMSTARTUP\${SHORTCUT_NAME}.lnk"
+  RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
+  SetOutPath "$TEMP"
+  RMDir "$INSTDIR"
 !macroend
 
 !ifndef BUILD_UNINSTALLER
@@ -107,6 +135,116 @@ Function VoiceReadShellOptions
   ${EndIf}
 FunctionEnd
 
+Function VoiceStartAppAfterFinish
+  ExecShell "open" "$INSTDIR\${PRODUCT_FILENAME}.exe"
+FunctionEnd
+
+Function VoiceInstallerOptionsPageCreate
+  ${If} ${Silent}
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "${VOICE_OPTIONS_PAGE_TITLE}" "${VOICE_OPTIONS_PAGE_SUBTITLE}"
+
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateCheckbox} 0 24u 100% 12u "${VOICE_DESKTOP_SHORTCUT_TEXT}"
+  Pop $VoiceDesktopShortcutCheckbox
+  ${If} $VoiceCreateDesktopShortcut == "1"
+    ${NSD_Check} $VoiceDesktopShortcutCheckbox
+  ${EndIf}
+
+  ${NSD_CreateCheckbox} 0 52u 100% 12u "${VOICE_LAUNCH_AT_LOGIN_TEXT}"
+  Pop $VoiceLaunchAtLoginCheckbox
+  ${If} $VoiceLaunchAtLogin == "true"
+    ${NSD_Check} $VoiceLaunchAtLoginCheckbox
+  ${EndIf}
+
+  nsDialogs::Show
+FunctionEnd
+
+Function VoiceInstallerOptionsPageLeave
+  ${NSD_GetState} $VoiceDesktopShortcutCheckbox $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $VoiceCreateDesktopShortcut "1"
+  ${Else}
+    StrCpy $VoiceCreateDesktopShortcut "0"
+  ${EndIf}
+
+  ${NSD_GetState} $VoiceLaunchAtLoginCheckbox $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $VoiceLaunchAtLogin "true"
+  ${Else}
+    StrCpy $VoiceLaunchAtLogin "false"
+  ${EndIf}
+
+  Call VoicePreflightInstall
+FunctionEnd
+
+Function VoicePreflightInstall
+  Call VoiceValidateInstallDir
+  Call VoiceValidateInstallDirWritable
+  Call VoiceValidateDiskSpace
+FunctionEnd
+
+Function VoiceValidateInstallDir
+  ${If} $INSTDIR == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "${VOICE_INSTALL_DIR_REQUIRED_TEXT}"
+    Abort
+  ${EndIf}
+
+  ${GetRoot} "$INSTDIR" $0
+  ${If} $0 == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "${VOICE_INSTALL_DIR_REQUIRED_TEXT}"
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function VoiceValidateInstallDirWritable
+  ClearErrors
+  CreateDirectory "$INSTDIR"
+  IfErrors voice_dir_writable_failed
+
+  ClearErrors
+  FileOpen $0 "$INSTDIR\.voice-install-write-test" w
+  IfErrors voice_dir_writable_failed
+  FileWrite $0 "ok"
+  FileClose $0
+  Delete "$INSTDIR\.voice-install-write-test"
+  ClearErrors
+  Return
+
+voice_dir_writable_failed:
+  MessageBox MB_ICONEXCLAMATION|MB_OK "${VOICE_DIR_NOT_WRITABLE_TEXT}"
+  Abort
+FunctionEnd
+
+Function VoiceValidateDiskSpace
+  ${GetRoot} "$INSTDIR" $0
+  ${If} $0 == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "${VOICE_DISK_SPACE_UNKNOWN_TEXT}"
+    Abort
+  ${EndIf}
+
+  ClearErrors
+  ${DriveSpace} "$0" "/D=F /S=M" $1
+  IfErrors voice_disk_space_unknown
+
+  ${If} $1 < ${VOICE_MIN_FREE_SPACE_MB}
+    MessageBox MB_ICONEXCLAMATION|MB_OK "${VOICE_DISK_SPACE_REQUIRED_TEXT}"
+    Abort
+  ${EndIf}
+  Return
+
+voice_disk_space_unknown:
+  MessageBox MB_ICONEXCLAMATION|MB_OK "${VOICE_DISK_SPACE_UNKNOWN_TEXT}"
+  Abort
+FunctionEnd
+
 Function VoiceWriteInstallOptions
   CreateDirectory "$INSTDIR\resources"
   ClearErrors
@@ -119,9 +257,7 @@ Function VoiceWriteInstallOptions
 
 voice_write_install_options_done:
 FunctionEnd
-!endif
 
-!ifndef BUILD_UNINSTALLER
 Function VoiceRepairLegacyUninstallRegistry
   Push $0
   Push $1

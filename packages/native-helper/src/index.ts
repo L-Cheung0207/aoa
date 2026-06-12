@@ -9,6 +9,9 @@ export interface NativeAddonBinding {
   typeText(text: string): void;
   getForegroundWindowHandle?(): string | undefined;
   focusWindow?(windowHandle: string): void;
+  isEditableTargetFocused?(): boolean;
+  muteOtherAppsForRecording?(excludedProcessIds: number[]): void;
+  restoreOtherAppsAudio?(): void;
   recognizeRightAltHotkey?(keyCode: number, transition: NativeKeyTransition): NativeHotkeyAction | undefined;
   configureKeyboardShortcuts?(direct: string, processSelection: string, translate: string): void;
   startKeyboardHook?(callback: (action: NativeHotkeyAction) => void): void;
@@ -27,6 +30,9 @@ export interface NativeHelperBinding {
   typeText(text: string): Promise<void>;
   getForegroundWindowHandle(): Promise<string | undefined>;
   focusWindow(windowHandle: string): Promise<void>;
+  isEditableTargetFocused(): Promise<boolean>;
+  muteOtherAppsForRecording(excludedProcessIds: number[]): Promise<void>;
+  restoreOtherAppsAudio(): Promise<void>;
   recognizeRightAltHotkey(
     keyCode: number,
     transition: NativeKeyTransition
@@ -70,6 +76,15 @@ export function createNativeHelperBinding(
     focusWindow: async (windowHandle) => {
       focusWindowOn(getAddon(addon), windowHandle);
     },
+    isEditableTargetFocused: async () => {
+      return isEditableTargetFocusedOn(getAddon(addon));
+    },
+    muteOtherAppsForRecording: async (excludedProcessIds) => {
+      muteOtherAppsForRecordingOn(getAddon(addon), excludedProcessIds);
+    },
+    restoreOtherAppsAudio: async () => {
+      restoreOtherAppsAudioOn(getAddon(addon));
+    },
     recognizeRightAltHotkey: (keyCode, transition) => {
       return getAddon(addon).recognizeRightAltHotkey?.(keyCode, transition);
     },
@@ -98,6 +113,15 @@ export function createNativeHelperModule(loadAddon: NativeAddonLoader): NativeHe
     focusWindow: async (windowHandle) => {
       focusWindowOn(getAddon(loadAddon()), windowHandle);
     },
+    isEditableTargetFocused: async () => {
+      return isEditableTargetFocusedOn(getAddon(loadAddon()));
+    },
+    muteOtherAppsForRecording: async (excludedProcessIds) => {
+      muteOtherAppsForRecordingOn(getAddon(loadAddon()), excludedProcessIds);
+    },
+    restoreOtherAppsAudio: async () => {
+      restoreOtherAppsAudioOn(getAddon(loadAddon()));
+    },
     recognizeRightAltHotkey: (keyCode, transition) => {
       return getAddon(loadAddon()).recognizeRightAltHotkey?.(keyCode, transition);
     },
@@ -116,6 +140,9 @@ export const copySelectionToClipboard = defaultModule.copySelectionToClipboard;
 export const typeText = defaultModule.typeText;
 export const getForegroundWindowHandle = defaultModule.getForegroundWindowHandle;
 export const focusWindow = defaultModule.focusWindow;
+export const isEditableTargetFocused = defaultModule.isEditableTargetFocused;
+export const muteOtherAppsForRecording = defaultModule.muteOtherAppsForRecording;
+export const restoreOtherAppsAudio = defaultModule.restoreOtherAppsAudio;
 export const recognizeRightAltHotkey = defaultModule.recognizeRightAltHotkey;
 export const configureKeyboardShortcuts = defaultModule.configureKeyboardShortcuts;
 export const startKeyboardHook = defaultModule.startKeyboardHook;
@@ -143,6 +170,33 @@ function focusWindowOn(addon: NativeAddonBinding, windowHandle: string): void {
   }
 
   addon.focusWindow(windowHandle);
+}
+
+function isEditableTargetFocusedOn(addon: NativeAddonBinding): boolean {
+  if (typeof addon.isEditableTargetFocused !== "function") {
+    throw new Error("NATIVE_HELPER_UNAVAILABLE: editable target detection is not supported by the loaded addon");
+  }
+
+  return addon.isEditableTargetFocused();
+}
+
+function muteOtherAppsForRecordingOn(
+  addon: NativeAddonBinding,
+  excludedProcessIds: number[]
+): void {
+  if (typeof addon.muteOtherAppsForRecording !== "function") {
+    throw new Error("NATIVE_HELPER_UNAVAILABLE: audio ducking is not supported by the loaded addon");
+  }
+
+  addon.muteOtherAppsForRecording(excludedProcessIds);
+}
+
+function restoreOtherAppsAudioOn(addon: NativeAddonBinding): void {
+  if (typeof addon.restoreOtherAppsAudio !== "function") {
+    throw new Error("NATIVE_HELPER_UNAVAILABLE: audio ducking is not supported by the loaded addon");
+  }
+
+  addon.restoreOtherAppsAudio();
 }
 
 function startKeyboardHookOn(
@@ -216,9 +270,8 @@ export function getNativeAddonCandidatePaths(packageRoot: string): string[] {
   }
 
   paths.push(
-    join(packageRoot, "dist", "voice_native_helper.node"),
     join(packageRoot, "target", "debug", "voice_native_helper.node"),
-    join(packageRoot, "target", "debug", "voice_native_helper.dll")
+    join(packageRoot, "dist", "voice_native_helper.node")
   );
   return paths;
 }

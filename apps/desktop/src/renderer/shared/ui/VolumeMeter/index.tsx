@@ -9,9 +9,9 @@ export interface VolumeMeterProps {
 }
 
 const METER_BAR_COUNT = 14;
-const LEVEL_GAIN = 6;
+const LEVEL_GAIN = 8;
 const PCM_MAX = 32768;
-const WAVEFORM_GAIN = 4.8;
+const WAVEFORM_GAIN = 6.4;
 
 const WAVEFORM_AMPLITUDE_PATTERNS: Record<WaveformStyle, readonly number[]> = {
   "waveform-sunset": [
@@ -49,10 +49,10 @@ export function VolumeMeter({
       ? Math.min(
           1,
           waveformWeight === undefined
-            ? 0.12 + voicedLevel * fallbackWeight + phase * normalized
-            : 0.08 + weight * WAVEFORM_GAIN
+            ? 0.16 + voicedLevel * fallbackWeight + phase * normalized
+            : 0.12 + weight * WAVEFORM_GAIN
         )
-      : 0.08;
+      : 0.1;
     const opacity = active ? 0.92 : 0.38;
     const colorStop = index / Math.max(1, METER_BAR_COUNT - 1);
     return { colorStop, index, opacity, phase, scale, weight };
