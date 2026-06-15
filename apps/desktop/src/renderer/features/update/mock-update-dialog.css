@@ -245,7 +245,7 @@
 
 .mock-update__notes {
   grid-column: 1 / -1;
-  margin-top: 30px;
+  margin-top: 18px;
   padding: 20px 22px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -267,6 +267,59 @@
   padding: 0 0 0 18px;
   color: rgba(255, 255, 255, 0.7);
   font-size: 14px;
+  line-height: 1.45;
+}
+
+.mock-update__notes p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.mock-update__meta {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 0;
+}
+
+.mock-update__meta div {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mock-update__meta dt {
+  margin: 0 0 6px;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.mock-update__meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock-update__warning {
+  grid-column: 1 / -1;
+  margin: 14px 0 0;
+  color: #ffcf86;
+  font-size: 13px;
+  font-weight: 700;
   line-height: 1.45;
 }
 
@@ -298,6 +351,15 @@
 
 .mock-update__primary:hover {
   background: #3478d4;
+}
+
+.mock-update__primary:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.mock-update__primary:disabled:hover {
+  background: #4387e3;
 }
 
 .mock-update__secondary {
@@ -335,6 +397,11 @@
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+.mock-update__actions--center {
+  justify-content: center;
+  margin-top: 0;
 }
 
 :root[data-theme="light"] .update-ready {
@@ -430,6 +497,27 @@
 
 :root[data-theme="light"] .mock-update__notes ul {
   color: rgba(51, 65, 85, 0.78);
+}
+
+:root[data-theme="light"] .mock-update__notes p {
+  color: rgba(51, 65, 85, 0.78);
+}
+
+:root[data-theme="light"] .mock-update__meta div {
+  border-color: rgba(67, 135, 227, 0.14);
+  background: rgba(248, 251, 255, 0.86);
+}
+
+:root[data-theme="light"] .mock-update__meta dt {
+  color: rgba(71, 85, 105, 0.58);
+}
+
+:root[data-theme="light"] .mock-update__meta dd {
+  color: rgba(15, 23, 42, 0.86);
+}
+
+:root[data-theme="light"] .mock-update__warning {
+  color: #a65f00;
 }
 
 :root[data-theme="light"] .mock-update__secondary {

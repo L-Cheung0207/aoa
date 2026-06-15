@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { InterfaceLanguage } from "@voice/shared";
+import type { UpdateCheckResult, UpdateReadyPayload } from "../../../preload/voiceApi";
 
 interface UpdateReadyDialogProps {
   language?: InterfaceLanguage | undefined;
@@ -9,11 +10,14 @@ interface UpdateReadyDialogProps {
   onRestart(): void;
 }
 
-type MockUpdateState = "checking" | "available" | "latest" | "installing" | "completed";
+type DialogState = "checking" | "available" | "latest" | "ready" | "error";
 
 interface MockUpdateDialogProps {
   currentVersion?: string | undefined;
+  language?: InterfaceLanguage | undefined;
+  readyPayload?: UpdateReadyPayload | undefined;
   onClose(): void;
+  onRestartError?(message: string): void;
 }
 
 type UpdateReadyText = {
@@ -24,15 +28,7 @@ type UpdateReadyText = {
   versionPrefix: string;
 };
 
-const MOCK_VERSION = "1.2.1";
-const CHECKING_DELAY_MS = 900;
-const INSTALL_TICK_MS = 120;
-
-const RELEASE_NOTES = [
-  "优化检查更新流程和安装包校验",
-  "提升语音助手启动稳定性",
-  "修复部分窗口状态切换问题"
-];
+const SKIPPED_OPTIONAL_UPDATE_KEY = "voice.skippedOptionalUpdate";
 
 const UPDATE_READY_TEXT: Record<InterfaceLanguage, UpdateReadyText> = {
   "zh-CN": {
@@ -97,77 +93,125 @@ export function UpdateReadyDialog({
 
 export function MockUpdateDialog({
   currentVersion,
-  onClose
+  language,
+  readyPayload,
+  onClose,
+  onRestartError
 }: MockUpdateDialogProps): React.JSX.Element {
-  const [state, setState] = useState<MockUpdateState>("checking");
-  const [progress, setProgress] = useState(0);
-  const timersRef = useRef<number[]>([]);
-
-  const clearTimers = (): void => {
-    timersRef.current.forEach((timer) => window.clearTimeout(timer));
-    timersRef.current = [];
-  };
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setState("available");
-    }, CHECKING_DELAY_MS);
-    timersRef.current.push(timer);
-    return clearTimers;
-  }, []);
-
-  useEffect(() => {
-    if (state !== "installing") {
-      return;
-    }
-
-    if (progress >= 100) {
-      const timer = window.setTimeout(() => {
-        setState("completed");
-      }, 280);
-      timersRef.current.push(timer);
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setProgress((current) => Math.min(100, current + 4));
-    }, INSTALL_TICK_MS);
-    timersRef.current.push(timer);
-  }, [progress, state]);
+  const [state, setState] = useState<DialogState>(() =>
+    readyPayload ? "ready" : "checking"
+  );
+  const [payload, setPayload] = useState<UpdateReadyPayload | undefined>(readyPayload);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
   const versionLabel = useMemo(
-    () => formatVersionLabel(currentVersion ?? "1.2.0"),
+    () => formatVersionLabel(currentVersion ?? "0.0.0"),
     [currentVersion]
   );
+  const isForced = payload?.updateType === "FORCED";
+  const canClose = !isForced || state === "latest" || state === "error";
 
-  const startInstall = (): void => {
-    clearTimers();
-    setProgress(0);
-    setState("installing");
-  };
+  const applyResult = useCallback((result: UpdateCheckResult): void => {
+    if (result.status === "up-to-date") {
+      setState("latest");
+      setPayload(undefined);
+      return;
+    }
+    if (result.status === "available") {
+      const nextPayload = toPayload(result);
+      if (nextPayload.updateType === "OPTIONAL" && isSkippedOptionalUpdate(nextPayload)) {
+        setState("latest");
+        setPayload(undefined);
+        return;
+      }
+      setPayload(nextPayload);
+      setState("available");
+      setErrorMessage(result.updaterError);
+      return;
+    }
+    if (result.status === "ready") {
+      setPayload(toPayload(result));
+      setState("ready");
+      return;
+    }
+    if (result.status === "disabled") {
+      setErrorMessage("当前环境未启用更新检查");
+      setState("error");
+      return;
+    }
+    setErrorMessage(result.message);
+    setState("error");
+  }, []);
+
+  const checkForUpdates = useCallback((): void => {
+    setState("checking");
+    setErrorMessage(undefined);
+    void window.voiceAI
+      .checkForUpdates()
+      .then(applyResult)
+      .catch((error: unknown) => {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+        setState("error");
+      });
+  }, [applyResult]);
+
+  useEffect(() => {
+    if (readyPayload) {
+      return;
+    }
+    checkForUpdates();
+  }, [checkForUpdates, readyPayload]);
+
+  useEffect(() => {
+    if (!readyPayload) {
+      return;
+    }
+    setPayload(readyPayload);
+    setState("ready");
+    setErrorMessage(undefined);
+  }, [readyPayload]);
 
   const close = (): void => {
-    clearTimers();
+    if (canClose) {
+      onClose();
+    }
+  };
+
+  const restart = (): void => {
+    void window.voiceAI.restartToUpdate().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setErrorMessage(message);
+      setState("error");
+      onRestartError?.(message);
+    });
+  };
+
+  const skipOptional = (): void => {
+    if (payload) {
+      rememberSkippedOptionalUpdate(payload);
+    }
     onClose();
   };
 
   return (
     <div className="mock-update" role="dialog" aria-modal="true" aria-label="检查更新">
       <div className="mock-update__window">
-        <button
-          type="button"
-          className="mock-update__close"
-          aria-label="关闭"
-          onClick={close}
-        >
-          <CloseIcon />
-        </button>
+        {canClose ? (
+          <button
+            type="button"
+            className="mock-update__close"
+            aria-label="关闭"
+            onClick={close}
+          >
+            <CloseIcon />
+          </button>
+        ) : null}
 
         {state === "checking" ? (
           <CenteredState
             icon={<SpinnerIcon />}
             title="正在检查更新"
-            description={`当前版本 ${versionLabel}，正在连接更新服务...`}
+            description={`当前版本 ${versionLabel}，正在连接更新服务。`}
           />
         ) : null}
 
@@ -176,74 +220,125 @@ export function MockUpdateDialog({
             icon={<CheckIcon />}
             title="已是最新版本"
             description={`当前版本 ${versionLabel} 已经是最新版本。`}
-            action={<button type="button" className="mock-update__primary" onClick={close}>完成</button>}
+            action={<button type="button" className="mock-update__primary" onClick={onClose}>完成</button>}
           />
         ) : null}
 
         {state === "available" ? (
-          <section className="mock-update__available">
-            <div className="mock-update__badge">
-              <MegaphoneIcon />
-            </div>
-            <div className="mock-update__available-copy">
-              <p className="mock-update__eyebrow">发现新版本</p>
-              <h1>Voice Assistant v{MOCK_VERSION}</h1>
-              <p>当前版本 {versionLabel}，已模拟获取到可用安装包。</p>
-            </div>
-            <div className="mock-update__notes">
-              <h2>更新内容</h2>
-              <ul>
-                {RELEASE_NOTES.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
-            </div>
-            <div className="mock-update__actions">
-              <button type="button" className="mock-update__primary" onClick={startInstall}>
-                立即更新
-              </button>
-              <button type="button" className="mock-update__secondary" onClick={close}>
-                稍后
-              </button>
-            </div>
-          </section>
+          <UpdateDetails
+            payload={payload}
+            currentVersion={versionLabel}
+            errorMessage={errorMessage}
+            primaryLabel="正在下载"
+            secondaryLabel={payload?.updateType === "OPTIONAL" ? "跳过此版本" : "本次不提醒"}
+            onPrimary={() => undefined}
+            onSecondary={payload?.updateType === "OPTIONAL" ? skipOptional : onClose}
+            showSecondary={payload?.updateType !== "FORCED"}
+            disablePrimary
+          />
         ) : null}
 
-        {state === "installing" ? (
+        {state === "ready" ? (
+          <UpdateDetails
+            payload={payload}
+            currentVersion={versionLabel}
+            primaryLabel="重启应用程序"
+            secondaryLabel={payload?.updateType === "OPTIONAL" ? "稍后" : "本次不提醒"}
+            onPrimary={restart}
+            onSecondary={onClose}
+            showSecondary={payload?.updateType !== "FORCED"}
+            ready
+          />
+        ) : null}
+
+        {state === "error" ? (
           <CenteredState
-            icon={<DownloadIcon />}
-            title="正在安装更新"
-            description={`正在模拟下载并安装 v${MOCK_VERSION}，请稍候...`}
+            icon={<WarningIcon />}
+            title="检查更新失败"
+            description={errorMessage ?? "更新服务暂时不可用，请稍后重试。"}
             action={
-              <div className="mock-update__progress-panel">
-                <div
-                  className="mock-update__progress"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={progress}
-                >
-                  <div
-                    className="mock-update__progress-fill"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <p>{progress}%</p>
+              <div className="mock-update__actions mock-update__actions--center">
+                <button type="button" className="mock-update__primary" onClick={checkForUpdates}>
+                  重试
+                </button>
+                <button type="button" className="mock-update__secondary" onClick={onClose}>
+                  关闭
+                </button>
               </div>
             }
           />
         ) : null}
-
-        {state === "completed" ? (
-          <CenteredState
-            icon={<CheckIcon />}
-            title="更新准备完成"
-            description={`v${MOCK_VERSION} 已准备就绪，模拟流程到这里结束。`}
-            action={<button type="button" className="mock-update__primary" onClick={close}>完成</button>}
-          />
-        ) : null}
       </div>
     </div>
+  );
+}
+
+function UpdateDetails({
+  payload,
+  currentVersion,
+  errorMessage,
+  primaryLabel,
+  secondaryLabel,
+  showSecondary,
+  disablePrimary = false,
+  ready = false,
+  onPrimary,
+  onSecondary
+}: {
+  payload?: UpdateReadyPayload | undefined;
+  currentVersion: string;
+  errorMessage?: string | undefined;
+  primaryLabel: string;
+  secondaryLabel: string;
+  showSecondary: boolean;
+  disablePrimary?: boolean;
+  ready?: boolean;
+  onPrimary(): void;
+  onSecondary(): void;
+}): React.JSX.Element {
+  return (
+    <section className="mock-update__available">
+      <div className="mock-update__badge">
+        <MegaphoneIcon />
+      </div>
+      <div className="mock-update__available-copy">
+        <p className="mock-update__eyebrow">
+          {ready ? "更新已准备就绪" : updateTypeLabel(payload?.updateType)}
+        </p>
+        <h1>Voice Assistant {formatVersionLabel(payload?.version ?? "")}</h1>
+        <p>当前版本 {currentVersion}，{ready ? "重启后将安装更新。" : "已发现可用安装包。"}</p>
+      </div>
+      <dl className="mock-update__meta">
+        <div>
+          <dt>安装包</dt>
+          <dd>{payload?.packageName ?? "-"}</dd>
+        </div>
+        <div>
+          <dt>大小</dt>
+          <dd>{formatPackageSize(payload?.packageSize)}</dd>
+        </div>
+      </dl>
+      <div className="mock-update__notes">
+        <h2>更新内容</h2>
+        <p>{payload?.updateLog?.trim() || "暂无更新说明。"}</p>
+      </div>
+      {errorMessage ? <p className="mock-update__warning">{errorMessage}</p> : null}
+      <div className="mock-update__actions">
+        <button
+          type="button"
+          className="mock-update__primary"
+          disabled={disablePrimary}
+          onClick={onPrimary}
+        >
+          {primaryLabel}
+        </button>
+        {showSecondary ? (
+          <button type="button" className="mock-update__secondary" onClick={onSecondary}>
+            {secondaryLabel}
+          </button>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -270,12 +365,68 @@ function CenteredState({
   );
 }
 
+function toPayload(result: Extract<UpdateCheckResult, { status: "available" | "ready" }>): UpdateReadyPayload {
+  return {
+    version: result.version,
+    phase: result.phase,
+    updateType: result.updateType,
+    updateLog: result.updateLog,
+    downloadUrl: result.downloadUrl,
+    packageSize: result.packageSize,
+    packageName: result.packageName
+  };
+}
+
+function updateTypeLabel(updateType: UpdateReadyPayload["updateType"]): string {
+  if (updateType === "FORCED") {
+    return "强制更新";
+  }
+  if (updateType === "RECOMMENDED") {
+    return "推荐更新";
+  }
+  return "发现新版本";
+}
+
+function formatPackageSize(size: number | undefined): string {
+  if (!size || size <= 0) {
+    return "-";
+  }
+  const mb = size / 1024 / 1024;
+  return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`;
+}
+
 function formatVersionLabel(version: string): string {
   const normalized = version.trim();
   if (!normalized) {
     return "";
   }
   return normalized.startsWith("v") ? normalized : `v${normalized}`;
+}
+
+function rememberSkippedOptionalUpdate(payload: UpdateReadyPayload): void {
+  if (!payload.version) {
+    return;
+  }
+  window.localStorage.setItem(
+    SKIPPED_OPTIONAL_UPDATE_KEY,
+    JSON.stringify({ version: payload.version })
+  );
+}
+
+function isSkippedOptionalUpdate(payload: UpdateReadyPayload): boolean {
+  if (!payload.version) {
+    return false;
+  }
+  try {
+    const value = window.localStorage.getItem(SKIPPED_OPTIONAL_UPDATE_KEY);
+    if (!value) {
+      return false;
+    }
+    const parsed = JSON.parse(value) as { version?: unknown };
+    return parsed.version === payload.version;
+  } catch {
+    return false;
+  }
 }
 
 function MegaphoneIcon(): React.JSX.Element {
@@ -305,21 +456,21 @@ function SpinnerIcon(): React.JSX.Element {
   );
 }
 
-function DownloadIcon(): React.JSX.Element {
-  return (
-    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M26 8v25" />
-      <path d="m16 24 10 10 10-10" />
-      <path d="M12 41h28" />
-    </svg>
-  );
-}
-
 function CheckIcon(): React.JSX.Element {
   return (
     <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="26" cy="26" r="20" />
       <path d="m17 27 6 6 13-15" />
+    </svg>
+  );
+}
+
+function WarningIcon(): React.JSX.Element {
+  return (
+    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="26" cy="26" r="20" />
+      <path d="M26 14v16" />
+      <path d="M26 38h.01" />
     </svg>
   );
 }

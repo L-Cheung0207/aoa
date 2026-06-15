@@ -67,6 +67,10 @@ import { createShortcutManager } from "./shortcuts/shortcutManager";
 import { createMainTranscriptionService } from "./transcription/mainTranscriptionService";
 import { createTray } from "./tray/createTray";
 import { createUpdateService } from "./update/updateService";
+import {
+  createHttpVersionCheckClient,
+  type VersionPlatform
+} from "./update/versionCheckClient";
 import { installMediaPermissionHandlers } from "./permissions/mediaPermission";
 import {
   createUninstallService,
@@ -465,8 +469,16 @@ export async function bootstrap(): Promise<void> {
   const uninstallService = createAppUninstallService();
   const updateService = createUpdateService({
     autoUpdater: electronUpdater.autoUpdater,
+    currentVersion: app.getVersion(),
     isPackaged: app.isPackaged,
+    platform: resolveVersionPlatform(process.platform),
     updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
+    versionCheckClient: createHttpVersionCheckClient({
+      endpoint: resolveVersionCheckEndpoint({
+        backendBaseUrl: process.env.AOA_BACKEND_BASE_URL,
+        versionCheckUrl: process.env.AOA_VERSION_CHECK_URL
+      })
+    }),
     onUpdateReady: (payload) => {
       broadcastUpdateReady(payload);
     },
@@ -1040,6 +1052,34 @@ export async function bootstrap(): Promise<void> {
     }
   }
   console.log("[bootstrap] 啟動完成");
+}
+
+function resolveVersionPlatform(platform: NodeJS.Platform): VersionPlatform {
+  if (platform === "darwin") {
+    return "MAC";
+  }
+  if (platform === "linux") {
+    return "LINUX";
+  }
+  return "WINDOWS";
+}
+
+function resolveVersionCheckEndpoint({
+  backendBaseUrl,
+  versionCheckUrl
+}: {
+  backendBaseUrl?: string | undefined;
+  versionCheckUrl?: string | undefined;
+}): string | undefined {
+  const normalizedVersionCheckUrl = versionCheckUrl?.trim();
+  if (normalizedVersionCheckUrl) {
+    return normalizedVersionCheckUrl;
+  }
+  const normalizedBackendBaseUrl = backendBaseUrl?.trim();
+  if (!normalizedBackendBaseUrl) {
+    return undefined;
+  }
+  return new URL("/appVersion/check", normalizedBackendBaseUrl).toString();
 }
 
 function shouldOpenUninstallWindow(argv: readonly string[]): boolean {

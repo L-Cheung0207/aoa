@@ -7,8 +7,7 @@ import { buildHomeUsageStats } from "../features/home/homeUsageStats";
 import { normalizeConnectionSettings } from "../features/settings/connectionSettings";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import {
-  MockUpdateDialog,
-  UpdateReadyDialog,
+  MockUpdateDialog
 } from "../features/update/MockUpdateDialog";
 import type { UpdateReadyPayload } from "../../preload/voiceApi";
 
@@ -194,7 +193,6 @@ export function HomeShell({
   const [activeSection, setActiveSection] = useState<HomeSection>(
     () => initialSection ?? "home",
   );
-  const [showMockUpdatePage, setShowMockUpdatePage] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [updateReady, setUpdateReady] = useState<
     UpdateReadyPayload | undefined
@@ -209,7 +207,7 @@ export function HomeShell({
   const shellText = getHomeShellText(settings?.ui.language);
 
   const openUpdateDialog = useCallback((): void => {
-    setShowMockUpdatePage(true);
+    setUpdateDialogOpen(true);
     setToast(undefined);
   }, []);
 
@@ -534,21 +532,15 @@ export function HomeShell({
         </div>
       ) : null}
       {updateDialogOpen ? (
-        <UpdateReadyDialog
-          language={settings?.ui.language}
-          version={updateReady?.version}
-          onClose={() => setUpdateDialogOpen(false)}
-          onRestart={() => {
-            void window.voiceAI.restartToUpdate().catch((error) => {
-              setToast(error instanceof Error ? error.message : String(error));
-            });
-          }}
-        />
-      ) : null}
-      {showMockUpdatePage ? (
         <MockUpdateDialog
           currentVersion={versionLabel}
-          onClose={() => setShowMockUpdatePage(false)}
+          language={settings?.ui.language}
+          readyPayload={updateReady}
+          onClose={() => {
+            setUpdateDialogOpen(false);
+            setUpdateReady(undefined);
+          }}
+          onRestartError={setToast}
         />
       ) : null}
     </main>

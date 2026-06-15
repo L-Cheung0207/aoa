@@ -102,12 +102,19 @@ export interface AppInfo {
 
 export interface UpdateReadyPayload {
   version?: string;
+  phase?: "ALPHA" | "BETA" | "PREVIEW" | "RELEASE";
+  updateType?: "FORCED" | "RECOMMENDED" | "OPTIONAL";
+  updateLog?: string;
+  downloadUrl?: string;
+  packageSize?: number;
+  packageName?: string;
 }
 
 export type UpdateCheckResult =
   | { status: "disabled" }
   | { status: "up-to-date" }
-  | { status: "available"; version?: string }
+  | ({ status: "available"; updaterError?: string } & UpdateReadyPayload)
+  | ({ status: "ready" } & UpdateReadyPayload)
   | { status: "error"; message: string };
 
 export type InstallerSelectDirectoryResult =
