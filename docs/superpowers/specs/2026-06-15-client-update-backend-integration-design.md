@@ -1,57 +1,57 @@
-# Client Update Backend Integration Design
+# 客户端升级对接后端设计
 
-## Goal
+## 目标
 
-Wire the existing mock update flow to the backend version-management contract. The backend `GET /appVersion/check` endpoint becomes the trusted source for update availability, metadata, and update type. The Electron main process remains the only layer allowed to trigger updater checks and restart installation.
+将现有 mock 升级流程接入后端版本管理契约。后端 `GET /appVersion/check` 接口作为更新可用性、版本元数据和更新类型的可信来源。Electron 主进程仍是唯一允许触发更新检查和重启安装的层。
 
-## Scope
+## 范围
 
-- Replace renderer-only mock update state with IPC-driven update state.
-- Add backend version check support for `GET /appVersion/check?platform={platform}&currentVersion={currentVersion}`.
-- Keep `electron-updater` as the packaged-app download and install mechanism.
-- Preserve development fake update behavior for manual UI validation only.
-- Surface manual check states: checking, latest, available, error, and ready.
-- Carry backend metadata through IPC: version code, update type, release notes, package size, and package name.
+- 将仅由渲染进程驱动的 mock 更新状态改为 IPC 驱动的真实更新状态。
+- 新增后端版本检查能力：`GET /appVersion/check?platform={platform}&currentVersion={currentVersion}`。
+- 保留 `electron-updater` 作为打包应用的下载和安装机制。
+- 保留开发环境假更新能力，仅用于手动验证 UI。
+- 展示手动检查状态：检查中、已是最新、发现更新、错误、已就绪。
+- 通过 IPC 传递后端元数据：版本号、更新类型、更新说明、安装包大小、安装包名称。
 
-Out of scope:
+不在本次范围内：
 
-- Backend management pages and upload flows.
-- Custom stream download and resumable download implementation.
-- WebSocket `version:update-available` notification handling.
-- Frontend test files, per project rule, unless requested separately.
+- 后台版本管理页面和上传流程。
+- 自定义流式下载和断点续传实现。
+- WebSocket `version:update-available` 通知处理。
+- 前端测试文件；按项目规则，除非单独要求，不新增前端测试。
 
-## Architecture
+## 架构
 
-The main process owns update orchestration.
+主进程负责升级编排。
 
-`createUpdateService()` will accept a small backend version client plus app context:
+`createUpdateService()` 接收一个轻量后端版本客户端和应用上下文：
 
-- `platform`: mapped from Electron `process.platform` to `WINDOWS`, `MAC`, or `LINUX`.
-- `currentVersion`: from `app.getVersion()`.
-- `isPackaged`: existing packaged/runtime guard.
-- `autoUpdater`: existing `electron-updater` adapter.
+- `platform`：从 Electron `process.platform` 映射为 `WINDOWS`、`MAC` 或 `LINUX`。
+- `currentVersion`：来自 `app.getVersion()`。
+- `isPackaged`：沿用现有打包/运行时判断。
+- `autoUpdater`：沿用现有 `electron-updater` 适配器。
 
-The check flow:
+检查流程：
 
-1. Manual or automatic trigger calls `UpdateService.checkForUpdates()`.
-2. In production packaged mode, the service calls backend `/appVersion/check`.
-3. If `hasUpdate=false`, return `up-to-date`.
-4. If `hasUpdate=true`, validate required backend fields and return `available` with metadata.
-5. In packaged mode, call `autoUpdater.checkForUpdates()` so existing auto-download and `update-downloaded` events continue to work.
-6. When `update-downloaded` fires, broadcast `voice:update-ready` with version metadata.
+1. 手动或自动触发调用 `UpdateService.checkForUpdates()`。
+2. 生产打包环境下，服务调用后端 `/appVersion/check`。
+3. 如果 `hasUpdate=false`，返回 `up-to-date`。
+4. 如果 `hasUpdate=true`，校验后端必需字段，返回带元数据的 `available`。
+5. 打包环境下调用 `autoUpdater.checkForUpdates()`，让现有自动下载和 `update-downloaded` 事件继续工作。
+6. `update-downloaded` 触发后，广播带版本元数据的 `voice:update-ready`。
 
-Development behavior stays explicit:
+开发环境行为保持显式：
 
-- Automatic startup checks return `disabled` and do not call backend or updater.
-- Manual checks may use existing fake update behavior when requested by IPC.
+- 自动启动检查返回 `disabled`，不调用后端或 updater。
+- 手动检查可按 IPC 请求使用现有假更新行为。
 
-## Components
+## 组件
 
-### Backend Version Client
+### 后端版本客户端
 
-A focused client module performs the HTTP request and normalizes the API response. It should accept a base URL or full endpoint source from runtime config/env, with a clear disabled/error result if no backend update endpoint is configured.
+新增聚焦的客户端模块，负责 HTTP 请求并规范化 API 响应。它应从运行时配置或环境变量读取 base URL 或完整接口来源；如果没有配置后端更新端点，则返回清晰的 disabled/error 结果。
 
-Expected response data:
+预期响应数据：
 
 - `hasUpdate`
 - `versionCode`
@@ -62,11 +62,11 @@ Expected response data:
 - `packageSize`
 - `packageName`
 
-Only `RELEASE` phase responses are expected from the backend check endpoint. The client treats missing required fields for `hasUpdate=true` as a configuration error.
+后端检查接口预期只返回 `RELEASE` 阶段版本。若 `hasUpdate=true` 但缺少必需字段，客户端按服务配置异常处理。
 
-### Update Service
+### 更新服务
 
-`UpdateCheckResult` expands from the current minimal updater result to include backend metadata:
+`UpdateCheckResult` 从当前最小 updater 结果扩展为包含后端元数据：
 
 - `disabled`
 - `up-to-date`
@@ -74,7 +74,7 @@ Only `RELEASE` phase responses are expected from the backend check endpoint. The
 - `ready`
 - `error`
 
-For `available`, include:
+`available` 包含：
 
 - `version`
 - `updateType`
@@ -82,84 +82,84 @@ For `available`, include:
 - `packageSize`
 - `packageName`
 
-The service also tracks current state so duplicate checks reuse the in-flight promise or current ready state.
+服务同时跟踪当前状态，确保重复检查复用进行中的 Promise 或当前 ready 状态。
 
-### IPC And Preload
+### IPC 与 Preload
 
-Keep existing channels:
+保留现有通道：
 
 - `voice:check-for-updates`
 - `voice:restart-to-update`
 - `voice:update-ready`
 
-Only widen the payload/result types. Renderer code continues to call `window.voiceAI.checkForUpdates()` and `window.voiceAI.restartToUpdate()`.
+只扩展 payload/result 类型。渲染进程继续调用 `window.voiceAI.checkForUpdates()` 和 `window.voiceAI.restartToUpdate()`。
 
-### Renderer Update Dialog
+### 渲染进程更新弹窗
 
-The current `MockUpdateDialog` becomes a real update dialog, or a new `UpdateDialog` replaces it while reusing styles.
+当前 `MockUpdateDialog` 演进为真实更新弹窗，或新增 `UpdateDialog` 替换它并复用样式。
 
-Opening the dialog immediately triggers `checkForUpdates()` and displays:
+打开弹窗后立即触发 `checkForUpdates()` 并展示：
 
-- `checking`: request in progress.
-- `latest`: backend reports no update.
-- `available`: backend reports update; show version, type, release notes, file name, and file size.
-- `error`: backend/updater/IPC failed; show retry.
-- `ready`: `voice:update-ready` received; show restart button.
+- `checking`：请求进行中。
+- `latest`：后端报告无更新。
+- `available`：后端报告有更新；展示版本、类型、更新说明、文件名、文件大小。
+- `error`：后端、updater 或 IPC 失败；展示重试入口。
+- `ready`：收到 `voice:update-ready`；展示重启按钮。
 
-Rules by update type:
+按更新类型处理：
 
-- `FORCED`: no close/skip in available or ready states.
-- `RECOMMENDED`: allow "not this session".
-- `OPTIONAL`: allow "skip this version", stored locally by version and platform.
+- `FORCED`：available 和 ready 状态下不允许关闭或跳过。
+- `RECOMMENDED`：允许“本次不提醒”。
+- `OPTIONAL`：允许“跳过此版本”，按版本和平台本地存储。
 
-## Data Flow
+## 数据流
 
-Manual check:
+手动检查：
 
-1. User clicks "Check for updates" from home/about/tray.
-2. Renderer opens dialog and calls `window.voiceAI.checkForUpdates()`.
-3. Main process calls backend version check.
-4. Main process returns normalized result and starts updater check when applicable.
-5. Renderer displays latest, available, or error.
-6. Later `voice:update-ready` moves the dialog to ready state.
-7. User clicks restart, renderer calls `restartToUpdate()`, main process calls `quitAndInstall(false, true)`.
+1. 用户从首页、关于页或托盘点击“检查更新”。
+2. 渲染进程打开弹窗并调用 `window.voiceAI.checkForUpdates()`。
+3. 主进程调用后端版本检查。
+4. 主进程返回规范化结果；需要时启动 updater 检查。
+5. 渲染进程展示已最新、发现更新或错误。
+6. 随后 `voice:update-ready` 将弹窗切到 ready 状态。
+7. 用户点击重启，渲染进程调用 `restartToUpdate()`，主进程调用 `quitAndInstall(false, true)`。
 
-Automatic startup check:
+自动启动检查：
 
-1. Bootstrap calls `updateService.checkForUpdates()`.
-2. Development returns `disabled`.
-3. Packaged production calls backend and updater silently.
-4. Errors are logged only.
-5. Download ready opens the about window with ready prompt, matching current behavior.
+1. Bootstrap 调用 `updateService.checkForUpdates()`。
+2. 开发环境返回 `disabled`。
+3. 打包生产环境调用后端并静默触发 updater。
+4. 错误仅记录日志。
+5. 下载就绪后打开关于页并展示 ready 提示，沿用现有行为。
 
-## Error Handling
+## 错误处理
 
-- Backend timeout/500/manual: return `error` with message for retry.
-- Backend timeout/500/automatic: log and do not interrupt user.
-- Invalid platform/current version: return `error` and log app context.
-- `hasUpdate=true` with missing `downloadUrl` or `versionCode`: return `error` with config-invalid message.
-- `autoUpdater.checkForUpdates()` failure after backend says available: return `available` metadata if backend check succeeded, but also log updater failure and surface retry for manual checks.
-- `restartToUpdate()` failure: propagate error so renderer can show retry/snooze.
+- 后端超时、500、手动检查：返回带 message 的 `error`，允许重试。
+- 后端超时、500、自动检查：只记录日志，不打断用户。
+- 非法 platform/currentVersion：返回 `error` 并记录应用上下文。
+- `hasUpdate=true` 但缺少 `downloadUrl` 或 `versionCode`：返回配置异常错误。
+- 后端已报告 available，但 `autoUpdater.checkForUpdates()` 失败：保留后端 available 元数据，同时记录 updater 失败；手动检查场景展示可重试。
+- `restartToUpdate()` 失败：向渲染进程抛出错误，允许展示重试或稍后处理。
 
-## Testing
+## 测试
 
-Backend version client and main update service need tests because behavior changes are in main process logic.
+后端版本客户端和主进程更新服务需要测试，因为行为变更集中在主进程逻辑。
 
-Required tests:
+必需测试：
 
-- maps backend `hasUpdate=false` to `up-to-date`.
-- maps backend `hasUpdate=true` to `available` metadata.
-- rejects `hasUpdate=true` with missing required fields.
-- maps backend request failure to `error`.
-- keeps development automatic checks disabled.
-- preserves manual development fake update.
-- calls `autoUpdater.checkForUpdates()` only when packaged and backend reports update.
-- reuses in-flight check promise for concurrent checks.
+- 后端 `hasUpdate=false` 映射为 `up-to-date`。
+- 后端 `hasUpdate=true` 映射为带元数据的 `available`。
+- `hasUpdate=true` 但缺少必需字段时拒绝。
+- 后端请求失败映射为 `error`。
+- 开发环境自动检查保持 disabled。
+- 保留手动开发假更新。
+- 仅在打包环境且后端报告有更新时调用 `autoUpdater.checkForUpdates()`。
+- 并发检查复用同一个 in-flight Promise。
 
-No frontend test files unless separately requested.
+除非单独要求，不新增前端测试文件。
 
-## Migration Notes
+## 迁移说明
 
-- Existing `UpdateReadyDialog` behavior remains compatible with `voice:update-ready`.
-- Existing tray/home/about entry points continue to use the same renderer entry.
-- Existing user changes in installer files are unrelated and should not be touched.
+- 现有 `UpdateReadyDialog` 行为继续兼容 `voice:update-ready`。
+- 现有托盘、首页、关于页入口继续使用同一个渲染进程入口。
+- 现有 installer 相关用户改动与本任务无关，不触碰。
