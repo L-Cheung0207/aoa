@@ -11,6 +11,7 @@ import {
   validateConnectionSettings,
 } from "./connectionSettings";
 import { MicrophoneDevicePicker } from "../../shared/ui/MicrophoneDevicePicker";
+import { ThemedIcon, type ThemedIconName } from "../../shared/ui/ThemedIcon";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import { useAutoSaveSettings } from "./useAutoSaveSettings";
 import { WaveformPreview } from "./WaveformPreview";
@@ -158,22 +159,7 @@ export function SettingsPage({
           aria-label={text.sections.appearance}
         >
           <span className="settings-group-header__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M12 3.5a8.5 8.5 0 0 0 0 17h.55a2.15 2.15 0 0 0 1.48-3.71l-.24-.23a1.4 1.4 0 0 1 .98-2.4H16a4.5 4.5 0 0 0 0-9H12Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M7.8 11.1h.01M9.8 7.7h.01M14.2 7.7h.01"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-              />
-            </svg>
+            <SettingsSectionIcon name="appearance" />
           </span>
           <span className="settings-group-header__label">
             {text.sections.appearance}
@@ -228,22 +214,7 @@ export function SettingsPage({
           aria-label={text.sections.shortcuts}
         >
           <span className="settings-group-header__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M5.75 7.25h12.5A2.75 2.75 0 0 1 21 10v4a2.75 2.75 0 0 1-2.75 2.75H5.75A2.75 2.75 0 0 1 3 14v-4a2.75 2.75 0 0 1 2.75-2.75Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M7 11h.01M10 11h.01M13 11h.01M16 11h1M7 14h6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              />
-            </svg>
+            <SettingsSectionIcon name="keyboard" />
           </span>
           <span className="settings-group-header__label">
             {text.sections.shortcuts}
@@ -337,21 +308,7 @@ export function SettingsPage({
           aria-label={text.sections.language}
         >
           <span className="settings-group-header__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path
-                d="M3.75 12h16.5M12 3.5c2.1 2.25 3.15 5.08 3.15 8.5S14.1 18.25 12 20.5M12 3.5C9.9 5.75 8.85 8.58 8.85 12S9.9 18.25 12 20.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
+            <SettingsSectionIcon name="language" />
           </span>
           <span className="settings-group-header__label">
             {text.sections.language}
@@ -424,21 +381,7 @@ export function SettingsPage({
       >
         <h2 className="settings-group-header" aria-label={text.sections.audio}>
           <span className="settings-group-header__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M12 3.75a3.25 3.25 0 0 0-3.25 3.25v4.5a3.25 3.25 0 0 0 6.5 0V7A3.25 3.25 0 0 0 12 3.75Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path
-                d="M6.25 10.75v.85a5.75 5.75 0 0 0 11.5 0v-.85M12 17.35v2.9M8.75 20.25h6.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
+            <SettingsSectionIcon name="microphone" />
           </span>
           <span className="settings-group-header__label">
             {text.sections.audio}
@@ -596,23 +539,7 @@ export function SettingsPage({
           aria-label={text.sections.appBehavior}
         >
           <span className="settings-group-header__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M4.5 7.25h15a1.75 1.75 0 0 1 1.75 1.75v8a1.75 1.75 0 0 1-1.75 1.75h-15A1.75 1.75 0 0 1 2.75 17V9A1.75 1.75 0 0 1 4.5 7.25Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M8.5 7.25V5.8c0-.86.7-1.55 1.55-1.55h3.9c.86 0 1.55.7 1.55 1.55v1.45M2.75 13h18.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <SettingsSectionIcon name="appBehavior" />
           </span>
           <span className="settings-group-header__label">
             {text.sections.appBehavior}
@@ -651,22 +578,7 @@ export function SettingsPage({
           aria-label={text.sections.connection}
         >
           <span className="settings-group-header__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M7.5 12a4.5 4.5 0 0 1 4.5-4.5h2.5A4.5 4.5 0 0 1 19 12a4.5 4.5 0 0 1-4.5 4.5H13"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <path
-                d="M11 16.5H9.5A4.5 4.5 0 0 1 5 12a4.5 4.5 0 0 1 4.5-4.5H11"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
+            <SettingsSectionIcon name="connection" mode="image" />
           </span>
           <span className="settings-group-header__label">
             {text.sections.connection}
@@ -713,6 +625,16 @@ export function SettingsPage({
       )}
     </main>
   );
+}
+
+function SettingsSectionIcon({
+  name,
+  mode = "mask",
+}: {
+  name: ThemedIconName;
+  mode?: "mask" | "image";
+}): React.JSX.Element {
+  return <ThemedIcon name={name} mode={mode} />;
 }
 
 function SettingsSwitch({

@@ -12,8 +12,13 @@ const WORKSPACE_PACKAGES = [
   "@voice/native-helper"
 ];
 
+const versionPhase = process.env.AOA_VERSION_PHASE ?? "ALPHA";
+
 export default defineConfig({
   main: {
+    define: {
+      __AOA_VERSION_PHASE__: JSON.stringify(versionPhase)
+    },
     plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES })],
     build: {
       rollupOptions: {

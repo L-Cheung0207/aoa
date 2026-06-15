@@ -6,9 +6,10 @@ import { OnboardingGuide } from "../features/home/components/OnboardingGuide";
 import { buildHomeUsageStats } from "../features/home/homeUsageStats";
 import { normalizeConnectionSettings } from "../features/settings/connectionSettings";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { ThemedIcon } from "../shared/ui/ThemedIcon";
 import {
-  MockUpdateDialog
-} from "../features/update/MockUpdateDialog";
+  UpdateDialog
+} from "../features/update/UpdateDialog";
 import type { UpdateReadyPayload } from "../../preload/voiceApi";
 
 interface HomeShellProps {
@@ -402,7 +403,7 @@ export function HomeShell({
             type="button"
             onClick={() => setActiveSection("home")}
           >
-            <HomeIcon />
+            <HomeIcon active={activeSection === "home"} />
             {shellText.home}
           </button>
           <button
@@ -414,7 +415,7 @@ export function HomeShell({
             type="button"
             onClick={() => setActiveSection("history")}
           >
-            <HistoryIcon />
+            <HistoryIcon active={activeSection === "history"} />
             {shellText.history}
           </button>
           <button
@@ -427,7 +428,7 @@ export function HomeShell({
             aria-label={shellText.openSettings}
             onClick={() => setActiveSection("settings")}
           >
-            <SettingsIcon />
+            <SettingsIcon active={activeSection === "settings"} />
             {shellText.settings}
           </button>
           <button
@@ -440,7 +441,7 @@ export function HomeShell({
             aria-label={shellText.about}
             onClick={() => setActiveSection("about")}
           >
-            <InfoIcon />
+            <InfoIcon active={activeSection === "about"} />
             {shellText.about}
           </button>
         </nav>
@@ -532,7 +533,7 @@ export function HomeShell({
         </div>
       ) : null}
       {updateDialogOpen ? (
-        <MockUpdateDialog
+        <UpdateDialog
           currentVersion={versionLabel}
           language={settings?.ui.language}
           readyPayload={updateReady}
@@ -720,206 +721,66 @@ function formatVersionLabel(appVersion: string): string {
   return normalized.startsWith("v") ? normalized : `v${normalized}`;
 }
 
-function HomeIcon(): React.JSX.Element {
+function HomeIcon({ active }: { active: boolean }): React.JSX.Element {
   return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <polyline points="9 22 9 12 15 12 15 22" />
-    </svg>
+    <ThemedIcon
+      name={active ? "navHomeActive" : "navHomeMuted"}
+      mode="image"
+    />
   );
 }
 
-function HistoryIcon(): React.JSX.Element {
+function HistoryIcon({ active }: { active: boolean }): React.JSX.Element {
   return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
+    <ThemedIcon
+      name={active ? "navHistoryActive" : "navHistoryMuted"}
+      mode="image"
+    />
   );
 }
 
-function SettingsIcon(): React.JSX.Element {
+function SettingsIcon({ active }: { active: boolean }): React.JSX.Element {
   return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
+    <ThemedIcon
+      name={active ? "navSettingsActive" : "navSettingsMuted"}
+      mode="image"
+    />
   );
 }
 
-function InfoIcon(): React.JSX.Element {
+function InfoIcon({ active }: { active: boolean }): React.JSX.Element {
   return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="16" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
+    <ThemedIcon
+      name={active ? "navAboutActive" : "navAboutMuted"}
+      mode="image"
+    />
   );
 }
 
 function UserIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="8" r="4" />
-      <path d="M20 21a8 8 0 1 0-16 0" />
-    </svg>
-  );
+  return <ThemedIcon name="app" />;
 }
 
 function PowerIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v10" />
-      <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
-    </svg>
-  );
+  return <ThemedIcon name="power" />;
 }
 
 function BrandIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="64"
-      height="64"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
-      <path d="M8 9h8" />
-      <path d="M8 13h5" />
-    </svg>
-  );
+  return <ThemedIcon name="app" />;
 }
 
 function RefreshIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <polyline points="21 3 21 9 15 9" />
-    </svg>
-  );
+  return <ThemedIcon name="refresh" />;
 }
 
 function MailIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 4h16v16H4z" />
-      <path d="M22 6l-10 7L2 6" />
-    </svg>
-  );
+  return <ThemedIcon name="mail" />;
 }
 
 function FileIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-    </svg>
-  );
+  return <ThemedIcon name="file" />;
 }
 
 function ShieldIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
+  return <ThemedIcon name="privacy" />;
 }

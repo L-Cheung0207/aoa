@@ -15,35 +15,61 @@ process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??=
   "https://npmmirror.com/mirrors/electron-builder-binaries/";
 process.env.CSC_IDENTITY_AUTO_DISCOVERY ??= "false";
 
-export function createDistWinCommands(scriptUrl = import.meta.url) {
+const VERSION_PHASES = new Set(["ALPHA", "BETA", "RELEASE"]);
+
+export function parseDistWinOptions(argv = []) {
+  const phaseIndex = argv.findIndex((arg) => arg === "--phase");
+  if (phaseIndex < 0) {
+    return {};
+  }
+  const rawPhase = argv[phaseIndex + 1];
+  const phase = rawPhase?.trim().toUpperCase();
+  if (!phase || !VERSION_PHASES.has(phase)) {
+    throw new Error(`Unsupported version phase: ${rawPhase ?? ""}`);
+  }
+  return { phase };
+}
+
+function createBuildEnv(options = {}) {
+  return options.phase ? { AOA_VERSION_PHASE: options.phase } : undefined;
+}
+
+export function createDistWinCommands(scriptUrl = import.meta.url, options = {}) {
   const packageRoot = fileURLToPath(new URL("..", scriptUrl));
   const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
+  const env = createBuildEnv(options);
 
   return [
     {
       command: "pnpm",
       args: ["--filter", "@voice/native-helper", "build:native"],
-      cwd: workspaceRoot
+      cwd: workspaceRoot,
+      env
     },
     {
       command: "pnpm",
       args: ["run", "build"],
-      cwd: packageRoot
+      cwd: packageRoot,
+      env
     },
     {
       command: "electron-builder",
       args: ["--win", "nsis", "--config", "electron-builder.yml"],
-      cwd: packageRoot
+      cwd: packageRoot,
+      env
     }
   ];
 }
 
-export function createDistInstallerShellCommands(scriptUrl = import.meta.url) {
+export function createDistInstallerShellCommands(
+  scriptUrl = import.meta.url,
+  options = {}
+) {
   const packageRoot = fileURLToPath(new URL("..", scriptUrl));
   const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
 
   return [
-    ...createDistWinCommands(scriptUrl),
+    ...createDistWinCommands(scriptUrl, options),
     {
       command: "node",
       args: ["scripts/dist-win.mjs", "--prepare-installer-shell-payload"],
@@ -145,12 +171,12 @@ export function removeLegacyInstallerShellArtifacts(packageRoot, options = {}) {
 }
 
 export function runDistWin(commands = createDistWinCommands()) {
-  for (const { command, args, cwd } of commands) {
+  for (const { command, args, cwd, env } of commands) {
     const result = spawnSync(command, args, {
       cwd,
       stdio: "inherit",
       shell: true,
-      env: process.env
+      env: { ...process.env, ...env }
     });
     const status = result.status ?? 1;
     if (status !== 0) {
@@ -161,16 +187,17 @@ export function runDistWin(commands = createDistWinCommands()) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const options = parseDistWinOptions(process.argv.slice(2));
   if (process.argv.includes("--prepare-installer-shell-payload")) {
     prepareInstallerShellPayload();
     process.exit(0);
   }
   if (process.argv.includes("--installer-shell")) {
-    process.exit(runDistWin(createDistInstallerShellCommands()));
+    process.exit(runDistWin(createDistInstallerShellCommands(import.meta.url, options)));
   }
   if (process.argv.includes("--remove-legacy-installer-shell-artifacts")) {
     removeLegacyInstallerShellArtifacts(fileURLToPath(new URL("..", import.meta.url)));
     process.exit(0);
   }
-  process.exit(runDistWin());
+  process.exit(runDistWin(createDistWinCommands(import.meta.url, options)));
 }

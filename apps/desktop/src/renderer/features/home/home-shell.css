@@ -1,14 +1,14 @@
 /* ===== 首頁視窗：托盤雙擊開啟的主介面 ===== */
 body:has(.home-page) {
   overflow: hidden;
-  background: #0b0f16;
-  color: #e5e7eb;
+  background: #2a2a2a;
+  color: #f2f2f2;
 }
 
 .home-page {
-  --home-shell-bg: #0b0f16;
-  --home-content-bg: rgba(3, 6, 23, 0.78);
-  --home-content-border: rgba(148, 163, 184, 0.14);
+  --home-shell-bg: #2a2a2a;
+  --home-content-bg: #000000;
+  --home-content-border: rgba(255, 255, 255, 0.06);
   --home-sidebar-width: 196px;
   --home-sidebar-content-gap: 10px;
   --home-content-outer-gap: 14px;
@@ -23,7 +23,7 @@ body:has(.home-page) {
   padding: 0 var(--home-content-outer-gap) var(--home-content-outer-gap) 0;
   overflow: hidden;
   background: var(--home-shell-bg);
-  color: #e5e7eb;
+  color: #f2f2f2;
   font-family:
     "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
@@ -68,7 +68,7 @@ body:has(.home-page) {
   display: grid;
   grid-template-columns: repeat(3, 54px);
   height: var(--home-topbar-height);
-  color: rgba(248, 250, 252, 0.92);
+  color: rgba(245, 245, 245, 0.72);
   -webkit-app-region: no-drag;
 }
 
@@ -143,11 +143,11 @@ body:has(.home-page) {
 }
 
 .home-window-controls__button:hover {
-  background: rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .home-window-controls__button:active {
-  background: rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .home-window-controls__button--close:hover {
@@ -206,10 +206,10 @@ body:has(.home-page) {
   width: calc(100% + 14px);
   height: 42px;
   padding: 0 14px 0 26px;
-  color: rgba(226, 232, 240, 0.78);
+  color: rgba(245, 245, 245, 0.58);
   background: transparent;
   border: 0;
-  border-radius: 0 10px 10px 0;
+  border-radius: 10px 0 0 10px;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -218,21 +218,37 @@ body:has(.home-page) {
     color 160ms ease;
 }
 
-.home-nav__item--active,
+.home-nav__item .themed-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .home-nav__item:hover {
-  color: #f8fafc;
-  background: rgba(148, 163, 184, 0.14);
+  color: #f5f5f5;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.home-nav__item--active,
+.home-nav__item--active:hover {
+  color: #f5f5f5;
+  background: linear-gradient(
+    90deg,
+    rgba(44, 72, 137, 0.96) 0%,
+    rgba(44, 72, 137, 0.86) 42%,
+    rgba(44, 72, 137, 0.42) 72%,
+    rgba(44, 72, 137, 0) 100%
+  );
 }
 
 .home-nav__item--active::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 9px;
+  top: 0;
   width: 4px;
-  height: 24px;
-  border-radius: 0 4px 4px 0;
-  background: #3b82f6;
+  height: 100%;
+  border-radius: 4px;
+  background: #4d7cff;
 }
 
 :root[data-theme="light"] .home-nav__item {
@@ -252,7 +268,7 @@ body:has(.home-page) {
   gap: 10px;
   margin: 18px 22px 0;
   padding: 16px 0 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .home-user {
@@ -260,7 +276,7 @@ body:has(.home-page) {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  color: rgba(226, 232, 240, 0.72);
+  color: rgba(245, 245, 245, 0.62);
   font-size: 13px;
 }
 
@@ -280,8 +296,13 @@ body:has(.home-page) {
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.12);
-  color: rgba(226, 232, 240, 0.78);
+  background: transparent;
+  color: rgba(245, 245, 245, 0.66);
+}
+
+.home-user__icon .themed-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .home-user__name {
@@ -297,8 +318,8 @@ body:has(.home-page) {
   justify-content: center;
   width: 32px;
   height: 32px;
-  color: rgba(226, 232, 240, 0.72);
-  background: rgba(148, 163, 184, 0.06);
+  color: rgba(245, 245, 245, 0.66);
+  background: transparent;
   border: 0;
   border-radius: 10px;
   cursor: pointer;
@@ -306,6 +327,11 @@ body:has(.home-page) {
     background-color 160ms ease,
     color 160ms ease,
     transform 120ms ease;
+}
+
+.home-power .themed-icon {
+  width: 18px;
+  height: 18px;
 }
 
 :root[data-theme="light"] .home-power {
@@ -319,8 +345,8 @@ body:has(.home-page) {
 }
 
 .home-power:hover {
-  color: #f8fafc;
-  background: rgba(148, 163, 184, 0.16);
+  color: #f5f5f5;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .home-power:active {
@@ -342,8 +368,8 @@ body:has(.home-page) {
   border: 0;
   border-top: 1px solid var(--home-content-border);
   border-left: 1px solid var(--home-content-border);
-  border-radius: 12px;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  border-radius: 10px;
+  box-shadow: none;
 }
 
 :root[data-theme="light"] .home-content {

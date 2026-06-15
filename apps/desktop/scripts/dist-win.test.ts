@@ -5,6 +5,7 @@ import {
   createDistInstallerShellCommands,
   createDistWinCommands,
   createInstallerShellCommands,
+  parseDistWinOptions,
   removeLegacyInstallerShellArtifacts,
   resolveInstallerPayloadSetupPath,
   validateInstallerPayloadSetup,
@@ -34,6 +35,41 @@ describe("desktop Windows distribution script", () => {
         cwd: packageRoot,
       },
     ]);
+  });
+
+  it("passes the requested version phase into build and packaging commands", () => {
+    const scriptUrl = new URL("./dist-win.mjs", import.meta.url);
+    const commands = createDistWinCommands(scriptUrl, { phase: "RELEASE" });
+
+    expect(commands.map((command) => command.env)).toEqual([
+      { AOA_VERSION_PHASE: "RELEASE" },
+      { AOA_VERSION_PHASE: "RELEASE" },
+      { AOA_VERSION_PHASE: "RELEASE" },
+    ]);
+  });
+
+  it("keeps the caller environment when no phase is requested", () => {
+    const scriptUrl = new URL("./dist-win.mjs", import.meta.url);
+    const commands = createDistWinCommands(scriptUrl);
+
+    expect(commands.map((command) => command.env)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("parses a release phase from distribution arguments", () => {
+    expect(parseDistWinOptions(["--phase", "release"])).toEqual({
+      phase: "RELEASE",
+    });
+    expect(parseDistWinOptions([])).toEqual({});
+  });
+
+  it("rejects unsupported distribution phases", () => {
+    expect(() => parseDistWinOptions(["--phase", "PREVIEW"])).toThrow(
+      "Unsupported version phase: PREVIEW",
+    );
   });
 
   it("can build the legacy installer shell distribution explicitly", () => {

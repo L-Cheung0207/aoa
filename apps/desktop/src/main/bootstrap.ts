@@ -43,6 +43,7 @@ import {
 } from "./config/configStore";
 import { readAppConfig, resolveAppConfigPath } from "./config/appConfig";
 import { createElectronStoreAdapter } from "./config/electronStoreAdapter";
+import { applyLocalEnvFiles } from "./config/localEnv";
 import { getOrCreateInstallationId } from "./installation/installationId";
 import { createFileHistoryStore } from "./history/historyStore";
 import { applyPendingInstallOptions, resolvePendingInstallOptionsPath } from "./installer/installOptions";
@@ -69,6 +70,7 @@ import { createTray } from "./tray/createTray";
 import { createUpdateService } from "./update/updateService";
 import {
   createHttpVersionCheckClient,
+  type VersionPhase,
   type VersionPlatform
 } from "./update/versionCheckClient";
 import { installMediaPermissionHandlers } from "./permissions/mediaPermission";
@@ -91,6 +93,8 @@ import {
   wireShortcutCaptureWindowGuard,
 } from "./windows/shortcutCaptureWindowGuard";
 import { registerWindowControlIpc } from "./windows/windowControlIpc";
+
+declare const __AOA_VERSION_PHASE__: string | undefined;
 
 const TRAY_TOOLTIP_TEXT: Record<
   InterfaceLanguage,
@@ -359,6 +363,15 @@ export function handoffInstallerLaunch(input: {
 
 export async function bootstrap(): Promise<void> {
   registerWindowControlIpc(ipcMain);
+  if (!app.isPackaged) {
+    const loadedEnvKeys = applyLocalEnvFiles([
+      join(app.getAppPath(), "..", "..", ".env"),
+      join(app.getAppPath(), ".env"),
+    ]);
+    if (loadedEnvKeys.length > 0) {
+      console.log(`[bootstrap] loaded local env keys=${loadedEnvKeys.join(",")}`);
+    }
+  }
   if (
     shouldOpenInstallerShell(
       process.argv,
@@ -467,17 +480,24 @@ export async function bootstrap(): Promise<void> {
     getSettings: () => configStore.get(),
   });
   const uninstallService = createAppUninstallService();
+  const versionCheckEndpoint = resolveVersionCheckEndpoint({
+    backendBaseUrl: process.env.AOA_BACKEND_BASE_URL,
+    versionCheckUrl: process.env.AOA_VERSION_CHECK_URL,
+  });
+  const versionPhase = resolvePackagedVersionPhase(__AOA_VERSION_PHASE__);
+  console.log(
+    `[bootstrap] update versionCheckEndpoint=${versionCheckEndpoint ?? "disabled"} phase=${versionPhase}`
+  );
   const updateService = createUpdateService({
+    allowDevelopmentBackendCheck: Boolean(versionCheckEndpoint),
     autoUpdater: electronUpdater.autoUpdater,
     currentVersion: app.getVersion(),
     isPackaged: app.isPackaged,
     platform: resolveVersionPlatform(process.platform),
     updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
     versionCheckClient: createHttpVersionCheckClient({
-      endpoint: resolveVersionCheckEndpoint({
-        backendBaseUrl: process.env.AOA_BACKEND_BASE_URL,
-        versionCheckUrl: process.env.AOA_VERSION_CHECK_URL
-      })
+      endpoint: versionCheckEndpoint,
+      phase: versionPhase,
     }),
     onUpdateReady: (payload) => {
       broadcastUpdateReady(payload);
@@ -1062,6 +1082,20 @@ function resolveVersionPlatform(platform: NodeJS.Platform): VersionPlatform {
     return "LINUX";
   }
   return "WINDOWS";
+}
+
+export function resolvePackagedVersionPhase(
+  phase: string | undefined
+): VersionPhase {
+  const normalized = phase?.trim().toUpperCase();
+  if (
+    normalized === "ALPHA" ||
+    normalized === "BETA" ||
+    normalized === "RELEASE"
+  ) {
+    return normalized;
+  }
+  return "ALPHA";
 }
 
 function resolveVersionCheckEndpoint({

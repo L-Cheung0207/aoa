@@ -1,5 +1,6 @@
 /* App stylesheet entry point. Imports stay in cascade order. */
 @import "./foundation.css";
+@import "../shared/ui/themed-icon.css";
 @import "../shared/ui/MicrophoneDevicePicker/microphone-device-picker.css";
 @import "../shared/ui/VolumeMeter/volume-meter.css";
 @import "../features/overlay/recording-overlay.css";
@@ -7,7 +8,7 @@
 @import "../features/settings/settings-window.css";
 @import "../features/settings/waveform-preview.css";
 @import "../features/home/about.css";
-@import "../features/update/mock-update-dialog.css";
+@import "../features/update/update-dialog.css";
 @import "../features/home/home-shell.css";
 @import "../features/history/history.css";
 @import "../features/home/home-dashboard.css";

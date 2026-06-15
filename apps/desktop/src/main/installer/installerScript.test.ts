@@ -31,6 +31,21 @@ describe("single-layer NSIS installer script", () => {
 
     expect(script).toContain("nsDialogs.nsh");
     expect(script).toContain("FileFunc.nsh");
+    expect(script).toContain('!define MUI_FONT "Microsoft YaHei UI"');
+    expect(script).toContain('!define MUI_FONTSIZE "9"');
+    expect(script).toContain('SetFont "Microsoft YaHei UI" 9');
+    expect(script).toContain('!define VOICE_LICENSE_TOP_TEXT "閱讀協議內容。"');
+    expect(script).toContain(
+      '!define VOICE_LICENSE_BOTTOM_TEXT "必須接受協議才能繼續安裝 Voice Assistant。"',
+    );
+    expect(script).toContain(
+      '!define MUI_LICENSEPAGE_TEXT_TOP "${VOICE_LICENSE_TOP_TEXT}"',
+    );
+    expect(script).toContain(
+      '!define MUI_LICENSEPAGE_TEXT_BOTTOM "${VOICE_LICENSE_BOTTOM_TEXT}"',
+    );
+    expect(script).not.toContain("MUI_HEADER_TRANSPARENT_TEXT");
+    expect(script).not.toContain("MUI_COMPONENTSPAGE_SMALLDESC");
     expect(script).toContain("!macro licensePage");
     expect(script).toContain("!insertmacro MUI_PAGE_LICENSE");
     expect(script).toContain("!macro customPageAfterChangeDir");
@@ -59,7 +74,8 @@ describe("single-layer NSIS installer script", () => {
     );
     expect(raw.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xfe]));
     expect(text).toContain("Voice Assistant Service");
-    expect(text).toContain("用户使用协议");
+    expect(text).toContain("用戶使用協議");
+    expect(text).toContain("安裝程式");
     expect(text).toContain("terms.txt");
   });
 
@@ -71,12 +87,31 @@ describe("single-layer NSIS installer script", () => {
     expect(script).toContain("VOICE_OPTIONS_PAGE_TITLE");
     expect(script).toContain("VOICE_DESKTOP_SHORTCUT_TEXT");
     expect(script).toContain("VOICE_LAUNCH_AT_LOGIN_TEXT");
+    expect(script).toContain(
+      '${NSD_CreateCheckbox} 0 16u 100% 12u "${VOICE_DESKTOP_SHORTCUT_TEXT}"',
+    );
+    expect(script).toContain(
+      '${NSD_CreateCheckbox} 0 36u 100% 12u "${VOICE_LAUNCH_AT_LOGIN_TEXT}"',
+    );
     expect(script).toContain("${NSD_CreateCheckbox}");
     expect(script).toContain("${NSD_GetState}");
     expect(script).not.toContain("VoiceInstallDirInput");
     expect(script).not.toContain("${NSD_CreateDirRequest}");
     expect(script).not.toContain("${NSD_CreateBrowseButton}");
     expect(script).not.toContain("nsDialogs::SelectFolderDialog");
+  });
+
+  it("centers the standard install progress bar on the install page", () => {
+    const script = readInstallerScript();
+
+    expect(script).toContain(
+      "!define MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceInstallProgressPageShow",
+    );
+    expect(script).toContain("Function VoiceInstallProgressPageShow");
+    expect(script).toContain("GetDlgItem $1 $0 1004");
+    expect(script).toContain("USER32::GetClientRect");
+    expect(script).toContain("USER32::SetWindowPos");
+    expect(script).toContain("i0x15");
   });
 
   it("runs preflight checks before the install page starts", () => {
@@ -156,6 +191,8 @@ describe("single-layer NSIS installer script", () => {
       "ExecWait '\"$INSTDIR\\${APP_EXECUTABLE_FILENAME}\" --uninstall' $0",
     );
     expect(script).not.toContain("SetSilent silent");
+    expect(script).not.toContain("MUI_CUSTOMFUNCTION_UNGUIINIT");
+    expect(script).not.toContain("VoiceResizeUninstallWindow");
     expect(script).toContain("!macro customUnInstall");
   });
 

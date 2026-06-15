@@ -1,5 +1,5 @@
 export type VersionPlatform = "WINDOWS" | "MAC" | "LINUX";
-export type VersionPhase = "ALPHA" | "BETA" | "PREVIEW" | "RELEASE";
+export type VersionPhase = "ALPHA" | "BETA" | "RELEASE";
 export type VersionUpdateType = "FORCED" | "RECOMMENDED" | "OPTIONAL";
 
 export interface VersionCheckRequest {
@@ -28,6 +28,13 @@ export interface VersionCheckClient {
 export interface HttpVersionCheckClientOptions {
   endpoint?: string | undefined;
   fetch?: FetchLike | undefined;
+  logger?: VersionCheckLogger | undefined;
+  phase?: VersionPhase | undefined;
+}
+
+export interface VersionCheckLogger {
+  log(message: string): void;
+  warn(message: string): void;
 }
 
 type FetchLike = (
@@ -49,20 +56,36 @@ export function createHttpVersionCheckClient(
 ): VersionCheckClient {
   const endpoint = options.endpoint?.trim();
   const fetchImpl = options.fetch ?? fetch;
+  const logger = options.logger ?? console;
+  const phase = options.phase ?? "ALPHA";
 
   return {
     async check(request): Promise<VersionCheckResult> {
       if (!endpoint) {
+        logger.log("[update] version check disabled: endpoint missing");
         return { disabled: true };
       }
       const url = new URL(endpoint);
       url.searchParams.set("platform", request.platform);
       url.searchParams.set("currentVersion", request.currentVersion);
+      url.searchParams.set("phase", phase);
+      logger.log(`[update] version check request url=${url.toString()}`);
       const response = await fetchImpl(url.toString(), { method: "GET" });
       if (!response.ok) {
+        logger.warn(`[update] version check failed status=${response.status}`);
         throw new Error(`VERSION_CHECK_HTTP_${response.status}`);
       }
-      return normalizeVersionCheckResponse(await response.json());
+      const result = normalizeVersionCheckResponse(await response.json());
+      if ("disabled" in result) {
+        logger.log("[update] version check response disabled");
+      } else if (!result.hasUpdate) {
+        logger.log("[update] version check response hasUpdate=false");
+      } else {
+        logger.log(
+          `[update] version check response hasUpdate=true version=${result.versionCode} type=${result.updateType}`
+        );
+      }
+      return result;
     }
   };
 }
@@ -130,7 +153,6 @@ function readPhase(input: unknown): VersionPhase {
   if (
     input === "ALPHA" ||
     input === "BETA" ||
-    input === "PREVIEW" ||
     input === "RELEASE"
   ) {
     return input;

@@ -16,18 +16,18 @@
 
 :root[data-theme="dark"] .settings,
 :root:not([data-theme="light"]) .settings {
-  --settings-page-bg: #07080b;
-  --settings-panel-bg: rgba(16, 22, 33, 0.9);
-  --settings-panel-border: rgba(148, 163, 184, 0.16);
-  --settings-row-border: rgba(148, 163, 184, 0.14);
-  --settings-title: #f8fafc;
-  --settings-text: rgba(248, 250, 252, 0.9);
-  --settings-muted: rgba(148, 163, 184, 0.82);
-  --settings-control-bg: rgba(2, 6, 23, 0.42);
-  --settings-control-border: rgba(148, 163, 184, 0.24);
-  --settings-control-border-hover: rgba(203, 213, 225, 0.38);
-  --settings-control-focus: rgba(148, 163, 184, 0.16);
-  --settings-accent: #60a5fa;
+  --settings-page-bg: #000000;
+  --settings-panel-bg: #000000;
+  --settings-panel-border: rgba(255, 255, 255, 0.06);
+  --settings-row-border: transparent;
+  --settings-title: #f5f5f5;
+  --settings-text: #d8d8d8;
+  --settings-muted: #969696;
+  --settings-control-bg: #333333;
+  --settings-control-border: #333333;
+  --settings-control-border-hover: #454545;
+  --settings-control-focus: rgba(255, 255, 255, 0.12);
+  --settings-accent: #7f9cf5;
 }
 
 .settings__title {
@@ -58,7 +58,7 @@
   gap: 10px;
   margin: 0;
   padding: 7px 18px 8px;
-  color: var(--settings-muted);
+  color: var(--settings-text);
   border-bottom: 1px solid var(--settings-row-border);
   font-size: 15px;
   font-weight: 650;
@@ -74,7 +74,8 @@
   color: var(--settings-muted);
 }
 
-.settings-group-header__icon svg {
+.settings-group-header__icon svg,
+.settings-group-header__icon .themed-icon {
   display: block;
   width: 17px;
   height: 17px;
@@ -181,6 +182,17 @@
     background-color 160ms ease,
     border-color 160ms ease,
     transform 120ms ease;
+}
+
+:root[data-theme="dark"] .settings .settings__select,
+:root[data-theme="dark"] .settings .settings__input,
+:root[data-theme="dark"] .settings .mic-picker__trigger,
+:root[data-theme="dark"] .settings .settings-shortcut-recorder,
+:root:not([data-theme="light"]) .settings .settings__select,
+:root:not([data-theme="light"]) .settings .settings__input,
+:root:not([data-theme="light"]) .settings .mic-picker__trigger,
+:root:not([data-theme="light"]) .settings .settings-shortcut-recorder {
+  box-shadow: none;
 }
 
 .settings .settings__select,

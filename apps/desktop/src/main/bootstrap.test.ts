@@ -13,6 +13,7 @@ import {
   resolveOverlayWindowLayout,
   shouldRunScheduledOverlayHide,
   shouldOpenHomeOnLaunch,
+  resolvePackagedVersionPhase,
   shouldReplayMicErrorOverlay,
   shouldShowShortcutHelpForState
 } from "./bootstrap";
@@ -158,6 +159,14 @@ describe("bootstrap overlay visibility", () => {
     expect(shouldShowShortcutHelpForState("result")).toBe(false);
     expect(shouldShowShortcutHelpForState("error")).toBe(false);
     expect(shouldShowShortcutHelpForState("canceled")).toBe(false);
+  });
+
+  it("resolves packaged version phase from build-time configuration", () => {
+    expect(resolvePackagedVersionPhase(undefined)).toBe("ALPHA");
+    expect(resolvePackagedVersionPhase("")).toBe("ALPHA");
+    expect(resolvePackagedVersionPhase(" beta ")).toBe("BETA");
+    expect(resolvePackagedVersionPhase("RELEASE")).toBe("RELEASE");
+    expect(resolvePackagedVersionPhase("PREVIEW")).toBe("ALPHA");
   });
 });
 

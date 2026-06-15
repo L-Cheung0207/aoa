@@ -6,6 +6,7 @@ import {
 
 describe("version check client", () => {
   it("maps a backend no-update response", async () => {
+    const logger = createLogger();
     const fetch = vi.fn(async () => createJsonResponse({
       code: 200,
       message: "success",
@@ -22,19 +23,52 @@ describe("version check client", () => {
     }));
     const client = createHttpVersionCheckClient({
       endpoint: " https://api.example.com/appVersion/check ",
-      fetch
+      fetch,
+      logger
     });
 
     await expect(
       client.check({ platform: "WINDOWS", currentVersion: "1.2.3" })
     ).resolves.toEqual({ hasUpdate: false });
     expect(fetch).toHaveBeenCalledWith(
-      "https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3",
+      "https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3&phase=ALPHA",
+      { method: "GET" }
+    );
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] version check request url=https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3&phase=ALPHA"
+    );
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] version check response hasUpdate=false"
+    );
+  });
+
+  it("uses the configured version phase in the backend request", async () => {
+    const logger = createLogger();
+    const fetch = vi.fn(async () =>
+      createJsonResponse({
+        data: {
+          hasUpdate: false
+        }
+      })
+    );
+    const client = createHttpVersionCheckClient({
+      endpoint: "https://api.example.com/appVersion/check",
+      fetch,
+      logger,
+      phase: "BETA"
+    });
+
+    await expect(
+      client.check({ platform: "WINDOWS", currentVersion: "1.2.3" })
+    ).resolves.toEqual({ hasUpdate: false });
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3&phase=BETA",
       { method: "GET" }
     );
   });
 
   it("maps a backend update response with metadata", async () => {
+    const logger = createLogger();
     const client = createHttpVersionCheckClient({
       endpoint: "https://api.example.com/appVersion/check",
       fetch: vi.fn(async () => createJsonResponse({
@@ -48,7 +82,8 @@ describe("version check client", () => {
           packageSize: 157286400,
           packageName: "aoa-setup-1.2.4.exe"
         }
-      }))
+      })),
+      logger
     });
 
     await expect(
@@ -63,6 +98,9 @@ describe("version check client", () => {
       packageSize: 157286400,
       packageName: "aoa-setup-1.2.4.exe"
     });
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] version check response hasUpdate=true version=1.2.4 type=FORCED"
+    );
   });
 
   it("rejects update responses missing required fields", () => {
@@ -83,19 +121,40 @@ describe("version check client", () => {
   });
 
   it("returns disabled when endpoint is not configured", async () => {
+    const logger = createLogger();
     const fetch = vi.fn();
     const client = createHttpVersionCheckClient({
       endpoint: " ",
-      fetch
+      fetch,
+      logger
     });
 
     await expect(
       client.check({ platform: "WINDOWS", currentVersion: "1.2.3" })
     ).resolves.toEqual({ disabled: true });
     expect(fetch).not.toHaveBeenCalled();
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] version check disabled: endpoint missing"
+    );
+  });
+
+  it("rejects unsupported version phases from backend responses", () => {
+    expect(() =>
+      normalizeVersionCheckResponse({
+        data: {
+          hasUpdate: true,
+          versionCode: "1.2.4",
+          phase: "PREVIEW",
+          updateType: "OPTIONAL",
+          updateLog: "notes",
+          downloadUrl: "/appVersion/download/abc"
+        }
+      })
+    ).toThrow("VERSION_CHECK_INVALID_PAYLOAD");
   });
 
   it("maps non-ok responses to errors", async () => {
+    const logger = createLogger();
     const client = createHttpVersionCheckClient({
       endpoint: "https://api.example.com/appVersion/check",
       fetch: vi.fn(async () => ({
@@ -103,14 +162,25 @@ describe("version check client", () => {
         status: 500,
         statusText: "Internal Server Error",
         json: async () => ({ message: "boom" })
-      }))
+      })),
+      logger
     });
 
     await expect(
       client.check({ platform: "WINDOWS", currentVersion: "1.2.3" })
     ).rejects.toThrow("VERSION_CHECK_HTTP_500");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[update] version check failed status=500"
+    );
   });
 });
+
+function createLogger() {
+  return {
+    log: vi.fn(),
+    warn: vi.fn()
+  };
+}
 
 function createJsonResponse(body: unknown): {
   ok: true;

@@ -28,8 +28,10 @@ describe("update service", () => {
 
   it("returns backend metadata and starts electron-updater when an update exists", async () => {
     const autoUpdater = createAutoUpdater();
+    const logger = createLogger();
     const service = createService({
       autoUpdater,
+      logger,
       versionCheckClient: createVersionCheckClient(async () => ({
         hasUpdate: true,
         versionCode: "1.2.4",
@@ -53,11 +55,19 @@ describe("update service", () => {
       packageName: "aoa-setup-1.2.4.exe"
     });
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] backend update available version=1.2.4 type=FORCED"
+    );
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] electron-updater check started"
+    );
   });
 
   it("returns an error when the backend check rejects", async () => {
     const onError = vi.fn();
+    const logger = createLogger();
     const service = createService({
+      logger,
       onError,
       versionCheckClient: createVersionCheckClient(async () => {
         throw new Error("BACKEND_DOWN");
@@ -69,6 +79,9 @@ describe("update service", () => {
       message: "BACKEND_DOWN"
     });
     expect(onError).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[update] check failed message=BACKEND_DOWN"
+    );
   });
 
   it("keeps available metadata when electron-updater rejects after backend succeeds", async () => {
@@ -109,6 +122,7 @@ describe("update service", () => {
 
   it("notifies listeners with backend metadata after an update is downloaded", async () => {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+    const logger = createLogger();
     const autoUpdater = createAutoUpdater({
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
         const existing = listeners.get(event) ?? [];
@@ -119,6 +133,7 @@ describe("update service", () => {
     const updateReady = vi.fn();
     const service = createService({
       autoUpdater,
+      logger,
       onUpdateReady: updateReady,
       versionCheckClient: createVersionCheckClient(async () => ({
         hasUpdate: true,
@@ -144,6 +159,9 @@ describe("update service", () => {
       packageSize: 2048,
       packageName: "setup.exe"
     });
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] download ready version=1.2.4 type=OPTIONAL"
+    );
   });
 
   it("reuses an in-flight backend check", async () => {
@@ -193,9 +211,11 @@ describe("update service", () => {
     vi.useFakeTimers();
     const updateReady = vi.fn();
     const autoUpdater = createAutoUpdater();
+    const logger = createLogger();
     const service = createService({
       autoUpdater,
       isPackaged: false,
+      logger,
       onUpdateReady: updateReady
     });
 
@@ -219,6 +239,75 @@ describe("update service", () => {
       updateLog: "Development fake update",
       phase: "RELEASE"
     });
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] development fake update ready version=0.1.1-dev"
+    );
+    vi.useRealTimers();
+  });
+
+  it("returns backend metadata in development when backend checks are enabled", async () => {
+    vi.useFakeTimers();
+    const updateReady = vi.fn();
+    const autoUpdater = createAutoUpdater();
+    const logger = createLogger();
+    const versionCheckClient = createVersionCheckClient(async () => ({
+      hasUpdate: true,
+      versionCode: "1.2.4",
+      phase: "RELEASE",
+      updateType: "OPTIONAL",
+      updateLog: "真实后端更新",
+      downloadUrl: "/appVersion/download/real",
+      packageSize: 4096,
+      packageName: "real-setup.exe"
+    }));
+    const service = createService({
+      allowDevelopmentBackendCheck: true,
+      autoUpdater,
+      isPackaged: false,
+      logger,
+      onUpdateReady: updateReady,
+      versionCheckClient
+    });
+
+    await expect(
+      service.checkForUpdates({ allowDevelopmentFakeUpdate: true })
+    ).resolves.toEqual({
+      status: "available",
+      version: "1.2.4",
+      phase: "RELEASE",
+      updateType: "OPTIONAL",
+      updateLog: "真实后端更新",
+      downloadUrl: "/appVersion/download/real",
+      packageSize: 4096,
+      packageName: "real-setup.exe"
+    });
+    expect(versionCheckClient.check).toHaveBeenCalledWith({
+      platform: "WINDOWS",
+      currentVersion: "1.2.3"
+    });
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(updateReady).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+
+    expect(updateReady).toHaveBeenCalledWith({
+      version: "1.2.4",
+      phase: "RELEASE",
+      updateType: "OPTIONAL",
+      updateLog: "真实后端更新",
+      downloadUrl: "/appVersion/download/real",
+      packageSize: 4096,
+      packageName: "real-setup.exe"
+    });
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] development backend check enabled"
+    );
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] electron-updater check skipped: unpackaged runtime"
+    );
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] development backend update ready version=1.2.4 type=OPTIONAL"
+    );
     vi.useRealTimers();
   });
 
@@ -236,12 +325,14 @@ describe("update service", () => {
 
   it("ignores update checks in development", async () => {
     const autoUpdater = createAutoUpdater();
+    const logger = createLogger();
     const versionCheckClient = createVersionCheckClient(async () => ({
       hasUpdate: false
     }));
     const service = createService({
       autoUpdater,
       isPackaged: false,
+      logger,
       versionCheckClient
     });
 
@@ -249,13 +340,18 @@ describe("update service", () => {
 
     expect(versionCheckClient.check).not.toHaveBeenCalled();
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(logger.log).toHaveBeenCalledWith(
+      "[update] check disabled: unpackaged runtime"
+    );
   });
 });
 
 function createService({
+  allowDevelopmentBackendCheck,
   autoUpdater = createAutoUpdater(),
   currentVersion = "1.2.3",
   isPackaged = true,
+  logger = createLogger(),
   onError = vi.fn(),
   onUpdateReady = vi.fn(),
   platform = "WINDOWS",
@@ -263,15 +359,24 @@ function createService({
   versionCheckClient = createVersionCheckClient(async () => ({ hasUpdate: false }))
 }: Partial<Parameters<typeof createUpdateService>[0]> = {}) {
   return createUpdateService({
+    allowDevelopmentBackendCheck,
     autoUpdater,
     currentVersion,
     isPackaged,
+    logger,
     onError,
     onUpdateReady,
     platform,
     updateFeedUrl,
     versionCheckClient
   });
+}
+
+function createLogger() {
+  return {
+    log: vi.fn(),
+    warn: vi.fn()
+  };
 }
 
 function createAutoUpdater(overrides: Record<string, unknown> = {}) {

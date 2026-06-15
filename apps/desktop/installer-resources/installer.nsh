@@ -3,9 +3,16 @@
 !include nsDialogs.nsh
 !include FileFunc.nsh
 
+!define MUI_FONT "Microsoft YaHei UI"
+!define MUI_FONTSIZE "9"
+
+SetFont "Microsoft YaHei UI" 9
+
 !define VOICE_OPTIONS_PAGE_TITLE "安装选项"
 !define VOICE_OPTIONS_PAGE_SUBTITLE "选择要启用的附加功能。"
 !define VOICE_AGREEMENT_FILE "terms.txt"
+!define VOICE_LICENSE_TOP_TEXT "閱讀協議內容。"
+!define VOICE_LICENSE_BOTTOM_TEXT "必須接受協議才能繼續安裝 Voice Assistant。"
 !define VOICE_DESKTOP_SHORTCUT_TEXT "创建桌面图标"
 !define VOICE_LAUNCH_AT_LOGIN_TEXT "开机自动启动"
 !define VOICE_INSTALL_DIR_REQUIRED_TEXT "请选择有效的安装位置。"
@@ -86,11 +93,14 @@ voice_check_done:
 !macroend
 
 !macro licensePage
+  !define MUI_LICENSEPAGE_TEXT_TOP "${VOICE_LICENSE_TOP_TEXT}"
+  !define MUI_LICENSEPAGE_TEXT_BOTTOM "${VOICE_LICENSE_BOTTOM_TEXT}"
   !insertmacro MUI_PAGE_LICENSE "${BUILD_RESOURCES_DIR}\${VOICE_AGREEMENT_FILE}"
 !macroend
 
 !macro customPageAfterChangeDir
   Page custom VoiceInstallerOptionsPageCreate VoiceInstallerOptionsPageLeave
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceInstallProgressPageShow
 !macroend
 
 !macro customFinishPage
@@ -139,6 +149,49 @@ Function VoiceStartAppAfterFinish
   ExecShell "open" "$INSTDIR\${PRODUCT_FILENAME}.exe"
 FunctionEnd
 
+Function VoiceInstallProgressPageShow
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  Push $7
+  Push $8
+  Push $9
+
+  FindWindow $0 "#32770" "" $HWNDPARENT
+  GetDlgItem $1 $0 1004
+  ${If} $1 == 0
+    Goto voice_install_progress_done
+  ${EndIf}
+
+  System::Store "S"
+  System::Call 'USER32::GetClientRect(p$0,@r2)'
+  System::Call '*$2(i.r3,i.r4,i.r5,i.r9)'
+  System::Call 'USER32::GetWindowRect(p$1,@r2)'
+  System::Call 'USER32::MapWindowPoints(p0,p$0,pr2,i2)'
+  System::Call '*$2(i.r3,i.r4,i.r5,i.r6)'
+  IntOp $7 $6 - $4
+  IntOp $8 $9 - $7
+  IntOp $8 $8 / 2
+  System::Call 'USER32::SetWindowPos(p$1,p0,i$3,i$8,i0,i0,i0x15)'
+  System::Store "L"
+
+voice_install_progress_done:
+  Pop $9
+  Pop $8
+  Pop $7
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+
 Function VoiceInstallerOptionsPageCreate
   ${If} ${Silent}
     Abort
@@ -152,13 +205,13 @@ Function VoiceInstallerOptionsPageCreate
     Abort
   ${EndIf}
 
-  ${NSD_CreateCheckbox} 0 24u 100% 12u "${VOICE_DESKTOP_SHORTCUT_TEXT}"
+  ${NSD_CreateCheckbox} 0 16u 100% 12u "${VOICE_DESKTOP_SHORTCUT_TEXT}"
   Pop $VoiceDesktopShortcutCheckbox
   ${If} $VoiceCreateDesktopShortcut == "1"
     ${NSD_Check} $VoiceDesktopShortcutCheckbox
   ${EndIf}
 
-  ${NSD_CreateCheckbox} 0 52u 100% 12u "${VOICE_LAUNCH_AT_LOGIN_TEXT}"
+  ${NSD_CreateCheckbox} 0 36u 100% 12u "${VOICE_LAUNCH_AT_LOGIN_TEXT}"
   Pop $VoiceLaunchAtLoginCheckbox
   ${If} $VoiceLaunchAtLogin == "true"
     ${NSD_Check} $VoiceLaunchAtLoginCheckbox

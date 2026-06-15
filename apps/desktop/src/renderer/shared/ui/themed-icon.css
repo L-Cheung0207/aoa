@@ -1,0 +1,44 @@
+.themed-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
+  color: currentColor;
+}
+
+.themed-icon--mask {
+  background-color: currentColor;
+  mask: var(--themed-icon-light) center / contain no-repeat;
+  -webkit-mask: var(--themed-icon-light) center / contain no-repeat;
+}
+
+:root[data-theme="dark"] .themed-icon--mask,
+:root:not([data-theme="light"]) .themed-icon--mask {
+  mask-image: var(--themed-icon-dark);
+  -webkit-mask-image: var(--themed-icon-dark);
+}
+
+.themed-icon--image {
+  position: relative;
+}
+
+.themed-icon__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.themed-icon__image--dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .themed-icon__image--light,
+:root:not([data-theme="light"]) .themed-icon__image--light {
+  display: none;
+}
+
+:root[data-theme="dark"] .themed-icon__image--dark,
+:root:not([data-theme="light"]) .themed-icon__image--dark {
+  display: block;
+}
