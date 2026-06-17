@@ -73,7 +73,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     about: "关于",
     localDevice: "本机设备",
     userArea: "用户区",
-    exitApp: "退出",
+    exitApp: "退出登录",
     contactPending: "联系我们待接入",
     updateChecking: "正在检查更新...",
     updateUpToDate: "目前已是最新版本",
@@ -109,7 +109,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     about: "關於",
     localDevice: "本機裝置",
     userArea: "使用者區",
-    exitApp: "退出",
+    exitApp: "登出",
     contactPending: "聯絡我們待接入",
     updateChecking: "正在檢查更新...",
     updateUpToDate: "目前已是最新版本",
@@ -145,7 +145,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     about: "About",
     localDevice: "Local device",
     userArea: "User area",
-    exitApp: "Exit",
+    exitApp: "Log out",
     contactPending: "Contact us is not available yet",
     updateChecking: "Checking for updates...",
     updateUpToDate: "You're up to date",
@@ -482,7 +482,9 @@ export function HomeShell({
             className="home-power"
             type="button"
             aria-label={shellText.exitApp}
-            onClick={() => window.voiceAI.controlHomeWindow("close")}
+            onClick={() => {
+              void window.voiceAI.logout();
+            }}
           >
             <PowerIcon />
           </button>

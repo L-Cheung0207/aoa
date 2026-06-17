@@ -1,7 +1,7 @@
 import { inspect } from "node:util";
 
 const SENSITIVE_KEY_PATTERN =
-  /(?:apiKey|api_key|authorization|password|secret|token|accessCode|AccessCode)$/i;
+  /(?:apiKey|api_key|authorization|password|secret|token|accessCode|AccessCode)$|^(?:code|passwordCipher|access_token|refresh_token|accessToken|refreshToken|Authorization)$/i;
 const TEXT_KEY_PATTERN =
   /^(?:text|rawText|selectedText|expectedSelectedText|finalText|transcript)$/;
 const AUDIO_KEY_PATTERN = /^(?:audio|pcm)$/;
@@ -66,10 +66,7 @@ function redactUrlForLog(input: string): string {
     redactSearchParams(parsed.searchParams);
     return parsed.toString();
   } catch {
-    return input.replace(
-      /([?&](?:AccessCode|accessCode|token|apiKey|password|secret)=)[^&\s]+/gi,
-      "$1***"
-    );
+    return redactQueryStringLikeInput(input);
   }
 }
 
@@ -87,14 +84,12 @@ export function formatLogFields(
   const resolvedOptions = resolveOptions(options);
   return Object.entries(fields)
     .filter(([, value]) => value !== undefined)
-    .map(
-      ([key, value]) => {
-        const sanitized = sanitizeValue(value, key, resolvedOptions);
-        return TEXT_KEY_PATTERN.test(key) && !resolvedOptions.revealSensitive
-          ? `${key}Length=${formatLogValue(sanitized)}`
-          : `${key}=${formatLogValue(sanitized)}`;
-      }
-    )
+    .map(([key, value]) => {
+      const sanitized = sanitizeValue(value, key, resolvedOptions);
+      return TEXT_KEY_PATTERN.test(key) && !resolvedOptions.revealSensitive
+        ? `${key}Length=${formatLogValue(sanitized)}`
+        : `${key}=${formatLogValue(sanitized)}`;
+    })
     .join(" ");
 }
 
@@ -113,7 +108,7 @@ function sanitizeValue(
     if (!options.revealSensitive && TEXT_KEY_PATTERN.test(key)) {
       return input.length;
     }
-    if (isLikelyUrl(input)) {
+    if (isLikelyUrl(input) || isQueryStringLike(input)) {
       return sanitizeUrlForLog(input, options);
     }
     return input;
@@ -197,8 +192,18 @@ function redactSearchParams(params: URLSearchParams): void {
   }
 }
 
+function redactQueryStringLikeInput(input: string): string {
+  return input.replace(/([?&])([^=&\s]+)=([^&\s]*)/g, (match, prefix, key) =>
+    SENSITIVE_KEY_PATTERN.test(key) ? `${prefix}${key}=***` : match,
+  );
+}
+
 function isLikelyUrl(input: string): boolean {
   return /^[a-z][a-z\d+.-]*:\/\//i.test(input);
+}
+
+function isQueryStringLike(input: string): boolean {
+  return /[?&][^=&\s]+=[^&\s]*/.test(input);
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

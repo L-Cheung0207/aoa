@@ -1,4 +1,5 @@
 {
   "javaVoiceWsUrl": "ws://172.27.209.114:8097/aoa_api/voice",
-  "versionCheckUrl": "http://172.27.209.114:8097/aoa_api/appVersion/check"
+  "versionCheckUrl": "http://172.27.209.114:8097/aoa_api/appVersion/check",
+  "backendBaseUrl": "http://172.27.209.114:8097/aoa_api"
 }

@@ -7,6 +7,7 @@ import type {
   ServiceStatusSnapshot,
   TranscriptionSession
 } from "@voice/backend-client";
+import type { AuthService } from "../auth/authService";
 import type { ClipboardService } from "../clipboard/clipboardService";
 import type { ConfigStore } from "../config/configStore";
 import type { HistoryStore } from "../history/historyStore";
@@ -27,16 +28,19 @@ import { formatLogFields } from "../log/logSanitizer";
 import {
   parseApplyHistoryRetentionInput,
   parseAudioFrameInput,
+  parseEmailCodeLoginInput,
   parseCopyTextInput,
   parseCreateHistoryRecordInput,
   parseCreateTranscriptionSessionInput,
   parseDeleteHistoryRecordInput,
+  parseLdapLoginInput,
   parsePostprocessInput,
   parseUpdateHistoryRecordInput,
   parseTranscriptionStartInput,
   parseInsertTextInput,
   parseReplaceSelectedTextInput,
   parseSettingsPatchInput,
+  parseSendEmailCodeInput,
   parseTestWebSocketInput
 } from "./ipcSchemas";
 
@@ -45,7 +49,17 @@ export interface IpcAppInfo {
   appVersion: string;
 }
 
+type AuthIpcService = Pick<
+  AuthService,
+  | "getSessionSnapshot"
+  | "sendEmailCode"
+  | "loginWithEmailCode"
+  | "loginWithLdap"
+  | "logout"
+>;
+
 export interface IpcRouteDependencies {
+  authService: AuthIpcService;
   configStore: Pick<ConfigStore, "get" | "update">;
   clipboard: Pick<ClipboardService, "writeText">;
   insertService: InsertService;
@@ -81,6 +95,11 @@ export interface IpcRouteHandlers {
   copyText(input: unknown): void;
   insertText(input: unknown): Promise<InsertResult>;
   replaceSelectedText(input: unknown): Promise<InsertResult>;
+  getAuthSession(): ReturnType<AuthIpcService["getSessionSnapshot"]>;
+  sendEmailCode(input: unknown): ReturnType<AuthIpcService["sendEmailCode"]>;
+  loginWithEmailCode(input: unknown): ReturnType<AuthIpcService["loginWithEmailCode"]>;
+  loginWithLdap(input: unknown): ReturnType<AuthIpcService["loginWithLdap"]>;
+  logout(): ReturnType<AuthIpcService["logout"]>;
   bootstrapClient(): Promise<BootstrapClientResponse>;
   getServiceStatus(): Promise<ServiceStatusSnapshot>;
   createTranscriptionSession(input: unknown): Promise<TranscriptionSession>;
@@ -112,6 +131,7 @@ export function createIpcRouteHandlers(
   dependencies: IpcRouteDependencies
 ): IpcRouteHandlers {
   const logger = dependencies.logger ?? console;
+  const authService = dependencies.authService;
   return {
     getAppInfo: () => dependencies.appInfo,
     getAppConfig: async () => dependencies.getAppConfig?.(),
@@ -200,6 +220,14 @@ export function createIpcRouteHandlers(
       }
       return result;
     },
+    getAuthSession: () => authService.getSessionSnapshot(),
+    sendEmailCode: async (input) =>
+      authService.sendEmailCode(parseSendEmailCodeInput(input)),
+    loginWithEmailCode: async (input) =>
+      authService.loginWithEmailCode(parseEmailCodeLoginInput(input)),
+    loginWithLdap: async (input) =>
+      authService.loginWithLdap(parseLdapLoginInput(input)),
+    logout: () => authService.logout(),
     bootstrapClient: async () => {
       const snapshot = await dependencies.backendClient.bootstrap({
         installationId: dependencies.installationId,
@@ -409,6 +437,17 @@ export function registerIpcRoutes(
   handle("voice:replace-selected-text", (_event, input: unknown) => {
     return handlers.replaceSelectedText(input);
   });
+  handle("voice:auth:get-session", () => handlers.getAuthSession());
+  handle("voice:auth:send-email-code", (_event, input: unknown) => {
+    return handlers.sendEmailCode(input);
+  });
+  handle("voice:auth:login-email-code", (_event, input: unknown) => {
+    return handlers.loginWithEmailCode(input);
+  });
+  handle("voice:auth:login-ldap", (_event, input: unknown) => {
+    return handlers.loginWithLdap(input);
+  });
+  handle("voice:auth:logout", () => handlers.logout());
 
   handle("voice:bootstrap-client", () => handlers.bootstrapClient());
   handle("voice:get-service-status", () => handlers.getServiceStatus());

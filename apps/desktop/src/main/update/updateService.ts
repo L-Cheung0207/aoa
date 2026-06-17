@@ -14,7 +14,7 @@ import type {
   VersionCheckClient,
   VersionPhase,
   VersionPlatform,
-  VersionUpdateType
+  VersionUpdateType,
 } from "./versionCheckClient";
 import { sanitizeUrlForLog } from "../log/logSanitizer";
 
@@ -38,8 +38,10 @@ export interface BackendInstallerDownloadProgress {
   totalBytes?: number | undefined;
 }
 
-export interface UpdateDownloadProgressPayload
-  extends Omit<BackendInstallerDownloadProgress, "phase"> {
+export interface UpdateDownloadProgressPayload extends Omit<
+  BackendInstallerDownloadProgress,
+  "phase"
+> {
   phase: "checking" | BackendInstallerDownloadProgress["phase"];
   packageName?: string | undefined;
   version?: string | undefined;
@@ -61,9 +63,13 @@ interface AutoUpdaterCheckResult {
   updateInfo?: { version?: string };
 }
 
+type UpdateDownloadedListener = (event: UpdateDownloadedEvent) => void;
+type UpdateErrorListener = (error: Error) => void;
+
 export interface UpdateService {
   checkForUpdates(options?: CheckForUpdatesOptions): Promise<UpdateCheckResult>;
   restartToUpdate(): void;
+  dispose?(): void;
 }
 
 export interface BackendInstallerDownloadInput {
@@ -71,7 +77,9 @@ export interface BackendInstallerDownloadInput {
   packageSha256?: string | undefined;
   packageName?: string | undefined;
   packageSize?: number | undefined;
-  onProgress?: ((payload: BackendInstallerDownloadProgress) => void) | undefined;
+  onProgress?:
+    | ((payload: BackendInstallerDownloadProgress) => void)
+    | undefined;
 }
 
 export interface BackendInstallerDownloader {
@@ -83,7 +91,9 @@ export interface BackendInstallerLaunchInput {
   installDir?: string | undefined;
 }
 
-export type BackendInstallerLauncher = (input: BackendInstallerLaunchInput) => void;
+export type BackendInstallerLauncher = (
+  input: BackendInstallerLaunchInput,
+) => void;
 
 export interface WindowsExecutableMetadata {
   productName: string;
@@ -94,19 +104,24 @@ export interface WindowsExecutableMetadata {
 }
 
 type WindowsExecutableMetadataInspector = (
-  filePath: string
+  filePath: string,
 ) => Promise<WindowsExecutableMetadata | undefined>;
 
 export interface AutoUpdaterAdapter {
   autoDownload: boolean;
   checkForUpdates(): Promise<AutoUpdaterCheckResult | null>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
+  getFeedURL?(): string | null | undefined;
   setFeedURL?(options: string): void;
-  on(
+  on(event: "update-downloaded", listener: UpdateDownloadedListener): void;
+  on(event: "error", listener: UpdateErrorListener): void;
+  off?(event: "update-downloaded", listener: UpdateDownloadedListener): void;
+  off?(event: "error", listener: UpdateErrorListener): void;
+  removeListener?(
     event: "update-downloaded",
-    listener: (event: UpdateDownloadedEvent) => void
+    listener: UpdateDownloadedListener,
   ): void;
-  on(event: "error", listener: (error: Error) => void): void;
+  removeListener?(event: "error", listener: UpdateErrorListener): void;
 }
 
 export interface UpdateLogger {
@@ -137,7 +152,7 @@ const DEVELOPMENT_FAKE_UPDATE_PAYLOAD: UpdateReadyPayload = {
   version: DEVELOPMENT_FAKE_UPDATE_VERSION,
   phase: "RELEASE",
   updateType: "OPTIONAL",
-  updateLog: "Development fake update"
+  updateLog: "Development fake update",
 };
 
 export function shouldCheckForUpdates(isPackaged: boolean): boolean {
@@ -145,7 +160,7 @@ export function shouldCheckForUpdates(isPackaged: boolean): boolean {
 }
 
 export function createUpdateService(
-  options: CreateUpdateServiceOptions
+  options: CreateUpdateServiceOptions,
 ): UpdateService {
   const {
     allowDevelopmentBackendCheck = false,
@@ -162,12 +177,14 @@ export function createUpdateService(
     quitApp,
     spawnInstaller = createBackendInstallerLauncher(),
     updateFeedUrl,
-    versionCheckClient
+    versionCheckClient,
   } = options;
   let currentCheck: Promise<UpdateCheckResult> | undefined;
   let latestAvailablePayload: UpdateReadyPayload | undefined;
   let latestReadyPayload: UpdateReadyPayload | undefined;
   let latestBackendInstallerPath: string | undefined;
+  const previousAutoDownload = autoUpdater.autoDownload;
+  const previousFeedUrl = autoUpdater.getFeedURL?.();
 
   autoUpdater.autoDownload = true;
   logger.log("[update] electron-updater autoDownload enabled");
@@ -175,32 +192,58 @@ export function createUpdateService(
   if (normalizedFeedUrl) {
     autoUpdater.setFeedURL?.(normalizedFeedUrl);
     logger.log(
-      `[update] feed url configured url=${sanitizeUrlForLog(normalizedFeedUrl)}`
+      `[update] feed url configured url=${sanitizeUrlForLog(normalizedFeedUrl)}`,
     );
   }
 
-  autoUpdater.on("update-downloaded", (event) => {
+  const handleUpdateDownloaded: UpdateDownloadedListener = (event) => {
     const payload = {
       ...latestAvailablePayload,
-      version: event.version ?? latestAvailablePayload?.version
+      version: event.version ?? latestAvailablePayload?.version,
     };
     latestReadyPayload = payload;
     latestBackendInstallerPath = undefined;
     logger.log(
-      `[update] download ready version=${payload.version ?? ""} type=${payload.updateType ?? ""}`
+      `[update] download ready version=${payload.version ?? ""} type=${payload.updateType ?? ""}`,
     );
     onUpdateReady(payload);
-  });
+  };
 
-  autoUpdater.on("error", (error) => {
+  const handleError: UpdateErrorListener = (error) => {
     logger.warn(`[update] electron-updater error message=${error.message}`);
     onError?.(error);
-  });
+  };
+
+  autoUpdater.on("update-downloaded", handleUpdateDownloaded);
+  autoUpdater.on("error", handleError);
+
+  let disposed = false;
+  const isDisposed = (): boolean => disposed;
+  const disposeAutoUpdaterSideEffects = (): void => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    if (autoUpdater.off) {
+      autoUpdater.off("update-downloaded", handleUpdateDownloaded);
+      autoUpdater.off("error", handleError);
+    } else {
+      autoUpdater.removeListener?.("update-downloaded", handleUpdateDownloaded);
+      autoUpdater.removeListener?.("error", handleError);
+    }
+    autoUpdater.autoDownload = previousAutoDownload;
+    if (previousFeedUrl) {
+      autoUpdater.setFeedURL?.(previousFeedUrl);
+    }
+  };
 
   return {
     async checkForUpdates(
-      checkOptions: CheckForUpdatesOptions = {}
+      checkOptions: CheckForUpdatesOptions = {},
     ): Promise<UpdateCheckResult> {
+      if (isDisposed()) {
+        return { status: "disabled" };
+      }
       if (!shouldCheckForUpdates(isPackaged)) {
         if (allowDevelopmentBackendCheck) {
           logger.log("[update] development backend check enabled");
@@ -217,19 +260,23 @@ export function createUpdateService(
             setLatestReadyPayload: (payload) => {
               latestReadyPayload = payload;
             },
-            versionCheckClient
+            isDisposed,
+            versionCheckClient,
           });
         }
         if (checkOptions.allowDevelopmentFakeUpdate) {
+          if (isDisposed()) {
+            return { status: "disabled" };
+          }
           latestReadyPayload = DEVELOPMENT_FAKE_UPDATE_PAYLOAD;
           latestBackendInstallerPath = undefined;
           logger.log(
-            `[update] development fake update ready version=${DEVELOPMENT_FAKE_UPDATE_PAYLOAD.version}`
+            `[update] development fake update ready version=${DEVELOPMENT_FAKE_UPDATE_PAYLOAD.version}`,
           );
           onUpdateReady(DEVELOPMENT_FAKE_UPDATE_PAYLOAD);
           return {
             status: "ready",
-            ...DEVELOPMENT_FAKE_UPDATE_PAYLOAD
+            ...DEVELOPMENT_FAKE_UPDATE_PAYLOAD,
           };
         }
         logger.log("[update] check disabled: unpackaged runtime");
@@ -237,7 +284,7 @@ export function createUpdateService(
       }
       if (latestReadyPayload) {
         logger.log(
-          `[update] returning cached ready update version=${latestReadyPayload.version ?? ""} type=${latestReadyPayload.updateType ?? ""}`
+          `[update] returning cached ready update version=${latestReadyPayload.version ?? ""} type=${latestReadyPayload.updateType ?? ""}`,
         );
         return { status: "ready", ...latestReadyPayload };
       }
@@ -265,13 +312,17 @@ export function createUpdateService(
         setLatestReadyPayload: (payload) => {
           latestReadyPayload = payload;
         },
-        versionCheckClient
+        isDisposed,
+        versionCheckClient,
       }).finally(() => {
         currentCheck = undefined;
       });
       return currentCheck;
     },
     restartToUpdate(): void {
+      if (isDisposed()) {
+        return;
+      }
       if (!isPackaged) {
         logger.log("[update] restart skipped: unpackaged runtime");
         return;
@@ -279,22 +330,26 @@ export function createUpdateService(
       logger.log("[update] restart invoked");
       if (latestBackendInstallerPath) {
         logger.log(
-          `[update] launching backend installer path=${latestBackendInstallerPath}`
+          `[update] launching backend installer path=${latestBackendInstallerPath}`,
         );
         spawnInstaller({
           installerPath: latestBackendInstallerPath,
-          installDir: currentInstallDir
+          installDir: currentInstallDir,
         });
         quitApp?.();
         return;
       }
       autoUpdater.quitAndInstall(false, true);
-    }
+    },
+    dispose(): void {
+      disposeAutoUpdaterSideEffects();
+    },
   };
 }
 
 async function runDevelopmentBackendUpdateCheck({
   currentVersion,
+  isDisposed,
   logger,
   onDownloadProgress,
   onError,
@@ -302,11 +357,14 @@ async function runDevelopmentBackendUpdateCheck({
   platform,
   setLatestAvailablePayload,
   setLatestReadyPayload,
-  versionCheckClient
+  versionCheckClient,
 }: {
   currentVersion?: string | undefined;
+  isDisposed(): boolean;
   logger: UpdateLogger;
-  onDownloadProgress?: ((payload: UpdateDownloadProgressPayload) => void) | undefined;
+  onDownloadProgress?:
+    | ((payload: UpdateDownloadProgressPayload) => void)
+    | undefined;
   onError?: ((error: Error) => void) | undefined;
   onUpdateReady(payload: UpdateReadyPayload): void;
   platform?: VersionPlatform | undefined;
@@ -316,21 +374,25 @@ async function runDevelopmentBackendUpdateCheck({
 }): Promise<UpdateCheckResult> {
   const result = await runBackendUpdateCheck({
     currentVersion,
+    isDisposed,
     logger,
     onDownloadProgress,
     onError,
     platform,
     setLatestAvailablePayload,
     skipAutoUpdaterCheck: true,
-    versionCheckClient
+    versionCheckClient,
   });
   if (result.status !== "available") {
     return result;
   }
+  if (isDisposed()) {
+    return { status: "disabled" };
+  }
   const payload: UpdateReadyPayload = toUpdateReadyPayload(result);
   setLatestReadyPayload(payload);
   logger.log(
-    `[update] development backend update ready version=${payload.version ?? ""} type=${payload.updateType ?? ""}`
+    `[update] development backend update ready version=${payload.version ?? ""} type=${payload.updateType ?? ""}`,
   );
   onUpdateReady(payload);
   return { status: "ready", ...payload };
@@ -340,6 +402,7 @@ async function runBackendUpdateCheck({
   autoUpdater,
   currentVersion,
   directDownloader,
+  isDisposed,
   logger,
   onDownloadProgress,
   onError,
@@ -349,13 +412,16 @@ async function runBackendUpdateCheck({
   setLatestBackendInstallerPath,
   setLatestReadyPayload,
   skipAutoUpdaterCheck = false,
-  versionCheckClient
+  versionCheckClient,
 }: {
   autoUpdater?: AutoUpdaterAdapter | undefined;
   currentVersion?: string | undefined;
   directDownloader?: BackendInstallerDownloader | undefined;
+  isDisposed(): boolean;
   logger: UpdateLogger;
-  onDownloadProgress?: ((payload: UpdateDownloadProgressPayload) => void) | undefined;
+  onDownloadProgress?:
+    | ((payload: UpdateDownloadProgressPayload) => void)
+    | undefined;
   onError?: ((error: Error) => void) | undefined;
   onUpdateReady?: ((payload: UpdateReadyPayload) => void) | undefined;
   platform?: VersionPlatform | undefined;
@@ -369,16 +435,24 @@ async function runBackendUpdateCheck({
     logger.log("[update] check disabled: missing backend config");
     return { status: "disabled" };
   }
+  if (isDisposed()) {
+    return { status: "disabled" };
+  }
 
   try {
     logger.log(
-      `[update] backend check started platform=${platform} currentVersion=${currentVersion}`
+      `[update] backend check started platform=${platform} currentVersion=${currentVersion}`,
     );
-    onDownloadProgress?.({ phase: "checking", percent: 0 });
+    if (!isDisposed()) {
+      onDownloadProgress?.({ phase: "checking", percent: 0 });
+    }
     const backendResult = await versionCheckClient.check({
       platform,
-      currentVersion
+      currentVersion,
     });
+    if (isDisposed()) {
+      return { status: "disabled" };
+    }
     if ("disabled" in backendResult) {
       logger.log("[update] backend check disabled");
       return { status: "disabled" };
@@ -394,38 +468,47 @@ async function runBackendUpdateCheck({
     setOptionalPayloadField(payload, "updateType", backendResult.updateType);
     setOptionalPayloadField(payload, "updateLog", backendResult.updateLog);
     setOptionalPayloadField(payload, "downloadUrl", backendResult.downloadUrl);
-    setOptionalPayloadField(payload, "packageSha256", backendResult.packageSha256);
+    setOptionalPayloadField(
+      payload,
+      "packageSha256",
+      backendResult.packageSha256,
+    );
     setOptionalPayloadField(payload, "packageSize", backendResult.packageSize);
     setOptionalPayloadField(payload, "packageName", backendResult.packageName);
     setLatestAvailablePayload(payload);
     logger.log(
-      `[update] backend update available version=${payload.version ?? ""} type=${payload.updateType ?? ""}`
+      `[update] backend update available version=${payload.version ?? ""} type=${payload.updateType ?? ""}`,
     );
 
-    const availableResult: Extract<UpdateCheckResult, { status: "available" }> = {
-      status: "available",
-      ...payload
-    };
+    const availableResult: Extract<UpdateCheckResult, { status: "available" }> =
+      {
+        status: "available",
+        ...payload,
+      };
 
     if (directDownloader && isHttpUrl(payload.downloadUrl)) {
       try {
         return await downloadBackendInstallerUpdate({
           availableResult,
           directDownloader,
+          isDisposed,
           logger,
           onDownloadProgress,
           onError,
           onUpdateReady,
           payload,
           setLatestBackendInstallerPath,
-          setLatestReadyPayload
+          setLatestReadyPayload,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (isDisposed()) {
+          return { status: "disabled" };
+        }
         logger.warn(
           `[update] backend installer download failed url=${sanitizeUrlForLog(
-            payload.downloadUrl ?? ""
-          )} message=${message}`
+            payload.downloadUrl ?? "",
+          )} message=${message}`,
         );
         onError?.(error instanceof Error ? error : new Error(message));
         return { status: "error", message };
@@ -434,44 +517,62 @@ async function runBackendUpdateCheck({
 
     try {
       if (skipAutoUpdaterCheck) {
-        logger.log("[update] electron-updater check skipped: unpackaged runtime");
+        if (isDisposed()) {
+          return { status: "disabled" };
+        }
+        logger.log(
+          "[update] electron-updater check skipped: unpackaged runtime",
+        );
         return availableResult;
+      }
+      if (isDisposed()) {
+        return { status: "disabled" };
       }
       logger.log("[update] electron-updater check started");
       await autoUpdater?.checkForUpdates();
+      if (isDisposed()) {
+        return { status: "disabled" };
+      }
       logger.log("[update] electron-updater check completed");
       return availableResult;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (
-        isRecoverableUpdaterFeedError(error) &&
-        directDownloader &&
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isDisposed()) {
+          return { status: "disabled" };
+        }
+        if (
+          isRecoverableUpdaterFeedError(error) &&
+          directDownloader &&
         isHttpUrl(payload.downloadUrl)
       ) {
         logger.warn(
-          `[update] electron-updater feed unavailable; falling back to backend installer download message=${message}`
+          `[update] electron-updater feed unavailable; falling back to backend installer download message=${message}`,
         );
         return downloadBackendInstallerUpdate({
           availableResult,
           directDownloader,
+          isDisposed,
           logger,
           onDownloadProgress,
           onError,
           onUpdateReady,
           payload,
           setLatestBackendInstallerPath,
-          setLatestReadyPayload
+          setLatestReadyPayload,
         });
       }
       logger.warn(`[update] electron-updater check failed message=${message}`);
       onError?.(error instanceof Error ? error : new Error(message));
       return {
         ...availableResult,
-        updaterError: message
+        updaterError: message,
       };
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isDisposed()) {
+      return { status: "disabled" };
+    }
     logger.warn(`[update] check failed message=${message}`);
     onError?.(error instanceof Error ? error : new Error(message));
     return { status: "error", message };
@@ -481,66 +582,81 @@ async function runBackendUpdateCheck({
 async function downloadBackendInstallerUpdate({
   availableResult,
   directDownloader,
+  isDisposed,
   logger,
   onDownloadProgress,
   onError,
   onUpdateReady,
   payload,
   setLatestBackendInstallerPath,
-  setLatestReadyPayload
+  setLatestReadyPayload,
 }: {
   availableResult: Extract<UpdateCheckResult, { status: "available" }>;
   directDownloader: BackendInstallerDownloader;
+  isDisposed(): boolean;
   logger: UpdateLogger;
-  onDownloadProgress?: ((payload: UpdateDownloadProgressPayload) => void) | undefined;
+  onDownloadProgress?:
+    | ((payload: UpdateDownloadProgressPayload) => void)
+    | undefined;
   onError?: ((error: Error) => void) | undefined;
   onUpdateReady?: ((payload: UpdateReadyPayload) => void) | undefined;
   payload: UpdateReadyPayload;
   setLatestBackendInstallerPath?: ((installerPath: string) => void) | undefined;
   setLatestReadyPayload?: ((payload: UpdateReadyPayload) => void) | undefined;
 }): Promise<UpdateCheckResult> {
+  if (isDisposed()) {
+    return { status: "disabled" };
+  }
   if (!isTrustedVoiceAssistantInstallerName(payload)) {
     const packageMismatchError = new Error("UPDATE_INSTALLER_PACKAGE_MISMATCH");
     logger.warn(
       `[update] backend installer rejected packageName=${payload.packageName ?? ""} downloadUrl=${sanitizeUrlForLog(
-        payload.downloadUrl ?? ""
-      )}`
+        payload.downloadUrl ?? "",
+      )}`,
     );
     onError?.(packageMismatchError);
     return { status: "error", message: packageMismatchError.message };
   }
   logger.log(
     `[update] backend installer download started url=${sanitizeUrlForLog(
-      payload.downloadUrl ?? ""
-    )} packageName=${payload.packageName ?? ""}`
+      payload.downloadUrl ?? "",
+    )} packageName=${payload.packageName ?? ""}`,
   );
   const totalBytes = normalizePackageSize(payload.packageSize);
-  onDownloadProgress?.({
-    phase: "downloading",
-    percent: 0,
-    transferredBytes: 0,
-    ...(totalBytes !== undefined ? { totalBytes } : {}),
-    packageName: payload.packageName,
-    version: payload.version
-  });
+  if (!isDisposed()) {
+    onDownloadProgress?.({
+      phase: "downloading",
+      percent: 0,
+      transferredBytes: 0,
+      ...(totalBytes !== undefined ? { totalBytes } : {}),
+      packageName: payload.packageName,
+      version: payload.version,
+    });
+  }
   const installerPath = await directDownloader.download({
     url: payload.downloadUrl ?? "",
     packageSha256: payload.packageSha256,
     packageName: payload.packageName,
     packageSize: totalBytes,
     onProgress: (progress) => {
+      if (isDisposed()) {
+        return;
+      }
       onDownloadProgress?.({
         ...progress,
         packageName: payload.packageName,
-        version: payload.version
+        version: payload.version,
       });
-    }
+    },
   });
+  if (isDisposed()) {
+    return { status: "disabled" };
+  }
   setLatestBackendInstallerPath?.(installerPath);
   const readyPayload = toUpdateReadyPayload(availableResult);
   setLatestReadyPayload?.(readyPayload);
   logger.log(
-    `[update] backend installer downloaded path=${installerPath} version=${readyPayload.version ?? ""}`
+    `[update] backend installer downloaded path=${installerPath} version=${readyPayload.version ?? ""}`,
   );
   onUpdateReady?.(readyPayload);
   return { status: "ready", ...readyPayload };
@@ -571,8 +687,11 @@ function isHttpUrl(input: string | undefined): input is string {
   }
 }
 
-function isTrustedVoiceAssistantInstallerName(payload: UpdateReadyPayload): boolean {
-  const candidateName = payload.packageName?.trim() || fileNameFromUrl(payload.downloadUrl);
+function isTrustedVoiceAssistantInstallerName(
+  payload: UpdateReadyPayload,
+): boolean {
+  const candidateName =
+    payload.packageName?.trim() || fileNameFromUrl(payload.downloadUrl);
   return /^voice assistant(?: setup)?(?:[\s._-].*)?\.exe$/i.test(candidateName);
 }
 
@@ -603,7 +722,7 @@ export function createBackendInstallerDownloader({
   fetchImpl = fetch,
   inspectExecutableMetadata = inspectWindowsExecutableMetadata,
   logger = console,
-  updatesDir = join(tmpdir(), "voice-assistant-updates")
+  updatesDir = join(tmpdir(), "voice-assistant-updates"),
 }: {
   fetchImpl?: DownloadFetch | undefined;
   inspectExecutableMetadata?: WindowsExecutableMetadataInspector | undefined;
@@ -619,7 +738,7 @@ export function createBackendInstallerDownloader({
       await mkdir(updatesDir, { recursive: true });
       const filePath = join(
         updatesDir,
-        sanitizeInstallerFileName(input.packageName ?? input.url)
+        sanitizeInstallerFileName(input.packageName ?? input.url),
       );
       const expectedSha256 = normalizeSha256(input.packageSha256);
       if (input.packageSha256 !== undefined && !expectedSha256) {
@@ -627,14 +746,18 @@ export function createBackendInstallerDownloader({
       }
       if (!expectedSha256) {
         logger.warn(
-          "[update] backend installer checksum missing; falling back to executable metadata trust"
+          "[update] backend installer checksum missing; falling back to executable metadata trust",
         );
       }
       const totalBytes = normalizePackageSize(input.packageSize);
-      const actualSha256 = await writeDownloadToFileAndHash(response, filePath, {
-        totalBytes,
-        onProgress: input.onProgress
-      });
+      const actualSha256 = await writeDownloadToFileAndHash(
+        response,
+        filePath,
+        {
+          totalBytes,
+          onProgress: input.onProgress,
+        },
+      );
       if (expectedSha256 && actualSha256 !== expectedSha256) {
         throw new Error("UPDATE_INSTALLER_SHA256_MISMATCH");
       }
@@ -649,11 +772,14 @@ export function createBackendInstallerDownloader({
       if (!expectedSha256 && !metadataHasIdentity) {
         throw new Error("UPDATE_INSTALLER_TRUST_UNVERIFIED");
       }
-      if (metadataHasIdentity && !isTrustedVoiceAssistantExecutableMetadata(metadata)) {
+      if (
+        metadataHasIdentity &&
+        !isTrustedVoiceAssistantExecutableMetadata(metadata)
+      ) {
         throw new Error("UPDATE_INSTALLER_METADATA_MISMATCH");
       }
       return filePath;
-    }
+    },
   };
 }
 
@@ -669,8 +795,10 @@ async function writeDownloadToFileAndHash(
   filePath: string,
   options: {
     totalBytes?: number | undefined;
-    onProgress?: ((payload: BackendInstallerDownloadProgress) => void) | undefined;
-  } = {}
+    onProgress?:
+      | ((payload: BackendInstallerDownloadProgress) => void)
+      | undefined;
+  } = {},
 ): Promise<string> {
   const hash = createHash("sha256");
   let transferredBytes = 0;
@@ -679,7 +807,9 @@ async function writeDownloadToFileAndHash(
       phase: "downloading",
       percent: calculateDownloadPercent(transferredBytes, options.totalBytes),
       transferredBytes,
-      ...(options.totalBytes !== undefined ? { totalBytes: options.totalBytes } : {})
+      ...(options.totalBytes !== undefined
+        ? { totalBytes: options.totalBytes }
+        : {}),
     });
   };
   const responseBody = toNodeReadableStream(response.body);
@@ -690,18 +820,20 @@ async function writeDownloadToFileAndHash(
         transferredBytes += chunk.byteLength;
         emitProgress();
         callback(null, chunk);
-      }
+      },
     });
     await pipeline(
       Readable.fromWeb(responseBody),
       hashingStream,
-      createWriteStream(filePath)
+      createWriteStream(filePath),
     );
     options.onProgress?.({
       phase: "verifying",
       percent: calculateDownloadPercent(transferredBytes, options.totalBytes),
       transferredBytes,
-      ...(options.totalBytes !== undefined ? { totalBytes: options.totalBytes } : {})
+      ...(options.totalBytes !== undefined
+        ? { totalBytes: options.totalBytes }
+        : {}),
     });
     return hash.digest("hex");
   }
@@ -716,7 +848,9 @@ async function writeDownloadToFileAndHash(
       phase: "verifying",
       percent: calculateDownloadPercent(transferredBytes, options.totalBytes),
       transferredBytes,
-      ...(options.totalBytes !== undefined ? { totalBytes: options.totalBytes } : {})
+      ...(options.totalBytes !== undefined
+        ? { totalBytes: options.totalBytes }
+        : {}),
     });
     return hash.digest("hex");
   }
@@ -732,16 +866,23 @@ function normalizePackageSize(input: number | undefined): number | undefined {
 
 function calculateDownloadPercent(
   transferredBytes: number,
-  totalBytes: number | undefined
+  totalBytes: number | undefined,
 ): number | undefined {
   if (!totalBytes || totalBytes <= 0) {
     return undefined;
   }
-  return Math.min(100, Math.max(0, Math.round((transferredBytes / totalBytes) * 100)));
+  return Math.min(
+    100,
+    Math.max(0, Math.round((transferredBytes / totalBytes) * 100)),
+  );
 }
 
-function toNodeReadableStream(input: unknown): NodeReadableStream<Uint8Array> | undefined {
-  return input && typeof input === "object" && typeof (input as { getReader?: unknown }).getReader === "function"
+function toNodeReadableStream(
+  input: unknown,
+): NodeReadableStream<Uint8Array> | undefined {
+  return input &&
+    typeof input === "object" &&
+    typeof (input as { getReader?: unknown }).getReader === "function"
     ? (input as NodeReadableStream<Uint8Array>)
     : undefined;
 }
@@ -758,7 +899,7 @@ function sanitizeInstallerFileName(input: string): string {
 
 export async function inspectWindowsExecutableMetadata(
   filePath: string,
-  runPowerShell: (script: string) => Promise<string> = runPowerShellJson
+  runPowerShell: (script: string) => Promise<string> = runPowerShellJson,
 ): Promise<WindowsExecutableMetadata | undefined> {
   if (process.platform !== "win32" && runPowerShell === runPowerShellJson) {
     return undefined;
@@ -772,7 +913,7 @@ export async function inspectWindowsExecutableMetadata(
     "$result.CompanyName = [string]$info.CompanyName",
     "$result.OriginalFilename = [string]$info.OriginalFilename",
     "$result.InternalName = [string]$info.InternalName",
-    "$result | ConvertTo-Json -Compress"
+    "$result | ConvertTo-Json -Compress",
   ].join("; ");
   const raw = await runPowerShell(script);
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -781,7 +922,7 @@ export async function inspectWindowsExecutableMetadata(
     fileDescription: readMetadataString(parsed.FileDescription),
     companyName: readMetadataString(parsed.CompanyName),
     originalFilename: readMetadataString(parsed.OriginalFilename),
-    internalName: readMetadataString(parsed.InternalName)
+    internalName: readMetadataString(parsed.InternalName),
   };
 }
 
@@ -789,7 +930,7 @@ async function runPowerShellJson(script: string): Promise<string> {
   const { stdout } = await execFileAsync("powershell.exe", [
     "-NoProfile",
     "-Command",
-    script
+    script,
   ]);
   return stdout;
 }
@@ -803,33 +944,43 @@ function readMetadataString(input: unknown): string {
 }
 
 function isTrustedVoiceAssistantExecutableMetadata(
-  metadata: WindowsExecutableMetadata
+  metadata: WindowsExecutableMetadata,
 ): boolean {
   return getExecutableMetadataIdentityValues(metadata).some((value) =>
-    value.toLowerCase().includes("voice assistant")
+    value.toLowerCase().includes("voice assistant"),
   );
 }
 
-function hasExecutableMetadataIdentity(metadata: WindowsExecutableMetadata): boolean {
+function hasExecutableMetadataIdentity(
+  metadata: WindowsExecutableMetadata,
+): boolean {
   return getExecutableMetadataIdentityValues(metadata).length > 0;
 }
 
 function getExecutableMetadataIdentityValues(
-  metadata: WindowsExecutableMetadata
+  metadata: WindowsExecutableMetadata,
 ): string[] {
   return [
     metadata.productName,
     metadata.fileDescription,
     metadata.originalFilename,
-    metadata.internalName
-  ].map((value) => value.trim()).filter(Boolean);
+    metadata.internalName,
+  ]
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 export function createBackendInstallerLauncher(
-  spawnProcess: typeof spawn = spawn
+  spawnProcess: typeof spawn = spawn,
 ): BackendInstallerLauncher {
   return (input): void => {
-    const args = ["--silent-update", "--updated", "/S", "--force-run", "/currentuser"];
+    const args = [
+      "--silent-update",
+      "--updated",
+      "/S",
+      "--force-run",
+      "/currentuser",
+    ];
     const installDir = input.installDir?.trim();
     if (installDir) {
       args.push(`/D=${installDir}`);
@@ -837,14 +988,14 @@ export function createBackendInstallerLauncher(
     const child = spawnProcess(input.installerPath, args, {
       detached: true,
       stdio: "ignore",
-      windowsHide: true
+      windowsHide: true,
     });
     child.unref();
   };
 }
 
 function toUpdateReadyPayload(
-  result: Extract<UpdateCheckResult, { status: "available" }>
+  result: Extract<UpdateCheckResult, { status: "available" }>,
 ): UpdateReadyPayload {
   const payload: UpdateReadyPayload = {};
   setOptionalPayloadField(payload, "version", result.version);
@@ -861,7 +1012,7 @@ function toUpdateReadyPayload(
 function setOptionalPayloadField<Key extends keyof UpdateReadyPayload>(
   payload: UpdateReadyPayload,
   key: Key,
-  value: UpdateReadyPayload[Key] | undefined
+  value: UpdateReadyPayload[Key] | undefined,
 ): void {
   if (value !== undefined) {
     payload[key] = value;

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { app, nativeTheme } from "electron";
 import {
@@ -22,24 +23,41 @@ import {
   shouldRunScheduledOverlayHide,
   shouldOpenHomeOnLaunch,
   firstConfiguredValue,
+  createAuthenticatedIpcMainAdapter,
+  createLazyUpdateService,
+  runAuthenticatedDirectIpc,
+  runStartupGate,
   resolveVersionCheckEndpoint,
   resolvePackagedVersionPhase,
   redactUrlForLog,
   summarizeArgvForLog,
   shouldReplayMicErrorOverlay,
-  shouldShowShortcutHelpForState
+  shouldShowShortcutHelpForState,
 } from "./bootstrap";
 
 vi.mock("electron", () => ({
   app: {
     setAppUserModelId: vi.fn(),
     setName: vi.fn(),
-    setLoginItemSettings: vi.fn()
+    setLoginItemSettings: vi.fn(),
   },
   nativeTheme: {
-    themeSource: "system"
-  }
+    themeSource: "system",
+  },
 }));
+
+describe("bootstrap backend client wiring", () => {
+  it("uses the real HTTP backend client instead of the mock backend", () => {
+    const source = readFileSync(
+      new URL("./bootstrap.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("createHttpBackendClient");
+    expect(source).toContain("authService.getAccessTokenForRequest()");
+    expect(source).not.toContain("createMockBackendClient");
+  });
+});
 
 describe("bootstrap overlay visibility", () => {
   it("keeps the overlay visible for the LLM result state", () => {
@@ -74,16 +92,22 @@ describe("bootstrap overlay visibility", () => {
   it("defers idle starts to the renderer and shows already-active shortcuts", () => {
     expect(resolveShortcutTriggerOverlayAction()).toBe("show");
     expect(resolveShortcutTriggerOverlayAction("direct", "idle")).toBe("defer");
-    expect(resolveShortcutTriggerOverlayAction("direct", "success")).toBe("defer");
-    expect(resolveShortcutTriggerOverlayAction("processSelection", "idle")).toBe("defer");
-    expect(resolveShortcutTriggerOverlayAction("processSelection", "listening")).toBe("show");
+    expect(resolveShortcutTriggerOverlayAction("direct", "success")).toBe(
+      "defer",
+    );
+    expect(
+      resolveShortcutTriggerOverlayAction("processSelection", "idle"),
+    ).toBe("defer");
+    expect(
+      resolveShortcutTriggerOverlayAction("processSelection", "listening"),
+    ).toBe("show");
   });
 
   it("keeps the microphone error layout stable when the shortcut is pressed again", () => {
     expect(
       resolveShortcutTriggerOverlayLayout("error", "direct", {
-        reason: "mic"
-      })
+        reason: "mic",
+      }),
     ).toBe("micError");
     expect(shouldReplayMicErrorOverlay("error", "mic")).toBe(true);
     expect(shouldReplayMicErrorOverlay("error", "transcription")).toBe(false);
@@ -91,25 +115,31 @@ describe("bootstrap overlay visibility", () => {
   });
 
   it("keeps the compact layout when a shortcut stops active listening", () => {
-    expect(resolveShortcutTriggerOverlayLayout("listening", "direct")).toBe("translatePill");
+    expect(resolveShortcutTriggerOverlayLayout("listening", "direct")).toBe(
+      "translatePill",
+    );
     expect(
       resolveShortcutTriggerOverlayLayout("listening", "translate", {
-        activeMode: "translate"
-      })
+        activeMode: "translate",
+      }),
     ).toBe("translatePill");
   });
 
   it("keeps the listening layout when a shortcut targets a different active mode", () => {
     expect(
       resolveShortcutTriggerOverlayLayout("listening", "translate", {
-        activeMode: "processSelection"
-      })
+        activeMode: "processSelection",
+      }),
     ).toBe("translatePill");
   });
 
   it("keeps the compact layout when a shortcut is pressed during processing", () => {
-    expect(resolveShortcutTriggerOverlayLayout("processing", "direct")).toBe("translatePill");
-    expect(resolveShortcutTriggerOverlayLayout("inserting", "translate")).toBe("translatePill");
+    expect(resolveShortcutTriggerOverlayLayout("processing", "direct")).toBe(
+      "translatePill",
+    );
+    expect(resolveShortcutTriggerOverlayLayout("inserting", "translate")).toBe(
+      "translatePill",
+    );
   });
 
   it("syncs native menus with the configured app theme", () => {
@@ -124,38 +154,60 @@ describe("bootstrap overlay visibility", () => {
     applyLaunchAtLogin(true);
     expect(app.setLoginItemSettings).toHaveBeenLastCalledWith({
       openAtLogin: true,
-      openAsHidden: true
+      openAsHidden: true,
     });
 
     applyLaunchAtLogin(false);
     expect(app.setLoginItemSettings).toHaveBeenLastCalledWith({
       openAtLogin: false,
-      openAsHidden: true
+      openAsHidden: true,
     });
   });
 
   it("keeps tall enough layouts for listening and thinking states", () => {
-    expect(resolveOverlayWindowLayout("listening", "direct")).toBe("translatePill");
+    expect(resolveOverlayWindowLayout("listening", "direct")).toBe(
+      "translatePill",
+    );
     expect(
       resolveOverlayWindowLayout("listening", "direct", {
-        recordingLimitWarning: true
-      })
+        recordingLimitWarning: true,
+      }),
     ).toBe("recordingLimitWarning");
-    expect(resolveOverlayWindowLayout("listening", "translate")).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("listening", "processSelection")).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("listening", undefined)).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("processing", "translate")).toBe("translatePill");
-    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe("translatePill");
+    expect(resolveOverlayWindowLayout("listening", "translate")).toBe(
+      "translatePill",
+    );
+    expect(resolveOverlayWindowLayout("listening", "processSelection")).toBe(
+      "translatePill",
+    );
+    expect(resolveOverlayWindowLayout("listening", undefined)).toBe(
+      "translatePill",
+    );
+    expect(resolveOverlayWindowLayout("processing", "translate")).toBe(
+      "translatePill",
+    );
+    expect(resolveOverlayWindowLayout("inserting", "processSelection")).toBe(
+      "translatePill",
+    );
     expect(
       resolveOverlayWindowLayout("processing", "translate", {
-        busyHintVisible: true
-      })
+        busyHintVisible: true,
+      }),
     ).toBe("busyHint");
-    expect(resolveOverlayWindowLayout("error", undefined, { reason: "mic" })).toBe("micError");
-    expect(resolveOverlayWindowLayout("error", undefined, { reason: "no_selection" })).toBe("selectionError");
-    expect(resolveOverlayWindowLayout("canceled", "translate")).toBe("canceledPill");
+    expect(
+      resolveOverlayWindowLayout("error", undefined, { reason: "mic" }),
+    ).toBe("micError");
+    expect(
+      resolveOverlayWindowLayout("error", undefined, {
+        reason: "no_selection",
+      }),
+    ).toBe("selectionError");
+    expect(resolveOverlayWindowLayout("canceled", "translate")).toBe(
+      "canceledPill",
+    );
     expect(resolveOverlayWindowLayout("result", "translate")).toBe("result");
-    expect(resolveOverlayWindowLayout("shortcutHelp", undefined)).toBe("shortcutHelp");
+    expect(resolveOverlayWindowLayout("shortcutHelp", undefined)).toBe(
+      "shortcutHelp",
+    );
   });
 
   it("formats shortcut labels for the long-press help panel", () => {
@@ -213,25 +265,27 @@ describe("bootstrap overlay visibility", () => {
 
   it("resolves update endpoint with environment-style overrides first", () => {
     expect(firstConfiguredValue("", " http://config.example/check ")).toBe(
-      "http://config.example/check"
+      "http://config.example/check",
     );
     expect(
       resolveVersionCheckEndpoint({
         backendBaseUrl: "http://backend.example/aoa_api",
-        versionCheckUrl: " http://updates.example/appVersion/check "
-      })
+        versionCheckUrl: " http://updates.example/appVersion/check ",
+      }),
     ).toBe("http://updates.example/appVersion/check");
     expect(
       resolveVersionCheckEndpoint({
         backendBaseUrl: " http://backend.example/aoa_api ",
-        versionCheckUrl: undefined
-      })
+        versionCheckUrl: undefined,
+      }),
     ).toBe("http://backend.example/aoa_api/appVersion/check");
   });
 
   it("redacts secret URL parameters for bootstrap logs", () => {
     expect(
-      redactUrlForLog("wss://api.example/ws?AccessCode=secret&token=other&keep=yes")
+      redactUrlForLog(
+        "wss://api.example/ws?AccessCode=secret&token=other&keep=yes",
+      ),
     ).toBe("wss://api.example/ws?AccessCode=***&token=***&keep=yes");
   });
 
@@ -239,7 +293,9 @@ describe("bootstrap overlay visibility", () => {
     configureAppIdentity("win32");
 
     expect(app.setName).toHaveBeenCalledWith("Voice Assistant");
-    expect(app.setAppUserModelId).toHaveBeenCalledWith("com.ctm.voice-assistant");
+    expect(app.setAppUserModelId).toHaveBeenCalledWith(
+      "com.ctm.voice-assistant",
+    );
   });
 
   it("summarizes argv for logs without exposing local paths", () => {
@@ -247,12 +303,12 @@ describe("bootstrap overlay visibility", () => {
       "C:/Users/Alex/AppData/Local/Programs/Voice Assistant/Voice Assistant.exe",
       "--install-dir=C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
       "/uninstall",
-      "C:/Users/Alex/Documents/private.txt"
+      "C:/Users/Alex/Documents/private.txt",
     ]);
 
     expect(summary).toEqual({
       count: 4,
-      flags: ["--install-dir", "/uninstall"]
+      flags: ["--install-dir", "/uninstall"],
     });
     expect(JSON.stringify(summary)).not.toContain("Alex");
     expect(JSON.stringify(summary)).not.toContain("private.txt");
@@ -265,20 +321,25 @@ describe("installer launch handoff", () => {
       parseSilentUpdateInstallDir([
         "Voice Assistant Setup.exe",
         "--silent-update",
-        "--install-dir=C:/Users/Alex/AppData/Local/Programs/Voice Assistant"
-      ])
+        "--install-dir=C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
+      ]),
     ).toBe("C:/Users/Alex/AppData/Local/Programs/Voice Assistant");
     expect(
       parseSilentUpdateInstallDir([
         "Voice Assistant Setup.exe",
         "--install-dir",
         "C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
-        "--silent-update"
-      ])
+        "--silent-update",
+      ]),
     ).toBe("C:/Users/Alex/AppData/Local/Programs/Voice Assistant");
-    expect(parseSilentUpdateInstallDir(["Voice Assistant Setup.exe"])).toBeUndefined();
     expect(
-      parseSilentUpdateInstallDir(["Voice Assistant Setup.exe", "--silent-update"])
+      parseSilentUpdateInstallDir(["Voice Assistant Setup.exe"]),
+    ).toBeUndefined();
+    expect(
+      parseSilentUpdateInstallDir([
+        "Voice Assistant Setup.exe",
+        "--silent-update",
+      ]),
     ).toBeUndefined();
   });
 
@@ -341,29 +402,361 @@ describe("installer launch handoff", () => {
   });
 });
 
+describe("startup auth gate", () => {
+  type SessionSnapshot = Parameters<
+    Parameters<typeof runStartupGate>[0]["showLoginSetupWindow"]
+  >[0];
+
+  function createGateAuthService(initialSnapshot: SessionSnapshot) {
+    let listener: ((snapshot: SessionSnapshot) => void) | undefined;
+    return {
+      service: {
+        restoreSession: vi.fn(async () => initialSnapshot),
+        subscribe: vi.fn(
+          (nextListener: (snapshot: SessionSnapshot) => void) => {
+            listener = nextListener;
+            return vi.fn();
+          },
+        ),
+      },
+      emit: (snapshot: SessionSnapshot) => {
+        listener?.(snapshot);
+      },
+    };
+  }
+
+  const authenticatedSnapshot: SessionSnapshot = {
+    status: "authenticated",
+    user: {
+      id: "user-1",
+      displayName: "Ada",
+      email: "ada@example.test",
+      authType: "email_code",
+    },
+  };
+
+  it("shows login setup and skips runtime after unauthenticated restore", async () => {
+    const { service } = createGateAuthService({ status: "unauthenticated" });
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+    });
+
+    expect(showLoginSetupWindow).toHaveBeenCalledWith({
+      status: "unauthenticated",
+    });
+    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+  });
+
+  it("starts runtime only after authenticated restore", async () => {
+    const { service } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+    });
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(showLoginSetupWindow).not.toHaveBeenCalled();
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+  });
+
+  it("stops runtime and returns to login after unauthenticated broadcast", async () => {
+    const { service, emit } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+    });
+    emit({ status: "unauthenticated" });
+    await Promise.resolve();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(showLoginSetupWindow).toHaveBeenCalledWith({
+      status: "unauthenticated",
+    });
+  });
+
+  it("starts runtime once after login and ignores repeated authenticated broadcasts", async () => {
+    const { service, emit } = createGateAuthService({
+      status: "unauthenticated",
+    });
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+    });
+    emit(authenticatedSnapshot);
+    emit(authenticatedSnapshot);
+    await Promise.resolve();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+  });
+
+  it("cleans up a runtime start that finishes after unauthenticated broadcast", async () => {
+    let resolveRuntimeStart: (() => void) | undefined;
+    const { service, emit } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRuntimeStart = resolve;
+        }),
+    );
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+
+    const gatePromise = runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    emit({ status: "unauthenticated" });
+    await Promise.resolve();
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    resolveRuntimeStart?.();
+    await gatePromise;
+    await Promise.resolve();
+
+    expect(stopAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(showLoginSetupWindow).toHaveBeenCalledWith({
+      status: "unauthenticated",
+    });
+  });
+
+  it("closes login setup when auth returns while runtime start is pending", async () => {
+    let resolveRuntimeStart: (() => void) | undefined;
+    const { service, emit } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRuntimeStart = resolve;
+        }),
+    );
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+    const hideLoginSetupWindow = vi.fn();
+
+    const gatePromise = runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+      hideLoginSetupWindow,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    emit({ status: "unauthenticated" });
+    await Promise.resolve();
+    emit(authenticatedSnapshot);
+    resolveRuntimeStart?.();
+    await gatePromise;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(showLoginSetupWindow).toHaveBeenCalledWith({
+      status: "unauthenticated",
+    });
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(hideLoginSetupWindow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("lazy update service", () => {
+  it("does not create the real update service until a method is called and resets on dispose", async () => {
+    const firstService = {
+      checkForUpdates: vi.fn(async () => ({ status: "disabled" as const })),
+      restartToUpdate: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const secondService = {
+      checkForUpdates: vi.fn(async () => ({ status: "up-to-date" as const })),
+      restartToUpdate: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const factory = vi
+      .fn(() => firstService)
+      .mockReturnValueOnce(firstService)
+      .mockReturnValueOnce(secondService);
+    const lazyService = createLazyUpdateService(factory);
+
+    expect(factory).not.toHaveBeenCalled();
+
+    await expect(lazyService.checkForUpdates()).resolves.toEqual({
+      status: "disabled",
+    });
+    lazyService.restartToUpdate();
+    lazyService.dispose?.();
+    await expect(lazyService.checkForUpdates()).resolves.toEqual({
+      status: "up-to-date",
+    });
+
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(firstService.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(firstService.restartToUpdate).toHaveBeenCalledTimes(1);
+    expect(firstService.dispose).toHaveBeenCalledTimes(1);
+    expect(secondService.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("authenticated IPC gate", () => {
+  function createIpcMainAdapter() {
+    const handlers = new Map<
+      string,
+      (event: unknown, input?: unknown) => unknown
+    >();
+    return {
+      ipcMain: {
+        handle: vi.fn((channel, listener) => {
+          handlers.set(channel, listener);
+        }),
+      },
+      invoke: (channel: string, input?: unknown) => {
+        const handler = handlers.get(channel);
+        if (!handler) {
+          throw new Error(`missing handler ${channel}`);
+        }
+        return handler({}, input);
+      },
+    };
+  }
+
+  it("rejects runtime IPC when token validation fails and allows auth IPC", async () => {
+    const { ipcMain, invoke } = createIpcMainAdapter();
+    const getAccessTokenForRequest = vi.fn(async () => {
+      throw new Error("expired");
+    });
+    const guarded = createAuthenticatedIpcMainAdapter(ipcMain, {
+      getAccessTokenForRequest,
+    });
+    const runtimeHandler = vi.fn(() => "runtime-ok");
+    const authHandler = vi.fn(() => "auth-ok");
+
+    guarded.handle("voice:get-settings", runtimeHandler);
+    guarded.handle("voice:auth:get-session", authHandler);
+
+    await expect(invoke("voice:get-settings")).rejects.toThrow("expired");
+    await expect(invoke("voice:auth:get-session")).resolves.toBe("auth-ok");
+    expect(getAccessTokenForRequest).toHaveBeenCalledTimes(1);
+    expect(runtimeHandler).not.toHaveBeenCalled();
+    expect(authHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not validate tokens for auth IPC", async () => {
+    const { ipcMain, invoke } = createIpcMainAdapter();
+    const getAccessTokenForRequest = vi.fn(async () => "access-token");
+    const guarded = createAuthenticatedIpcMainAdapter(ipcMain, {
+      getAccessTokenForRequest,
+    });
+    const authHandler = vi.fn(() => "auth-ok");
+
+    guarded.handle("voice:auth:logout", authHandler);
+
+    await expect(invoke("voice:auth:logout")).resolves.toBe("auth-ok");
+    expect(getAccessTokenForRequest).not.toHaveBeenCalled();
+    expect(authHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows runtime IPC after token validation succeeds", async () => {
+    const { ipcMain, invoke } = createIpcMainAdapter();
+    const getAccessTokenForRequest = vi.fn(async () => "access-token");
+    const guarded = createAuthenticatedIpcMainAdapter(ipcMain, {
+      getAccessTokenForRequest,
+    });
+    const runtimeHandler = vi.fn(() => "runtime-ok");
+
+    guarded.handle("voice:get-settings", runtimeHandler);
+
+    await expect(invoke("voice:get-settings")).resolves.toBe("runtime-ok");
+    expect(getAccessTokenForRequest).toHaveBeenCalledTimes(1);
+    expect(runtimeHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("authenticated direct IPC gate", () => {
+  it("rejects direct IPC and skips listener when token validation fails", async () => {
+    const getAccessTokenForRequest = vi.fn(async () => {
+      throw new Error("expired");
+    });
+    const listener = vi.fn(() => "ok");
+
+    await expect(
+      runAuthenticatedDirectIpc({ getAccessTokenForRequest }, listener),
+    ).rejects.toThrow("expired");
+
+    expect(getAccessTokenForRequest).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("runs direct IPC listener after token validation succeeds", async () => {
+    const getAccessTokenForRequest = vi.fn(async () => "access-token");
+    const listener = vi.fn(() => "ok");
+
+    await expect(
+      runAuthenticatedDirectIpc({ getAccessTokenForRequest }, listener),
+    ).resolves.toBe("ok");
+
+    expect(getAccessTokenForRequest).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("direct bootstrap IPC logging", () => {
   it("logs direct IPC request lifecycle with sanitized summaries", () => {
     const logs: string[] = [];
     const warnings: string[] = [];
     const logger = {
       log: (message: string) => logs.push(message),
-      warn: (message: string) => warnings.push(message)
+      warn: (message: string) => warnings.push(message),
     };
 
     logDirectIpcRequest(logger, "voice:installer-install", {
       installDir: "C:/Tools",
       createDesktopShortcut: true,
-      selectedText: "secret text"
+      selectedText: "secret text",
     });
     logDirectIpcResponse(logger, "voice:installer-install", "ok");
-    logDirectIpcError(logger, "voice:installer-install", new Error("install failed"));
+    logDirectIpcError(
+      logger,
+      "voice:installer-install",
+      new Error("install failed"),
+    );
 
     expect(logs).toEqual([
-      "[ipc-direct] request channel=voice:installer-install input={\"installDir\":\"C:/Tools\",\"createDesktopShortcut\":true,\"selectedTextLength\":11}",
-      "[ipc-direct] response channel=voice:installer-install status=ok"
+      '[ipc-direct] request channel=voice:installer-install input={"installDir":"C:/Tools","createDesktopShortcut":true,"selectedTextLength":11}',
+      "[ipc-direct] response channel=voice:installer-install status=ok",
     ]);
     expect(warnings).toEqual([
-      "[ipc-direct] response channel=voice:installer-install status=error error=\"install failed\""
+      '[ipc-direct] response channel=voice:installer-install status=error error="install failed"',
     ]);
     expect([...logs, ...warnings].join("\n")).not.toContain("secret text");
   });
@@ -373,7 +766,7 @@ describe("direct bootstrap IPC logging", () => {
     const warnings: string[] = [];
     const logger = {
       log: (message: string) => logs.push(message),
-      warn: (message: string) => warnings.push(message)
+      warn: (message: string) => warnings.push(message),
     };
     const action = vi.fn();
 
@@ -384,16 +777,16 @@ describe("direct bootstrap IPC logging", () => {
         argv: summarizeArgvForLog([
           "C:/Users/Alex/AppData/Local/Programs/Voice Assistant/Voice Assistant.exe",
           "--open-home",
-          "C:/Users/Alex/Documents/private.txt"
-        ])
+          "C:/Users/Alex/Documents/private.txt",
+        ]),
       },
-      action
+      action,
     );
 
     expect(action).toHaveBeenCalledTimes(1);
     expect(logs).toEqual([
-      "[bootstrap-action] action=open-home-on-launch input={\"argv\":{\"count\":3,\"flags\":[\"--open-home\"]}}",
-      "[bootstrap-action] action=open-home-on-launch status=ok"
+      '[bootstrap-action] action=open-home-on-launch input={"argv":{"count":3,"flags":["--open-home"]}}',
+      "[bootstrap-action] action=open-home-on-launch status=ok",
     ]);
     expect(warnings).toEqual([]);
     expect(logs.join("\n")).not.toContain("Alex");
@@ -407,7 +800,7 @@ describe("tray action logging", () => {
     const warnings: string[] = [];
     const logger = {
       log: (message: string) => logs.push(message),
-      warn: (message: string) => warnings.push(message)
+      warn: (message: string) => warnings.push(message),
     };
     const action = vi.fn();
 
@@ -416,15 +809,15 @@ describe("tray action logging", () => {
       "open-about",
       {
         section: "about",
-        token: "secret"
+        token: "secret",
       },
-      action
+      action,
     );
 
     expect(action).toHaveBeenCalledTimes(1);
     expect(logs).toEqual([
-      "[tray] action action=open-about input={\"section\":\"about\",\"token\":\"***\"}",
-      "[tray] action action=open-about status=ok"
+      '[tray] action action=open-about input={"section":"about","token":"***"}',
+      "[tray] action action=open-about status=ok",
     ]);
     expect(warnings).toEqual([]);
     expect(logs.join("\n")).not.toContain("secret");
@@ -435,19 +828,19 @@ describe("tray action logging", () => {
     const warnings: string[] = [];
     const logger = {
       log: (message: string) => logs.push(message),
-      warn: (message: string) => warnings.push(message)
+      warn: (message: string) => warnings.push(message),
     };
     const error = new Error("quit failed");
 
     expect(() =>
       runLoggedTrayAction(logger, "quit", undefined, () => {
         throw error;
-      })
+      }),
     ).toThrow(error);
 
     expect(logs).toEqual(["[tray] action action=quit"]);
     expect(warnings).toEqual([
-      "[tray] action action=quit status=error error=\"quit failed\""
+      '[tray] action action=quit status=error error="quit failed"',
     ]);
   });
 });

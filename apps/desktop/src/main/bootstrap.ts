@@ -13,6 +13,8 @@ import {
   nativeTheme,
   safeStorage,
   session,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
 } from "electron";
 import ElectronStore from "electron-store";
 import electronUpdater from "electron-updater";
@@ -22,7 +24,13 @@ import {
   type InterfaceLanguage,
   type RecordingMode,
 } from "@voice/shared";
-import { createMockBackendClient } from "@voice/backend-client";
+import * as backendClientModule from "@voice/backend-client";
+import type { BackendClient } from "@voice/backend-client";
+import { createAuthHttpClient } from "./auth/authHttpClient";
+import { createAuthService, type AuthService } from "./auth/authService";
+import { createAuthSessionStore } from "./auth/authSessionStore";
+import type { AuthSessionSnapshot } from "./auth/authTypes";
+import { encryptLdapPassword } from "./auth/ldapCrypto";
 import {
   configureKeyboardShortcuts,
   copySelectionToClipboard,
@@ -50,7 +58,10 @@ import { createElectronStoreAdapter } from "./config/electronStoreAdapter";
 import { applyLocalEnvFiles } from "./config/localEnv";
 import { getOrCreateInstallationId } from "./installation/installationId";
 import { createFileHistoryStore } from "./history/historyStore";
-import { applyPendingInstallOptions, resolvePendingInstallOptionsPath } from "./installer/installOptions";
+import {
+  applyPendingInstallOptions,
+  resolvePendingInstallOptionsPath,
+} from "./installer/installOptions";
 import {
   createInstallerService,
   resolveInstallerModeMarkerPath,
@@ -59,7 +70,7 @@ import {
   type InstallerShellInstallInput,
 } from "./installer/installerService";
 import { createInsertService } from "./insertion/insertService";
-import { registerIpcRoutes } from "./ipc/ipcRoutes";
+import { registerIpcRoutes, type IpcMainAdapter } from "./ipc/ipcRoutes";
 import {
   configureLogSanitizer,
   formatLogFields,
@@ -73,17 +84,21 @@ import {
 } from "./shortcuts/escCancelController";
 import { createNativeShortcutRegistrar } from "./shortcuts/nativeShortcutRegistrar";
 import { createShortcutCaptureSession } from "./shortcuts/shortcutCaptureSession";
-import { createShortcutManager } from "./shortcuts/shortcutManager";
+import {
+  createShortcutManager,
+  type ShortcutConfigureResult,
+} from "./shortcuts/shortcutManager";
 import { createMainTranscriptionService } from "./transcription/mainTranscriptionService";
 import { createTray } from "./tray/createTray";
 import {
   createUpdateService,
   type UpdateDownloadProgressPayload,
+  type UpdateService,
 } from "./update/updateService";
 import {
   createHttpVersionCheckClient,
   type VersionPhase,
-  type VersionPlatform
+  type VersionPlatform,
 } from "./update/versionCheckClient";
 import { installMediaPermissionHandlers } from "./permissions/mediaPermission";
 import {
@@ -96,9 +111,9 @@ import {
   createOverlayWindow,
   type OverlayWindowLayout,
 } from "./windows/createOverlayWindow";
-import { resolveRuntimeAppIconPath } from "./windows/appIcon";
 import { createHomeWindow } from "./windows/createHomeWindow";
 import { createInstallerWindow } from "./windows/createInstallerWindow";
+import { createLoginSetupWindow } from "./windows/createLoginSetupWindow";
 import { createUninstallWindow } from "./windows/createUninstallWindow";
 import {
   blockHomeWindowAltSpaceMenu,
@@ -108,6 +123,15 @@ import {
 import { registerWindowControlIpc } from "./windows/windowControlIpc";
 
 declare const __AOA_VERSION_PHASE__: string | undefined;
+
+const createHttpBackendClient = (
+  backendClientModule as typeof backendClientModule & {
+    createHttpBackendClient(options: {
+      baseUrl: string;
+      getAccessToken(): Promise<string>;
+    }): BackendClient;
+  }
+).createHttpBackendClient;
 
 const TRAY_TOOLTIP_TEXT: Record<
   InterfaceLanguage,
@@ -240,10 +264,7 @@ export function resolveShortcutTriggerOverlayAction(
   mode?: RecordingMode,
   lastState?: string,
 ): ShortcutTriggerOverlayAction {
-  if (
-    mode === "direct" &&
-    (lastState === "idle" || lastState === "success")
-  ) {
+  if (mode === "direct" && (lastState === "idle" || lastState === "success")) {
     return "defer";
   }
   if (
@@ -318,10 +339,7 @@ export function handleOpenMicrophoneHelpRequest({
   overlayWindow: Pick<BrowserWindow, "hide" | "isDestroyed" | "isVisible">;
   overlayWindowFollower: { stop(): void };
   cancelPendingOverlayHide(): void;
-  openHomeWindow(options: {
-    section: "home";
-    showMicrophoneHelp: true;
-  }): void;
+  openHomeWindow(options: { section: "home"; showMicrophoneHelp: true }): void;
 }): void {
   cancelPendingOverlayHide();
   overlayWindowFollower.stop();
@@ -349,7 +367,9 @@ const WINDOWS_APP_USER_MODEL_ID = "com.ctm.voice-assistant";
 const OPEN_HOME_ON_LAUNCH_ARGS = new Set(["--open-home", "/open-home"]);
 const SILENT_UPDATE_ARGS = new Set(["--silent-update", "/silent-update"]);
 
-export function configureAppIdentity(platform: NodeJS.Platform = process.platform): void {
+export function configureAppIdentity(
+  platform: NodeJS.Platform = process.platform,
+): void {
   app.setName(INSTALL_TARGET_PRODUCT_NAME);
   if (platform === "win32") {
     app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
@@ -427,6 +447,121 @@ export function handoffInstallerLaunch(input: {
   }, 0);
 }
 
+const AUTH_IPC_CHANNELS = new Set([
+  "voice:auth:get-session",
+  "voice:auth:send-email-code",
+  "voice:auth:login-email-code",
+  "voice:auth:login-ldap",
+  // Logout is idempotent in AuthService and safe before authentication.
+  "voice:auth:logout",
+]);
+
+export function createAuthenticatedIpcMainAdapter(
+  ipcMainAdapter: IpcMainAdapter,
+  authService: Pick<AuthService, "getAccessTokenForRequest">,
+): IpcMainAdapter {
+  return {
+    handle: (channel, listener) => {
+      ipcMainAdapter.handle(channel, async (event, input) => {
+        if (!AUTH_IPC_CHANNELS.has(channel)) {
+          await authService.getAccessTokenForRequest();
+        }
+        return listener(event, input);
+      });
+    },
+  };
+}
+
+export async function runAuthenticatedDirectIpc<T>(
+  authService: Pick<AuthService, "getAccessTokenForRequest">,
+  listener: () => T | Promise<T>,
+): Promise<T> {
+  await authService.getAccessTokenForRequest();
+  return listener();
+}
+
+export function createLazyUpdateService(
+  factory: () => UpdateService,
+): UpdateService {
+  let service: UpdateService | undefined;
+  const getService = (): UpdateService => {
+    service ??= factory();
+    return service;
+  };
+  return {
+    checkForUpdates: (options) => getService().checkForUpdates(options),
+    restartToUpdate: () => {
+      getService().restartToUpdate();
+    },
+    dispose: () => {
+      service?.dispose?.();
+      service = undefined;
+    },
+  };
+}
+
+export interface StartupGateOptions {
+  authService: Pick<AuthService, "restoreSession" | "subscribe">;
+  startAuthenticatedRuntime(): void | Promise<void>;
+  stopAuthenticatedRuntime(): void;
+  showLoginSetupWindow(snapshot: AuthSessionSnapshot): void;
+  hideLoginSetupWindow?(): void;
+}
+
+export async function runStartupGate(
+  options: StartupGateOptions,
+): Promise<void> {
+  let runtimeStarted = false;
+  let desiredAuthenticated = false;
+  let loginSetupVisible = false;
+  let transition = Promise.resolve();
+
+  const reconcileRuntime = async (): Promise<void> => {
+    if (desiredAuthenticated && !runtimeStarted) {
+      await options.startAuthenticatedRuntime();
+      if (desiredAuthenticated) {
+        runtimeStarted = true;
+        if (loginSetupVisible) {
+          options.hideLoginSetupWindow?.();
+          loginSetupVisible = false;
+        }
+      } else {
+        options.stopAuthenticatedRuntime();
+        runtimeStarted = false;
+      }
+      return;
+    }
+
+    if (!desiredAuthenticated && runtimeStarted) {
+      options.stopAuthenticatedRuntime();
+      runtimeStarted = false;
+    }
+  };
+
+  const scheduleTransition = (): Promise<void> => {
+    transition = transition.then(reconcileRuntime, reconcileRuntime);
+    return transition;
+  };
+
+  const handleSnapshot = (
+    snapshot: AuthSessionSnapshot,
+  ): Promise<void> | void => {
+    if (snapshot.status === "authenticated") {
+      desiredAuthenticated = true;
+      return scheduleTransition();
+    }
+    desiredAuthenticated = false;
+    loginSetupVisible = true;
+    options.showLoginSetupWindow(snapshot);
+    return scheduleTransition();
+  };
+
+  options.authService.subscribe((snapshot) => {
+    void handleSnapshot(snapshot);
+  });
+  await handleSnapshot(await options.authService.restoreSession());
+}
+
 export async function bootstrap(): Promise<void> {
   configureAppIdentity();
   configureLogSanitizer({ revealSensitive: !app.isPackaged });
@@ -437,7 +572,9 @@ export async function bootstrap(): Promise<void> {
       join(app.getAppPath(), ".env"),
     ]);
     if (loadedEnvKeys.length > 0) {
-      console.log(`[bootstrap] loaded local env keys=${loadedEnvKeys.join(",")}`);
+      console.log(
+        `[bootstrap] loaded local env keys=${loadedEnvKeys.join(",")}`,
+      );
     }
   }
   if (
@@ -526,7 +663,28 @@ export async function bootstrap(): Promise<void> {
   applyNativeTheme(initialSettings.ui.theme);
   applyLaunchAtLogin(initialSettings.appBehavior.launchAtLogin);
   const installationId = getOrCreateInstallationId({ adapter: storeAdapter });
-  const backendClient = createMockBackendClient();
+  const resolveAuthBaseUrl = (): string =>
+    firstConfiguredValue(
+      process.env.AOA_BACKEND_BASE_URL,
+      mainAppConfig.backendBaseUrl,
+      configStore.get().backend.baseUrl,
+    ) ?? configStore.get().backend.baseUrl;
+  const authService = createAuthService({
+    client: createAuthHttpClient({ baseUrl: resolveAuthBaseUrl() }),
+    store: createAuthSessionStore({ adapter: storeAdapter, safeStorage }),
+    device: {
+      installationId,
+      deviceName: os.hostname(),
+      platform: "windows",
+      appVersion: app.getVersion(),
+      locale: configStore.get().ui.language,
+    },
+    encryptLdapPassword,
+  });
+  const backendClient = createHttpBackendClient({
+    baseUrl: resolveAuthBaseUrl(),
+    getAccessToken: () => authService.getAccessTokenForRequest(),
+  });
   const nativeBridge = createNativeBridge({
     loadHelper: () => ({
       copySelectionToClipboard,
@@ -562,6 +720,15 @@ export async function bootstrap(): Promise<void> {
   let lastRecordingReason: string | undefined;
   let pendingHideTimer: NodeJS.Timeout | undefined;
   let refreshTrayTooltip = (_state: string): void => {};
+  let configureShortcuts = (
+    _shortcuts: AppSettings["shortcuts"],
+  ): ShortcutConfigureResult => ({
+    ok: true as const,
+    registered: [],
+  });
+  let openHomeWindowForUpdateReady = (_payload: {
+    version?: string;
+  }): void => {};
   const historyStore = createFileHistoryStore({
     rootDir: join(app.getPath("userData"), "history"),
     audioEncryptionKey: getOrCreateHistoryAudioEncryptionKey({
@@ -569,382 +736,6 @@ export async function bootstrap(): Promise<void> {
       safeStorage,
     }),
   });
-
-  // ASR 即時轉寫服務（主程序走 node ws + https-proxy-agent，避免瀏覽器原生 WS 不支援 proxy 的問題）。
-  const transcriptionService = createMainTranscriptionService({
-    getSettings: () => configStore.get(),
-    revealSensitiveLogs: !app.isPackaged,
-  });
-  const uninstallService = createAppUninstallService();
-  const versionCheckEndpoint = resolveVersionCheckEndpoint({
-    backendBaseUrl: firstConfiguredValue(
-      process.env.AOA_BACKEND_BASE_URL,
-      mainAppConfig.backendBaseUrl
-    ),
-    versionCheckUrl: firstConfiguredValue(
-      process.env.AOA_VERSION_CHECK_URL,
-      mainAppConfig.versionCheckUrl
-    ),
-  });
-  const versionPhase = resolvePackagedVersionPhase(__AOA_VERSION_PHASE__);
-  console.log(
-    `[bootstrap] update versionCheckEndpoint=${
-      versionCheckEndpoint ? redactUrlForLog(versionCheckEndpoint) : "disabled"
-    } phase=${versionPhase}`
-  );
-  const updateService = createUpdateService({
-    allowDevelopmentBackendCheck: Boolean(versionCheckEndpoint),
-    autoUpdater: electronUpdater.autoUpdater,
-    currentInstallDir: dirname(app.getPath("exe")),
-    currentVersion: app.getVersion(),
-    isPackaged: app.isPackaged,
-    platform: resolveVersionPlatform(process.platform),
-    quitApp: () => app.quit(),
-    updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
-    versionCheckClient: createHttpVersionCheckClient({
-      endpoint: versionCheckEndpoint,
-      phase: versionPhase,
-    }),
-    onUpdateReady: (payload) => {
-      broadcastUpdateReady(payload);
-    },
-    onDownloadProgress: (payload) => {
-      broadcastUpdateDownloadProgress(payload);
-    },
-    onError: (error) => {
-      console.warn("[bootstrap] update check failed", error);
-    },
-  });
-
-  registerIpcRoutes(
-    ipcMain,
-    {
-      configStore,
-      clipboard: clipboardService,
-      insertService,
-      selectionService,
-      backendClient,
-      transcriptionService,
-      uninstallService,
-      updateService,
-      quitApp: () => app.quit(),
-      historyStore,
-      installationId,
-      appInfo: {
-        deviceName: os.hostname(),
-        appVersion: app.getVersion(),
-      },
-      getAppConfig: () => readAppConfig(appConfigPath),
-      getInsertTargetWindowHandle: () => insertTargetWindowHandle,
-      onSettingsUpdated: (settings) => {
-        applyNativeTheme(settings.ui.theme);
-        applyLaunchAtLogin(settings.appBehavior.launchAtLogin);
-        configureShortcuts(settings.shortcuts);
-        refreshTrayTooltip(lastRecordingState);
-        audioDuckingService.handleSettingsChanged(settings);
-        broadcastSettingsChanged(settings);
-      },
-      onHistoryRecordCreated: (record) => {
-        broadcastHistoryRecordCreated(record);
-      },
-      onHistoryRecordDeleted: (id) => {
-        broadcastHistoryRecordDeleted(id);
-      },
-    },
-    { revealSensitiveLogs: !app.isPackaged },
-  );
-  console.log("[bootstrap] IPC 路由已註冊");
-
-  const overlayWindow = createOverlayWindow({ theme: initialSettings.ui.theme });
-  blockHomeWindowAltSpaceMenu(overlayWindow);
-  const overlayWindowFollower = createOverlayWindowFollower(overlayWindow);
-  console.log("[bootstrap] 懸浮窗已建立");
-
-  const cancelPendingOverlayHide = (): void => {
-    if (!pendingHideTimer) {
-      return;
-    }
-    clearTimeout(pendingHideTimer);
-    pendingHideTimer = undefined;
-  };
-
-  const showOverlayWithLayout = (layout: OverlayWindowLayout): void => {
-    cancelPendingOverlayHide();
-    applyOverlayWindowLayout(overlayWindow, layout);
-    if (!overlayWindow.isVisible()) {
-      overlayWindow.showInactive();
-    }
-    overlayWindowFollower.start(layout);
-  };
-
-  const scheduleOverlayHide = (state: string): void => {
-    cancelPendingOverlayHide();
-    pendingHideTimer = setTimeout(() => {
-      pendingHideTimer = undefined;
-      if (overlayWindow.isDestroyed()) {
-        return;
-      }
-      if (!shouldRunScheduledOverlayHide(lastRecordingState, lastRecordingReason)) {
-        console.log(
-          `[bootstrap] 跳過過期懸浮窗隱藏（scheduled=${state}, current=${lastRecordingState}）`,
-        );
-        return;
-      }
-      if (overlayWindow.isVisible()) {
-        console.log(
-          `[bootstrap] 延遲 ${OVERLAY_HIDE_DELAY_MS}ms 後隱藏懸浮窗（state=${state}）`,
-        );
-        overlayWindowFollower.stop();
-        overlayWindow.hide();
-      }
-    }, OVERLAY_HIDE_DELAY_MS);
-  };
-
-  // 訂閱主程序 ASR 轉寫事件，序列化後轉發給 renderer，ipcTranscriptionProvider 會反序列化。
-  transcriptionService.subscribe((event) => {
-    if (
-      overlayWindow.isDestroyed() ||
-      overlayWindow.webContents.isDestroyed()
-    ) {
-      return;
-    }
-    const payload =
-      event.type === "error"
-        ? { type: "error" as const, message: event.error.message }
-        : event;
-    overlayWindow.webContents.send("voice:transcription-event", payload);
-  });
-
-  // 將 renderer 程序的 console.log/warn/error 轉發到主程序終端，
-  // 方便在 `pnpm dev` 終端裡直接看到 transcription provider / voiceController 等 renderer 側日誌，
-  // 否則它們只會出現在 DevTools Console。level: 0=verbose 1=info 2=warning 3=error。
-  overlayWindow.webContents.on(
-    "console-message",
-    (
-      _event,
-      level: number,
-      message: string,
-      line: number,
-      sourceId: string,
-    ) => {
-      const location = sourceId ? ` (${sourceId}:${line})` : "";
-      if (level >= 3) {
-        console.error(`[renderer]${location} ${message}`);
-      } else if (level === 2) {
-        console.warn(`[renderer]${location} ${message}`);
-      } else {
-        console.log(`[renderer] ${message}`);
-      }
-    },
-  );
-  const shortcutManager = createShortcutManager(
-    createNativeShortcutRegistrar(
-      { configureKeyboardShortcuts, startKeyboardHook },
-      {
-        register: (accelerator, callback) =>
-          globalShortcut.register(accelerator, callback),
-        unregister: (accelerator) => globalShortcut.unregister(accelerator),
-      },
-    ),
-  );
-  const shortcutCaptureSession = createShortcutCaptureSession();
-  let currentShortcuts = configStore.get().shortcuts;
-  let shortcutHelpVisible = false;
-
-  const escCancelController = createEscCancelController({
-    onTrigger: () => {
-      if (
-        overlayWindow.isDestroyed() ||
-        overlayWindow.webContents.isDestroyed()
-      ) {
-        return;
-      }
-      overlayWindow.webContents.send("voice:cancel-requested");
-    },
-  });
-  app.on("will-quit", () => {
-    cancelPendingOverlayHide();
-    void audioDuckingService.restore();
-    overlayWindowFollower.stop();
-    shortcutCaptureSession.stop();
-    escCancelController.dispose();
-  });
-
-  const handleToggle = (mode: RecordingMode): void => {
-    if (shortcutCaptureDepth > 0) {
-      console.log(`[bootstrap] 快捷鍵錄入中，忽略 toggle mode=${mode}`);
-      return;
-    }
-    cancelPendingOverlayHide();
-    console.log(`[bootstrap] handleToggle 觸發，mode=${mode}`);
-    void (async () => {
-      if (shouldReplayMicErrorOverlay(lastRecordingState, lastRecordingReason)) {
-        const layout = resolveShortcutTriggerOverlayLayout(
-          lastRecordingState,
-          mode,
-          {
-            ...(lastRecordingMode !== undefined
-              ? { activeMode: lastRecordingMode }
-              : {}),
-            ...(lastRecordingReason ? { reason: lastRecordingReason } : {}),
-          },
-        );
-        showOverlayWithLayout(layout);
-        console.log("[bootstrap] microphone error overlay already active; replay only");
-        return;
-      }
-
-      if (
-        lastRecordingState === "idle" ||
-        lastRecordingState === "success" ||
-        lastRecordingState === "error"
-      ) {
-        try {
-          insertTargetWindowHandle =
-            await nativeBridge.getForegroundWindowHandle();
-          console.log(
-            `[bootstrap] 已記錄插入目標視窗 handle=${insertTargetWindowHandle ?? "none"}`,
-          );
-        } catch (error) {
-          insertTargetWindowHandle = undefined;
-          console.warn("[bootstrap] 記錄插入目標視窗失敗", error);
-        }
-      }
-
-      // 使用 showInactive 而非 show，避免搶走前臺焦點：
-      // 否則 Ctrl+V 貼上會打到懸浮窗 WebContents，而不是使用者原本的游標位置。
-      const layout = resolveShortcutTriggerOverlayLayout(
-        lastRecordingState,
-        mode,
-        {
-          ...(lastRecordingMode !== undefined
-            ? { activeMode: lastRecordingMode }
-            : {}),
-          ...(lastRecordingReason !== undefined
-            ? { reason: lastRecordingReason }
-            : {}),
-        },
-      );
-      if (resolveShortcutTriggerOverlayAction(mode, lastRecordingState) === "show") {
-        showOverlayWithLayout(layout);
-      } else {
-        applyOverlayWindowLayout(overlayWindow, layout);
-      }
-      overlayWindow.webContents.send("voice:toggle-recording", { mode });
-      console.log(`[bootstrap] 已傳送 voice:toggle-recording，mode=${mode}`);
-    })();
-  };
-
-  const handleShortcutHelp = (): void => {
-    if (shortcutCaptureDepth > 0 || !shouldShowShortcutHelpForState(lastRecordingState)) {
-      return;
-    }
-    const layout = resolveOverlayWindowLayout("shortcutHelp", undefined);
-    showOverlayWithLayout(layout);
-    shortcutHelpVisible = true;
-    overlayWindow.webContents.send("voice:shortcut-help", {
-      direct: formatShortcutHelpLabel(currentShortcuts.toggleRecording),
-      processSelection: formatShortcutHelpLabel(
-        currentShortcuts.processSelection,
-      ),
-      translate: formatShortcutHelpLabel(currentShortcuts.translateDictation),
-    });
-  };
-
-  const handleShortcutHelpDismiss = (): void => {
-    if (!shortcutHelpVisible) {
-      return;
-    }
-    shortcutHelpVisible = false;
-    overlayWindow.webContents.send("voice:shortcut-help-dismiss");
-  };
-
-  function configureShortcuts(shortcuts: AppSettings["shortcuts"]) {
-    currentShortcuts = shortcuts;
-    console.log("[bootstrap] 配置快捷鍵：", shortcuts);
-    const shortcutResult = shortcutManager.configure(shortcuts, {
-      onToggle: handleToggle,
-      onShortcutHelp: handleShortcutHelp,
-      onShortcutHelpDismiss: handleShortcutHelpDismiss,
-    });
-    console.log(
-      `[bootstrap] 快捷鍵註冊結果：ok=${shortcutResult.ok}` +
-        (shortcutResult.ok
-          ? ""
-          : ` 衝突=${shortcutResult.conflicts.map((c) => c.accelerator).join(",")}`),
-    );
-    if (!shortcutResult.ok) {
-      broadcastShortcutConflict(
-        shortcutResult.conflicts.map((c) => c.accelerator),
-      );
-    }
-    return shortcutResult;
-  }
-
-  let shortcutCaptureDepth = 0;
-  let shortcutCaptureTargetWindow: BrowserWindow | undefined;
-
-  function setShortcutCaptureActive(
-    active: boolean,
-    targetWindow: BrowserWindow | undefined,
-  ): void {
-    if (active) {
-      if (shortcutCaptureDepth === 0) {
-        shortcutCaptureTargetWindow = targetWindow;
-        shortcutManager.suspend();
-        ensureShortcutCaptureWindowGuards(
-          BrowserWindow.getAllWindows(),
-          () => shortcutCaptureDepth > 0,
-          () => shortcutCaptureTargetWindow,
-        );
-        try {
-          shortcutCaptureSession.start();
-          shortcutCaptureDepth = 1;
-        } catch (error) {
-          shortcutCaptureSession.stop();
-          const resumeResult = shortcutManager.resume();
-          if (resumeResult && !resumeResult.ok) {
-            broadcastShortcutConflict(
-              resumeResult.conflicts.map((c) => c.accelerator),
-            );
-          }
-          throw error;
-        }
-        console.log("[bootstrap] 快捷鍵錄入模式：已暫停全域性快捷鍵");
-      } else {
-        shortcutCaptureTargetWindow = targetWindow ?? shortcutCaptureTargetWindow;
-        shortcutCaptureDepth += 1;
-      }
-      return;
-    }
-
-    if (shortcutCaptureDepth === 0) {
-      return;
-    }
-
-    shortcutCaptureDepth -= 1;
-    if (shortcutCaptureDepth === 0) {
-      shortcutCaptureTargetWindow = undefined;
-      shortcutCaptureSession.stop();
-      const resumeResult = shortcutManager.resume();
-      console.log(
-        `[bootstrap] 快捷鍵錄入模式：已恢復全域性快捷鍵 ok=${resumeResult?.ok ?? false}`,
-      );
-      if (resumeResult && !resumeResult.ok) {
-        broadcastShortcutConflict(
-          resumeResult.conflicts.map((c) => c.accelerator),
-        );
-      }
-    }
-  }
-
-  function broadcastShortcutConflict(conflicts: string[]): void {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("voice:shortcut-conflict", { conflicts });
-      }
-    }
-  }
 
   function broadcastSettingsChanged(settings: AppSettings): void {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -973,10 +764,12 @@ export async function bootstrap(): Promise<void> {
   }
 
   function broadcastUpdateReady(payload: { version?: string }): void {
-    openHomeWindow({ section: "about", updateReady: payload });
+    openHomeWindowForUpdateReady(payload);
   }
 
-  function broadcastUpdateDownloadProgress(payload: UpdateDownloadProgressPayload): void {
+  function broadcastUpdateDownloadProgress(
+    payload: UpdateDownloadProgressPayload,
+  ): void {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
         window.webContents.send("voice:update-download-progress", payload);
@@ -984,188 +777,739 @@ export async function bootstrap(): Promise<void> {
     }
   }
 
-  const initialShortcutResult = configureShortcuts(configStore.get().shortcuts);
-  void updateService.checkForUpdates();
-
-  const trayIconPath = resolveRuntimeAppIconPath();
-  const tray = createTray({
-    onOpenHome: () =>
-      runLoggedTrayAction(
-        console,
-        "open-home",
-        undefined,
-        () => openHomeWindow(),
-        { revealSensitive: !app.isPackaged },
-      ),
-    onOpenHistory: () =>
-      runLoggedTrayAction(console, "open-history", { section: "history" }, () =>
-        openHomeWindow({ section: "history" }),
-        { revealSensitive: !app.isPackaged },
-      ),
-    onOpenSettings: () =>
-      runLoggedTrayAction(
-        console,
-        "open-settings",
-        { section: "settings" },
-        () => openHomeWindow({ section: "settings" }),
-        { revealSensitive: !app.isPackaged },
-      ),
-    onCheckUpdates: () =>
-      runLoggedTrayAction(
-        console,
-        "check-updates",
-        { section: "about", showUpdates: true },
-        () => openHomeWindow({ section: "about", showUpdates: true }),
-        { revealSensitive: !app.isPackaged },
-      ),
-    onOpenAbout: () =>
-      runLoggedTrayAction(console, "open-about", { section: "about" }, () =>
-        openHomeWindow({ section: "about" }),
-        { revealSensitive: !app.isPackaged },
-      ),
-    onQuit: () =>
-      runLoggedTrayAction(
-        console,
-        "quit",
-        undefined,
-        () => app.quit(),
-        { revealSensitive: !app.isPackaged },
-      ),
-    iconPath: trayIconPath,
+  // ASR 即時轉寫服務（主程序走 node ws + https-proxy-agent，避免瀏覽器原生 WS 不支援 proxy 的問題）。
+  const transcriptionService = createMainTranscriptionService({
+    getSettings: () => configStore.get(),
   });
-  refreshTrayTooltip = (state) => {
-    tray.setToolTip(formatTrayTooltip(state, configStore.get().ui.language));
-  };
-  refreshTrayTooltip("idle");
+  const uninstallService = createAppUninstallService();
+  const versionCheckEndpoint = resolveVersionCheckEndpoint({
+    backendBaseUrl: firstConfiguredValue(
+      process.env.AOA_BACKEND_BASE_URL,
+      mainAppConfig.backendBaseUrl,
+    ),
+    versionCheckUrl: firstConfiguredValue(
+      process.env.AOA_VERSION_CHECK_URL,
+      mainAppConfig.versionCheckUrl,
+    ),
+  });
+  const versionPhase = resolvePackagedVersionPhase(__AOA_VERSION_PHASE__);
+  console.log(
+    `[bootstrap] update versionCheckEndpoint=${
+      versionCheckEndpoint ? redactUrlForLog(versionCheckEndpoint) : "disabled"
+    } phase=${versionPhase}`,
+  );
+  const updateService = createLazyUpdateService(() =>
+    createUpdateService({
+      allowDevelopmentBackendCheck: Boolean(versionCheckEndpoint),
+      autoUpdater: electronUpdater.autoUpdater,
+      currentInstallDir: dirname(app.getPath("exe")),
+      currentVersion: app.getVersion(),
+      isPackaged: app.isPackaged,
+      platform: resolveVersionPlatform(process.platform),
+      quitApp: () => app.quit(),
+      updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
+      versionCheckClient: createHttpVersionCheckClient({
+        endpoint: versionCheckEndpoint,
+        phase: versionPhase,
+      }),
+      onUpdateReady: (payload) => {
+        broadcastUpdateReady(payload);
+      },
+      onDownloadProgress: (payload) => {
+        broadcastUpdateDownloadProgress(payload);
+      },
+      onError: (error) => {
+        console.warn("[bootstrap] update check failed", error);
+      },
+    }),
+  );
 
-  // 首頁視窗採用單例模式：托盤雙擊開啟首頁；托盤選單「設定」開啟首頁並喚起設定彈層。
-  let homeWindow: import("electron").BrowserWindow | undefined;
-  function openHomeWindow(
-    options: {
-      section?: "home" | "history" | "settings" | "about";
-      showUpdates?: boolean;
-      showMicrophoneHelp?: boolean;
-      updateReady?: { version?: string };
-      onboardingStep?: number;
-    } = {},
-  ): void {
-    if (homeWindow && !homeWindow.isDestroyed()) {
-      blockHomeWindowAltSpaceMenu(homeWindow);
-      if (homeWindow.isMinimized()) homeWindow.restore();
-      homeWindow.show();
-      homeWindow.focus();
-      homeWindow.webContents.send(
-        "voice:open-home-section",
-        options.section ?? "home",
-      );
-      if (options.section === "settings") {
-        homeWindow.webContents.send("voice:open-settings-panel");
+  registerIpcRoutes(createAuthenticatedIpcMainAdapter(ipcMain, authService), {
+    authService,
+    configStore,
+    clipboard: clipboardService,
+    insertService,
+    selectionService,
+    backendClient,
+    transcriptionService,
+    uninstallService,
+    updateService,
+    quitApp: () => app.quit(),
+    historyStore,
+    installationId,
+    appInfo: {
+      deviceName: os.hostname(),
+      appVersion: app.getVersion(),
+    },
+    getAppConfig: () => readAppConfig(appConfigPath),
+    getInsertTargetWindowHandle: () => insertTargetWindowHandle,
+    onSettingsUpdated: (settings) => {
+      applyNativeTheme(settings.ui.theme);
+      applyLaunchAtLogin(settings.appBehavior.launchAtLogin);
+      configureShortcuts(settings.shortcuts);
+      refreshTrayTooltip(lastRecordingState);
+      audioDuckingService.handleSettingsChanged(settings);
+      broadcastSettingsChanged(settings);
+    },
+    onHistoryRecordCreated: (record) => {
+      broadcastHistoryRecordCreated(record);
+    },
+    onHistoryRecordDeleted: (id) => {
+      broadcastHistoryRecordDeleted(id);
+    },
+  });
+  console.log("[bootstrap] IPC 路由已註冊");
+
+  const broadcastAuthSessionChanged = (snapshot: AuthSessionSnapshot): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send("voice:auth:session-changed", snapshot);
       }
-      if (options.showUpdates) {
-        homeWindow.webContents.send("voice:open-update-dialog");
-      }
-      if (options.showMicrophoneHelp) {
-        homeWindow.webContents.send("voice:open-microphone-help");
-      }
-      if (options.onboardingStep !== undefined) {
-        homeWindow.webContents.send(
-          "voice:open-onboarding-step",
-          options.onboardingStep,
-        );
-      }
-      if (options.updateReady) {
-        homeWindow.webContents.send("voice:update-ready", options.updateReady);
-      }
+    }
+  };
+  authService.subscribe(broadcastAuthSessionChanged);
+
+  let loginSetupWindow: BrowserWindow | undefined;
+  let latestLoginSetupSnapshot: AuthSessionSnapshot = {
+    status: "unauthenticated",
+  };
+  const showLoginSetupWindowWithLatestSnapshot = (): void => {
+    if (!loginSetupWindow || loginSetupWindow.isDestroyed()) {
       return;
     }
-    homeWindow = createHomeWindow({
-      ...(options.section ? { section: options.section } : {}),
-      ...(options.onboardingStep !== undefined
-        ? { onboardingStep: options.onboardingStep }
-        : {}),
-      theme: configStore.get().ui.theme,
+    loginSetupWindow.show();
+    loginSetupWindow.focus();
+    loginSetupWindow.webContents.send(
+      "voice:auth:session-changed",
+      latestLoginSetupSnapshot,
+    );
+  };
+  const openLoginSetupWindow = (snapshot: AuthSessionSnapshot): void => {
+    latestLoginSetupSnapshot = snapshot;
+    if (loginSetupWindow && !loginSetupWindow.isDestroyed()) {
+      showLoginSetupWindowWithLatestSnapshot();
+      return;
+    }
+
+    loginSetupWindow = createLoginSetupWindow();
+    loginSetupWindow.once(
+      "ready-to-show",
+      showLoginSetupWindowWithLatestSnapshot,
+    );
+    loginSetupWindow.webContents.once(
+      "did-fail-load",
+      showLoginSetupWindowWithLatestSnapshot,
+    );
+    loginSetupWindow.on("closed", () => {
+      loginSetupWindow = undefined;
     });
-    wireShortcutCaptureWindowGuard(homeWindow, () => shortcutCaptureDepth > 0);
-    homeWindow.once("ready-to-show", () => {
-      homeWindow?.show();
-      homeWindow?.focus();
-      if (options.showUpdates) {
-        homeWindow?.webContents.send("voice:open-update-dialog");
+  };
+  const hideLoginSetupWindow = (): void => {
+    if (loginSetupWindow && !loginSetupWindow.isDestroyed()) {
+      loginSetupWindow.close();
+    }
+  };
+
+  let stopAuthenticatedRuntime: (() => void) | undefined;
+
+  async function startAuthenticatedRuntime(): Promise<void> {
+    if (stopAuthenticatedRuntime) {
+      return;
+    }
+    if (loginSetupWindow && !loginSetupWindow.isDestroyed()) {
+      loginSetupWindow.close();
+    }
+
+    const overlayWindow = createOverlayWindow({
+      theme: initialSettings.ui.theme,
+    });
+    blockHomeWindowAltSpaceMenu(overlayWindow);
+    const overlayWindowFollower = createOverlayWindowFollower(overlayWindow);
+    console.log("[bootstrap] 懸浮窗已建立");
+
+    const cancelPendingOverlayHide = (): void => {
+      if (!pendingHideTimer) {
+        return;
       }
-      if (options.showMicrophoneHelp) {
-        homeWindow?.webContents.send("voice:open-microphone-help");
+      clearTimeout(pendingHideTimer);
+      pendingHideTimer = undefined;
+    };
+
+    const showOverlayWithLayout = (layout: OverlayWindowLayout): void => {
+      cancelPendingOverlayHide();
+      applyOverlayWindowLayout(overlayWindow, layout);
+      if (!overlayWindow.isVisible()) {
+        overlayWindow.showInactive();
       }
-      if (options.onboardingStep !== undefined) {
-        homeWindow?.webContents.send(
-          "voice:open-onboarding-step",
-          options.onboardingStep,
+      overlayWindowFollower.start(layout);
+    };
+
+    const scheduleOverlayHide = (state: string): void => {
+      cancelPendingOverlayHide();
+      pendingHideTimer = setTimeout(() => {
+        pendingHideTimer = undefined;
+        if (overlayWindow.isDestroyed()) {
+          return;
+        }
+        if (
+          !shouldRunScheduledOverlayHide(
+            lastRecordingState,
+            lastRecordingReason,
+          )
+        ) {
+          console.log(
+            `[bootstrap] 跳過過期懸浮窗隱藏（scheduled=${state}, current=${lastRecordingState}）`,
+          );
+          return;
+        }
+        if (overlayWindow.isVisible()) {
+          console.log(
+            `[bootstrap] 延遲 ${OVERLAY_HIDE_DELAY_MS}ms 後隱藏懸浮窗（state=${state}）`,
+          );
+          overlayWindowFollower.stop();
+          overlayWindow.hide();
+        }
+      }, OVERLAY_HIDE_DELAY_MS);
+    };
+
+    // 訂閱主程序 ASR 轉寫事件，序列化後轉發給 renderer，ipcTranscriptionProvider 會反序列化。
+    const unsubscribeTranscriptionEvents = transcriptionService.subscribe(
+      (event) => {
+        if (
+          overlayWindow.isDestroyed() ||
+          overlayWindow.webContents.isDestroyed()
+        ) {
+          return;
+        }
+        const payload =
+          event.type === "error"
+            ? { type: "error" as const, message: event.error.message }
+            : event;
+        overlayWindow.webContents.send("voice:transcription-event", payload);
+      },
+    );
+
+    // 將 renderer 程序的 console.log/warn/error 轉發到主程序終端，
+    // 方便在 `pnpm dev` 終端裡直接看到 transcription provider / voiceController 等 renderer 側日誌，
+    // 否則它們只會出現在 DevTools Console。level: 0=verbose 1=info 2=warning 3=error。
+    overlayWindow.webContents.on(
+      "console-message",
+      (
+        _event,
+        level: number,
+        message: string,
+        line: number,
+        sourceId: string,
+      ) => {
+        const location = sourceId ? ` (${sourceId}:${line})` : "";
+        if (level >= 3) {
+          console.error(`[renderer]${location} ${message}`);
+        } else if (level === 2) {
+          console.warn(`[renderer]${location} ${message}`);
+        } else {
+          console.log(`[renderer] ${message}`);
+        }
+      },
+    );
+    const shortcutManager = createShortcutManager(
+      createNativeShortcutRegistrar(
+        { configureKeyboardShortcuts, startKeyboardHook },
+        {
+          register: (accelerator, callback) =>
+            globalShortcut.register(accelerator, callback),
+          unregister: (accelerator) => globalShortcut.unregister(accelerator),
+        },
+      ),
+    );
+    const shortcutCaptureSession = createShortcutCaptureSession();
+    let currentShortcuts = configStore.get().shortcuts;
+    let shortcutHelpVisible = false;
+
+    const escCancelController = createEscCancelController({
+      onTrigger: () => {
+        if (
+          overlayWindow.isDestroyed() ||
+          overlayWindow.webContents.isDestroyed()
+        ) {
+          return;
+        }
+        overlayWindow.webContents.send("voice:cancel-requested");
+      },
+    });
+    const willQuitHandler = () => {
+      cancelPendingOverlayHide();
+      void audioDuckingService.restore();
+      overlayWindowFollower.stop();
+      shortcutCaptureSession.stop();
+      escCancelController.dispose();
+    };
+    app.on("will-quit", willQuitHandler);
+
+    const handleToggle = (mode: RecordingMode): void => {
+      if (shortcutCaptureDepth > 0) {
+        console.log(`[bootstrap] 快捷鍵錄入中，忽略 toggle mode=${mode}`);
+        return;
+      }
+      cancelPendingOverlayHide();
+      console.log(`[bootstrap] handleToggle 觸發，mode=${mode}`);
+      void (async () => {
+        if (
+          shouldReplayMicErrorOverlay(lastRecordingState, lastRecordingReason)
+        ) {
+          const layout = resolveShortcutTriggerOverlayLayout(
+            lastRecordingState,
+            mode,
+            {
+              ...(lastRecordingMode !== undefined
+                ? { activeMode: lastRecordingMode }
+                : {}),
+              ...(lastRecordingReason ? { reason: lastRecordingReason } : {}),
+            },
+          );
+          showOverlayWithLayout(layout);
+          console.log(
+            "[bootstrap] microphone error overlay already active; replay only",
+          );
+          return;
+        }
+
+        if (
+          lastRecordingState === "idle" ||
+          lastRecordingState === "success" ||
+          lastRecordingState === "error"
+        ) {
+          try {
+            insertTargetWindowHandle =
+              await nativeBridge.getForegroundWindowHandle();
+            console.log(
+              `[bootstrap] 已記錄插入目標視窗 handle=${insertTargetWindowHandle ?? "none"}`,
+            );
+          } catch (error) {
+            insertTargetWindowHandle = undefined;
+            console.warn("[bootstrap] 記錄插入目標視窗失敗", error);
+          }
+        }
+
+        // 使用 showInactive 而非 show，避免搶走前臺焦點：
+        // 否則 Ctrl+V 貼上會打到懸浮窗 WebContents，而不是使用者原本的游標位置。
+        const layout = resolveShortcutTriggerOverlayLayout(
+          lastRecordingState,
+          mode,
+          {
+            ...(lastRecordingMode !== undefined
+              ? { activeMode: lastRecordingMode }
+              : {}),
+            ...(lastRecordingReason !== undefined
+              ? { reason: lastRecordingReason }
+              : {}),
+          },
+        );
+        if (
+          resolveShortcutTriggerOverlayAction(mode, lastRecordingState) ===
+          "show"
+        ) {
+          showOverlayWithLayout(layout);
+        } else {
+          applyOverlayWindowLayout(overlayWindow, layout);
+        }
+        overlayWindow.webContents.send("voice:toggle-recording", { mode });
+        console.log(`[bootstrap] 已傳送 voice:toggle-recording，mode=${mode}`);
+      })();
+    };
+
+    const handleShortcutHelp = (): void => {
+      if (
+        shortcutCaptureDepth > 0 ||
+        !shouldShowShortcutHelpForState(lastRecordingState)
+      ) {
+        return;
+      }
+      const layout = resolveOverlayWindowLayout("shortcutHelp", undefined);
+      showOverlayWithLayout(layout);
+      shortcutHelpVisible = true;
+      overlayWindow.webContents.send("voice:shortcut-help", {
+        direct: formatShortcutHelpLabel(currentShortcuts.toggleRecording),
+        processSelection: formatShortcutHelpLabel(
+          currentShortcuts.processSelection,
+        ),
+        translate: formatShortcutHelpLabel(currentShortcuts.translateDictation),
+      });
+    };
+
+    const handleShortcutHelpDismiss = (): void => {
+      if (!shortcutHelpVisible) {
+        return;
+      }
+      shortcutHelpVisible = false;
+      overlayWindow.webContents.send("voice:shortcut-help-dismiss");
+    };
+
+    configureShortcuts = (shortcuts: AppSettings["shortcuts"]) => {
+      currentShortcuts = shortcuts;
+      console.log("[bootstrap] 配置快捷鍵：", shortcuts);
+      const shortcutResult = shortcutManager.configure(shortcuts, {
+        onToggle: handleToggle,
+        onShortcutHelp: handleShortcutHelp,
+        onShortcutHelpDismiss: handleShortcutHelpDismiss,
+      });
+      console.log(
+        `[bootstrap] 快捷鍵註冊結果：ok=${shortcutResult.ok}` +
+          (shortcutResult.ok
+            ? ""
+            : ` 衝突=${shortcutResult.conflicts.map((c) => c.accelerator).join(",")}`),
+      );
+      if (!shortcutResult.ok) {
+        broadcastShortcutConflict(
+          shortcutResult.conflicts.map((c) => c.accelerator),
         );
       }
-      if (options.updateReady) {
-        homeWindow?.webContents.send("voice:update-ready", options.updateReady);
+      return shortcutResult;
+    };
+
+    let shortcutCaptureDepth = 0;
+    let shortcutCaptureTargetWindow: BrowserWindow | undefined;
+
+    function setShortcutCaptureActive(
+      active: boolean,
+      targetWindow: BrowserWindow | undefined,
+    ): void {
+      if (active) {
+        if (shortcutCaptureDepth === 0) {
+          shortcutCaptureTargetWindow = targetWindow;
+          shortcutManager.suspend();
+          ensureShortcutCaptureWindowGuards(
+            BrowserWindow.getAllWindows(),
+            () => shortcutCaptureDepth > 0,
+            () => shortcutCaptureTargetWindow,
+          );
+          try {
+            shortcutCaptureSession.start();
+            shortcutCaptureDepth = 1;
+          } catch (error) {
+            shortcutCaptureSession.stop();
+            const resumeResult = shortcutManager.resume();
+            if (resumeResult && !resumeResult.ok) {
+              broadcastShortcutConflict(
+                resumeResult.conflicts.map((c) => c.accelerator),
+              );
+            }
+            throw error;
+          }
+          console.log("[bootstrap] 快捷鍵錄入模式：已暫停全域性快捷鍵");
+        } else {
+          shortcutCaptureTargetWindow =
+            targetWindow ?? shortcutCaptureTargetWindow;
+          shortcutCaptureDepth += 1;
+        }
+        return;
       }
-    });
-    homeWindow.on("closed", () => {
-      homeWindow = undefined;
-    });
-  }
 
-  ipcMain.on("voice:open-home-section-request", (_event, input: unknown) => {
-    withDirectIpcLogging("voice:open-home-section-request", input, () => {
-      const request =
-        typeof input === "object" && input !== null
-          ? (input as {
-              section?: unknown;
-              onboardingStep?: unknown;
-            })
-          : {};
-      const section =
-        request.section === "history" ||
-        request.section === "settings" ||
-        request.section === "about" ||
-        request.section === "home"
-          ? request.section
-          : "home";
-      const onboardingStep =
-        typeof request.onboardingStep === "number" &&
-        Number.isInteger(request.onboardingStep) &&
-        request.onboardingStep >= 0
-          ? request.onboardingStep
-          : undefined;
-      openHomeWindow({
-        section,
-        ...(onboardingStep !== undefined ? { onboardingStep } : {}),
-      });
-    });
-  });
+      if (shortcutCaptureDepth === 0) {
+        return;
+      }
 
-  ipcMain.on("voice:open-microphone-help-request", () => {
-    withDirectIpcLogging("voice:open-microphone-help-request", undefined, () => {
-      handleOpenMicrophoneHelpRequest({
-        overlayWindow,
-        overlayWindowFollower,
-        cancelPendingOverlayHide,
-        openHomeWindow,
-      });
-    });
-  });
+      shortcutCaptureDepth -= 1;
+      if (shortcutCaptureDepth === 0) {
+        shortcutCaptureTargetWindow = undefined;
+        shortcutCaptureSession.stop();
+        const resumeResult = shortcutManager.resume();
+        console.log(
+          `[bootstrap] 快捷鍵錄入模式：已恢復全域性快捷鍵 ok=${resumeResult?.ok ?? false}`,
+        );
+        if (resumeResult && !resumeResult.ok) {
+          broadcastShortcutConflict(
+            resumeResult.conflicts.map((c) => c.accelerator),
+          );
+        }
+      }
+    }
 
-  if (shouldOpenHomeOnLaunch(process.argv)) {
-    runLoggedBootstrapAction(
-      console,
-      "open-home-on-launch",
-      { argv: summarizeArgvForLog(process.argv) },
-      () => openHomeWindow(),
-      { revealSensitive: !app.isPackaged },
+    function broadcastShortcutConflict(conflicts: string[]): void {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send("voice:shortcut-conflict", { conflicts });
+        }
+      }
+    }
+
+    function broadcastSettingsChanged(settings: AppSettings): void {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send("voice:settings-changed", settings);
+        }
+      }
+    }
+
+    function broadcastHistoryRecordCreated(
+      record: Awaited<ReturnType<typeof historyStore.create>>,
+    ): void {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send("voice:history-record-created", record);
+        }
+      }
+    }
+
+    function broadcastHistoryRecordDeleted(id: string): void {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send("voice:history-record-deleted", { id });
+        }
+      }
+    }
+
+    function broadcastUpdateReady(payload: { version?: string }): void {
+      openHomeWindow({ section: "about", updateReady: payload });
+    }
+
+    function broadcastUpdateDownloadProgress(
+      payload: UpdateDownloadProgressPayload,
+    ): void {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send("voice:update-download-progress", payload);
+        }
+      }
+    }
+
+    const initialShortcutResult = configureShortcuts(
+      configStore.get().shortcuts,
     );
-  }
+    void updateService.checkForUpdates();
 
-  // 監聽 renderer 上報的錄音狀態，更新托盤 tooltip（僅開啟/關閉兩態），並控制懸浮窗顯隱。
-  // 用定時器控制代碼保證"快速切換"場景下最終顯隱意圖以最後一次 state 為準，不會出現閃爍或延遲隱藏。
-  ipcMain.on(
-    "voice:report-recording-state",
-    (
-      _event,
+    // 托盤圖示：開發態從 app.getAppPath()/resources 讀取；打包後從 process.resourcesPath 讀取，
+    // 需要在 electron-builder 的 extraResources 中把 resources/app-icon.ico 投放到 resources 目錄。
+    const trayIconPath = app.isPackaged
+      ? join(process.resourcesPath, "app-icon.ico")
+      : join(app.getAppPath(), "resources", "app-icon.ico");
+    const tray = createTray({
+      onOpenHome: () =>
+        runLoggedTrayAction(
+          console,
+          "open-home",
+          undefined,
+          () => openHomeWindow(),
+          { revealSensitive: !app.isPackaged },
+        ),
+      onOpenHistory: () =>
+        runLoggedTrayAction(
+          console,
+          "open-history",
+          { section: "history" },
+          () => openHomeWindow({ section: "history" }),
+          { revealSensitive: !app.isPackaged },
+        ),
+      onOpenSettings: () =>
+        runLoggedTrayAction(
+          console,
+          "open-settings",
+          { section: "settings" },
+          () => openHomeWindow({ section: "settings" }),
+          { revealSensitive: !app.isPackaged },
+        ),
+      onCheckUpdates: () =>
+        runLoggedTrayAction(
+          console,
+          "check-updates",
+          { section: "about", showUpdates: true },
+          () => openHomeWindow({ section: "about", showUpdates: true }),
+          { revealSensitive: !app.isPackaged },
+        ),
+      onOpenAbout: () =>
+        runLoggedTrayAction(
+          console,
+          "open-about",
+          { section: "about" },
+          () => openHomeWindow({ section: "about" }),
+          { revealSensitive: !app.isPackaged },
+        ),
+      onQuit: () =>
+        runLoggedTrayAction(
+          console,
+          "quit",
+          undefined,
+          () => app.quit(),
+          { revealSensitive: !app.isPackaged },
+        ),
+      iconPath: trayIconPath,
+    });
+    refreshTrayTooltip = (state) => {
+      tray.setToolTip(formatTrayTooltip(state, configStore.get().ui.language));
+    };
+    refreshTrayTooltip("idle");
+
+    // 首頁視窗採用單例模式：托盤雙擊開啟首頁；托盤選單「設定」開啟首頁並喚起設定彈層。
+    let homeWindow: import("electron").BrowserWindow | undefined;
+    function openHomeWindow(
+      options: {
+        section?: "home" | "history" | "settings" | "about";
+        showUpdates?: boolean;
+        showMicrophoneHelp?: boolean;
+        updateReady?: { version?: string };
+        onboardingStep?: number;
+      } = {},
+    ): void {
+      if (homeWindow && !homeWindow.isDestroyed()) {
+        blockHomeWindowAltSpaceMenu(homeWindow);
+        if (homeWindow.isMinimized()) homeWindow.restore();
+        homeWindow.show();
+        homeWindow.focus();
+        homeWindow.webContents.send(
+          "voice:open-home-section",
+          options.section ?? "home",
+        );
+        if (options.section === "settings") {
+          homeWindow.webContents.send("voice:open-settings-panel");
+        }
+        if (options.showUpdates) {
+          homeWindow.webContents.send("voice:open-update-dialog");
+        }
+        if (options.showMicrophoneHelp) {
+          homeWindow.webContents.send("voice:open-microphone-help");
+        }
+        if (options.onboardingStep !== undefined) {
+          homeWindow.webContents.send(
+            "voice:open-onboarding-step",
+            options.onboardingStep,
+          );
+        }
+        if (options.updateReady) {
+          homeWindow.webContents.send(
+            "voice:update-ready",
+            options.updateReady,
+          );
+        }
+        return;
+      }
+      homeWindow = createHomeWindow({
+        ...(options.section ? { section: options.section } : {}),
+        ...(options.onboardingStep !== undefined
+          ? { onboardingStep: options.onboardingStep }
+          : {}),
+        theme: configStore.get().ui.theme,
+      });
+      wireShortcutCaptureWindowGuard(
+        homeWindow,
+        () => shortcutCaptureDepth > 0,
+      );
+      homeWindow.once("ready-to-show", () => {
+        homeWindow?.show();
+        homeWindow?.focus();
+        if (options.showUpdates) {
+          homeWindow?.webContents.send("voice:open-update-dialog");
+        }
+        if (options.showMicrophoneHelp) {
+          homeWindow?.webContents.send("voice:open-microphone-help");
+        }
+        if (options.onboardingStep !== undefined) {
+          homeWindow?.webContents.send(
+            "voice:open-onboarding-step",
+            options.onboardingStep,
+          );
+        }
+        if (options.updateReady) {
+          homeWindow?.webContents.send(
+            "voice:update-ready",
+            options.updateReady,
+          );
+        }
+      });
+      homeWindow.on("closed", () => {
+        homeWindow = undefined;
+      });
+    }
+    openHomeWindowForUpdateReady = (payload) => {
+      openHomeWindow({ section: "about", updateReady: payload });
+    };
+
+    const runAuthenticatedDirectIpcRequest = (
+      channel: string,
+      action: () => void,
+    ): void => {
+      void runAuthenticatedDirectIpc(authService, action).catch((error) => {
+        logDirectIpcError(console, channel, error);
+      });
+    };
+
+    const openHomeSectionRequestHandler = (
+      _event: IpcMainEvent,
+      input: unknown,
+    ) => {
+      runAuthenticatedDirectIpcRequest(
+        "voice:open-home-section-request",
+        () => {
+          withDirectIpcLogging("voice:open-home-section-request", input, () => {
+            const request =
+              typeof input === "object" && input !== null
+                ? (input as {
+                    section?: unknown;
+                    onboardingStep?: unknown;
+                  })
+                : {};
+            const section =
+              request.section === "history" ||
+              request.section === "settings" ||
+              request.section === "about" ||
+              request.section === "home"
+                ? request.section
+                : "home";
+            const onboardingStep =
+              typeof request.onboardingStep === "number" &&
+              Number.isInteger(request.onboardingStep) &&
+              request.onboardingStep >= 0
+                ? request.onboardingStep
+                : undefined;
+            openHomeWindow({
+              section,
+              ...(onboardingStep !== undefined ? { onboardingStep } : {}),
+            });
+          });
+        },
+      );
+    };
+    ipcMain.on(
+      "voice:open-home-section-request",
+      openHomeSectionRequestHandler,
+    );
+
+    const openMicrophoneHelpRequestHandler = () => {
+      runAuthenticatedDirectIpcRequest(
+        "voice:open-microphone-help-request",
+        () => {
+          withDirectIpcLogging(
+            "voice:open-microphone-help-request",
+            undefined,
+            () => {
+              handleOpenMicrophoneHelpRequest({
+                overlayWindow,
+                overlayWindowFollower,
+                cancelPendingOverlayHide,
+                openHomeWindow,
+              });
+            },
+          );
+        },
+      );
+    };
+    ipcMain.on(
+      "voice:open-microphone-help-request",
+      openMicrophoneHelpRequestHandler,
+    );
+
+    if (shouldOpenHomeOnLaunch(process.argv)) {
+      runLoggedBootstrapAction(
+        console,
+        "open-home-on-launch",
+        { argv: summarizeArgvForLog(process.argv) },
+        () => openHomeWindow(),
+        { revealSensitive: !app.isPackaged },
+      );
+    }
+
+    // 監聽 renderer 上報的錄音狀態，更新托盤 tooltip（僅開啟/關閉兩態），並控制懸浮窗顯隱。
+    // 用定時器控制代碼保證"快速切換"場景下最終顯隱意圖以最後一次 state 為準，不會出現閃爍或延遲隱藏。
+    const reportRecordingStateHandler = (
+      _event: IpcMainEvent,
       update:
         | {
             state: string;
@@ -1176,89 +1520,166 @@ export async function bootstrap(): Promise<void> {
           }
         | undefined,
     ) => {
-      withDirectIpcLogging("voice:report-recording-state", update, () => {
-        const state = typeof update?.state === "string" ? update.state : "idle";
-        lastRecordingState = state;
-        lastRecordingMode =
-          state === "idle" || state === "success" ? undefined : update?.mode;
-        lastRecordingReason = state === "error" ? update?.reason : undefined;
-        audioDuckingService.handleRecordingState({
-          state,
-          mode: update?.mode,
-        });
-        if (state !== "idle" && state !== "shortcutHelp") {
-          shortcutHelpVisible = false;
-        }
-        const tooltip = formatTrayTooltip(state, configStore.get().ui.language);
-        const visibility = resolveOverlayVisibility(state, update?.reason);
-        console.log(
-          `[bootstrap] 收到錄音狀態 state=${state} mode=${update?.mode ?? "無"} → tooltip="${tooltip}" overlay=${visibility}`,
-        );
-        tray.setToolTip(tooltip);
-
-        const layout = resolveOverlayWindowLayout(state, update?.mode, {
-          ...(update?.reason !== undefined ? { reason: update.reason } : {}),
-          recordingLimitWarning: update?.recordingLimitWarning === true,
-          busyHintVisible: update?.busyHintVisible === true,
-        });
-        if (shouldEnableEscCancelForState(state)) {
-          escCancelController.enable();
-        } else {
-          escCancelController.disable();
-        }
-
-        if (visibility === "show") {
-          showOverlayWithLayout(layout);
-        } else if (visibility === "hide") {
-          scheduleOverlayHide(state);
-        } else {
-          cancelPendingOverlayHide();
-          if (overlayWindow.isVisible()) {
-            applyOverlayWindowLayout(overlayWindow, layout);
-            overlayWindowFollower.start(layout);
+      runAuthenticatedDirectIpcRequest("voice:report-recording-state", () => {
+        withDirectIpcLogging("voice:report-recording-state", update, () => {
+          const state =
+            typeof update?.state === "string" ? update.state : "idle";
+          lastRecordingState = state;
+          lastRecordingMode =
+            state === "idle" || state === "success" ? undefined : update?.mode;
+          lastRecordingReason = state === "error" ? update?.reason : undefined;
+          audioDuckingService.handleRecordingState({
+            state,
+            mode: update?.mode,
+          });
+          if (state !== "idle" && state !== "shortcutHelp") {
+            shortcutHelpVisible = false;
           }
-        }
-        // visibility === "keep"：error 態，保持當前顯隱不變，讓使用者看到錯誤提示。
-      });
-    },
-  );
-
-  ipcMain.handle(
-    "voice:set-shortcut-capture-active",
-    (event, payload: { active?: boolean } | undefined) => {
-      return withDirectIpcLogging(
-        "voice:set-shortcut-capture-active",
-        payload,
-        () => {
-          setShortcutCaptureActive(
-            payload?.active === true,
-            BrowserWindow.fromWebContents(event.sender) ?? undefined,
+          const tooltip = formatTrayTooltip(
+            state,
+            configStore.get().ui.language,
           );
-        },
-      );
-    },
-  );
+          const visibility = resolveOverlayVisibility(state, update?.reason);
+          console.log(
+            `[bootstrap] 收到錄音狀態 state=${state} mode=${update?.mode ?? "無"} → tooltip="${tooltip}" overlay=${visibility}`,
+          );
+          tray.setToolTip(tooltip);
 
-  if (!initialShortcutResult.ok) {
-    overlayWindow.showInactive();
-    const payload = {
-      conflicts: initialShortcutResult.conflicts.map(
-        (entry) => entry.accelerator,
-      ),
+          const layout = resolveOverlayWindowLayout(state, update?.mode, {
+            ...(update?.reason !== undefined ? { reason: update.reason } : {}),
+            recordingLimitWarning: update?.recordingLimitWarning === true,
+            busyHintVisible: update?.busyHintVisible === true,
+          });
+          if (shouldEnableEscCancelForState(state)) {
+            escCancelController.enable();
+          } else {
+            escCancelController.disable();
+          }
+
+          if (visibility === "show") {
+            showOverlayWithLayout(layout);
+          } else if (visibility === "hide") {
+            scheduleOverlayHide(state);
+          } else {
+            cancelPendingOverlayHide();
+            if (overlayWindow.isVisible()) {
+              applyOverlayWindowLayout(overlayWindow, layout);
+              overlayWindowFollower.start(layout);
+            }
+          }
+          // visibility === "keep"：error 態，保持當前顯隱不變，讓使用者看到錯誤提示。
+        });
+      });
     };
-    const sendConflict = (): void => {
-      console.log("[bootstrap] 傳送 voice:shortcut-conflict", payload);
-      overlayWindow.webContents.send("voice:shortcut-conflict", payload);
+    ipcMain.on("voice:report-recording-state", reportRecordingStateHandler);
+
+    const setShortcutCaptureActiveHandler = (
+      event: IpcMainInvokeEvent,
+      payload: { active?: boolean } | undefined,
+    ) => {
+      return runAuthenticatedDirectIpc(authService, () =>
+        withDirectIpcLogging(
+          "voice:set-shortcut-capture-active",
+          payload,
+          () => {
+            setShortcutCaptureActive(
+              payload?.active === true,
+              BrowserWindow.fromWebContents(event.sender) ?? undefined,
+            );
+          },
+        ),
+      );
     };
-    // webContents 若尚未載入完成，直接 send 會丟失訊息；等待 did-finish-load 後再發。
-    if (overlayWindow.webContents.isLoading()) {
-      console.log("[bootstrap] 懸浮窗仍在載入，延遲傳送 shortcut-conflict");
-      overlayWindow.webContents.once("did-finish-load", sendConflict);
-    } else {
-      sendConflict();
+    ipcMain.handle(
+      "voice:set-shortcut-capture-active",
+      setShortcutCaptureActiveHandler,
+    );
+
+    if (!initialShortcutResult.ok) {
+      overlayWindow.showInactive();
+      const payload = {
+        conflicts: initialShortcutResult.conflicts.map(
+          (entry) => entry.accelerator,
+        ),
+      };
+      const sendConflict = (): void => {
+        if (
+          overlayWindow.isDestroyed() ||
+          overlayWindow.webContents.isDestroyed()
+        ) {
+          return;
+        }
+        console.log("[bootstrap] 傳送 voice:shortcut-conflict", payload);
+        overlayWindow.webContents.send("voice:shortcut-conflict", payload);
+      };
+      // webContents 若尚未載入完成，直接 send 會丟失訊息；等待 did-finish-load 後再發。
+      if (overlayWindow.webContents.isLoading()) {
+        console.log("[bootstrap] 懸浮窗仍在載入，延遲傳送 shortcut-conflict");
+        overlayWindow.webContents.once("did-finish-load", sendConflict);
+      } else {
+        sendConflict();
+      }
     }
+
+    stopAuthenticatedRuntime = () => {
+      cancelPendingOverlayHide();
+      void audioDuckingService.restore();
+      overlayWindowFollower.stop();
+      shortcutCaptureSession.stop();
+      escCancelController.dispose();
+      shortcutManager.dispose();
+      unsubscribeTranscriptionEvents();
+      app.removeListener("will-quit", willQuitHandler);
+      ipcMain.removeListener(
+        "voice:open-home-section-request",
+        openHomeSectionRequestHandler,
+      );
+      ipcMain.removeListener(
+        "voice:open-microphone-help-request",
+        openMicrophoneHelpRequestHandler,
+      );
+      ipcMain.removeListener(
+        "voice:report-recording-state",
+        reportRecordingStateHandler,
+      );
+      ipcMain.removeHandler("voice:set-shortcut-capture-active");
+      if (homeWindow && !homeWindow.isDestroyed()) {
+        homeWindow.close();
+      }
+      if (!overlayWindow.isDestroyed()) {
+        overlayWindow.close();
+      }
+      tray.destroy();
+      refreshTrayTooltip = (_state: string): void => {};
+      configureShortcuts = (
+        _shortcuts: AppSettings["shortcuts"],
+      ): ShortcutConfigureResult => ({
+        ok: true as const,
+        registered: [],
+      });
+      openHomeWindowForUpdateReady = (_payload: {
+        version?: string;
+      }): void => {};
+      updateService.dispose?.();
+      lastRecordingState = "idle";
+      lastRecordingMode = undefined;
+      lastRecordingReason = undefined;
+      insertTargetWindowHandle = undefined;
+    };
+
+    console.log("[bootstrap] 啟動完成");
   }
-  console.log("[bootstrap] 啟動完成");
+
+  await runStartupGate({
+    authService,
+    startAuthenticatedRuntime,
+    stopAuthenticatedRuntime: () => {
+      stopAuthenticatedRuntime?.();
+      stopAuthenticatedRuntime = undefined;
+    },
+    showLoginSetupWindow: openLoginSetupWindow,
+    hideLoginSetupWindow,
+  });
 }
 
 function resolveVersionPlatform(platform: NodeJS.Platform): VersionPlatform {
@@ -1272,7 +1693,7 @@ function resolveVersionPlatform(platform: NodeJS.Platform): VersionPlatform {
 }
 
 export function resolvePackagedVersionPhase(
-  phase: string | undefined
+  phase: string | undefined,
 ): VersionPhase {
   const normalized = phase?.trim().toUpperCase();
   if (
@@ -1287,7 +1708,7 @@ export function resolvePackagedVersionPhase(
 
 export function resolveVersionCheckEndpoint({
   backendBaseUrl,
-  versionCheckUrl
+  versionCheckUrl,
 }: {
   backendBaseUrl?: string | undefined;
   versionCheckUrl?: string | undefined;
@@ -1509,7 +1930,8 @@ function createAppInstallerService(): InstallerService {
   return createInstallerService({
     productName: INSTALL_TARGET_PRODUCT_NAME,
     resourcesPath: process.resourcesPath,
-    localAppData: process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
+    localAppData:
+      process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
   });
 }
 
@@ -1561,29 +1983,35 @@ function registerInstallerOnlyIpc(installerService: InstallerService): void {
     ),
   );
   ipcMain.handle("voice:installer-select-directory", async (_event, input) => {
-    return withDirectIpcLogging("voice:installer-select-directory", input, async () => {
-      const defaultPath =
-        typeof input === "object" &&
-        input !== null &&
-        "defaultPath" in input &&
-        typeof input.defaultPath === "string"
-          ? input.defaultPath
-          : installerService.getDefaults().installDir;
-      const result = await dialog.showOpenDialog({
-        title: "选择安装位置",
-        defaultPath,
-        properties: ["openDirectory", "createDirectory"],
-      });
+    return withDirectIpcLogging(
+      "voice:installer-select-directory",
+      input,
+      async () => {
+        const defaultPath =
+          typeof input === "object" &&
+          input !== null &&
+          "defaultPath" in input &&
+          typeof input.defaultPath === "string"
+            ? input.defaultPath
+            : installerService.getDefaults().installDir;
+        const result = await dialog.showOpenDialog({
+          title: "选择安装位置",
+          defaultPath,
+          properties: ["openDirectory", "createDirectory"],
+        });
 
-      if (result.canceled || result.filePaths.length === 0) {
-        return { canceled: true as const };
-      }
+        if (result.canceled || result.filePaths.length === 0) {
+          return { canceled: true as const };
+        }
 
-      return {
-        canceled: false as const,
-        installDir: installerService.normalizeInstallDir(result.filePaths[0] ?? defaultPath),
-      };
-    });
+        return {
+          canceled: false as const,
+          installDir: installerService.normalizeInstallDir(
+            result.filePaths[0] ?? defaultPath,
+          ),
+        };
+      },
+    );
   });
   ipcMain.handle("voice:installer-install", (_event, input) => {
     return withDirectIpcLogging("voice:installer-install", input, () =>
@@ -1615,7 +2043,10 @@ function parseInstallerShellInstallInput(
     throw new Error("Installer input must be an object");
   }
   const candidate = input as Partial<InstallerShellInstallInput>;
-  if (typeof candidate.installDir !== "string" || !candidate.installDir.trim()) {
+  if (
+    typeof candidate.installDir !== "string" ||
+    !candidate.installDir.trim()
+  ) {
     throw new Error("Installer input requires installDir");
   }
   return {
@@ -1634,9 +2065,7 @@ function openInstallerWindow(): void {
   });
 }
 
-function openUninstallWindow(
-  options: { onClosed?: () => void } = {},
-): void {
+function openUninstallWindow(options: { onClosed?: () => void } = {}): void {
   const uninstallWindow = createUninstallWindow();
   const showUninstallWindow = (): void => {
     if (uninstallWindow.isDestroyed()) {
@@ -1650,12 +2079,15 @@ function openUninstallWindow(
   }
   uninstallWindow.once("ready-to-show", showUninstallWindow);
   uninstallWindow.webContents.once("did-finish-load", showUninstallWindow);
-  uninstallWindow.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
-    console.error(
-      `[bootstrap] uninstall window failed to load code=${errorCode} description=${errorDescription}`,
-    );
-    showUninstallWindow();
-  });
+  uninstallWindow.webContents.once(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      console.error(
+        `[bootstrap] uninstall window failed to load code=${errorCode} description=${errorDescription}`,
+      );
+      showUninstallWindow();
+    },
+  );
 }
 
 const HISTORY_AUDIO_ENCRYPTION_KEY_STORAGE_KEY = "history.audioEncryptionKey";
