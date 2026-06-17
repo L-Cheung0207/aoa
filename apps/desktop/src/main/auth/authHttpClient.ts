@@ -4,6 +4,7 @@ import {
   type AuthHttpClient,
   type AuthType,
   type AuthTokenResponse,
+  type AuthDeviceContext,
   type LdapPublicKeyResponse,
   type SendEmailCodeResult
 } from "./authTypes";
@@ -36,7 +37,8 @@ export function createAuthHttpClient(
     sendEmailCode(input): Promise<SendEmailCodeResult> {
       return requestJson(fetchImpl, baseUrl, "email-code/send", {
         method: "POST",
-        body: { email: input.email, ...input.device },
+        device: input.device,
+        body: { email: input.email, scene: "login" },
         normalize: normalizeSendEmailCodeResult
       });
     },
@@ -44,11 +46,12 @@ export function createAuthHttpClient(
     loginWithEmailCode(input): Promise<AuthTokenResponse> {
       return requestJson(fetchImpl, baseUrl, "login/email-code", {
         method: "POST",
+        device: input.device,
         body: {
           email: input.email,
           code: input.code,
           rememberMe: input.rememberMe,
-          ...input.device
+          ...toAuthDeviceBody(input.device)
         },
         normalize: normalizeAuthTokenResponse
       });
@@ -64,6 +67,7 @@ export function createAuthHttpClient(
     loginWithLdap(input): Promise<AuthTokenResponse> {
       return requestJson(fetchImpl, baseUrl, "login/ldap", {
         method: "POST",
+        device: input.device,
         body: {
           account: input.account,
           passwordCipher: input.passwordCipher,
@@ -71,7 +75,7 @@ export function createAuthHttpClient(
           nonce: input.nonce,
           timestamp: input.timestamp,
           rememberMe: input.rememberMe,
-          ...input.device
+          ...toAuthDeviceBody(input.device)
         },
         normalize: normalizeAuthTokenResponse
       });
@@ -80,6 +84,7 @@ export function createAuthHttpClient(
     refresh(input): Promise<AuthTokenResponse> {
       return requestJson(fetchImpl, baseUrl, "refresh", {
         method: "POST",
+        device: input.device,
         body: { refreshToken: input.refreshToken, ...input.device },
         normalize: normalizeAuthTokenResponse
       });
@@ -89,6 +94,7 @@ export function createAuthHttpClient(
       return requestJson(fetchImpl, baseUrl, "logout", {
         method: "POST",
         accessToken: input.accessToken,
+        device: input.device,
         body: { refreshToken: input.refreshToken, ...input.device },
         normalize: normalizeLogoutResponse,
         allowEmptySuccess: true
@@ -113,6 +119,18 @@ function buildAuthUrl(baseUrl: string, endpoint: string): string {
   return `${baseUrl}/auth/${endpoint.replace(/^\/+/, "")}`;
 }
 
+function toAuthDeviceBody(device: AuthDeviceContext): Omit<
+  AuthDeviceContext,
+  "installationId"
+> {
+  return {
+    deviceName: device.deviceName,
+    platform: device.platform,
+    appVersion: device.appVersion,
+    locale: device.locale
+  };
+}
+
 async function requestJson<T>(
   fetchImpl: typeof fetch,
   baseUrl: string,
@@ -121,6 +139,7 @@ async function requestJson<T>(
     method: HttpMethod;
     body?: unknown;
     accessToken?: string | undefined;
+    device?: AuthDeviceContext | undefined;
     normalize(input: unknown): T;
     allowEmptySuccess?: boolean | undefined;
   }
@@ -135,6 +154,10 @@ async function requestJson<T>(
 
   if (options.accessToken) {
     headers.authorization = `Bearer ${options.accessToken}`;
+  }
+  if (options.device) {
+    headers["x-installation-id"] = options.device.installationId;
+    headers["x-app-version"] = options.device.appVersion;
   }
   if (options.body !== undefined) {
     headers["content-type"] = "application/json";
@@ -186,7 +209,10 @@ async function readJsonBody(
 function normalizeSendEmailCodeResult(body: unknown): SendEmailCodeResult {
   const payload = readPayloadRecord(body);
   return {
-    cooldownSeconds: readRequiredNumber(payload.cooldownSeconds)
+    cooldownSeconds: readFirstRequiredNumber(
+      payload.resendAfterSeconds,
+      payload.cooldownSeconds
+    )
   };
 }
 
@@ -263,6 +289,19 @@ function readRequiredNumber(input: unknown): number {
     );
   }
   return input;
+}
+
+function readFirstRequiredNumber(...inputs: unknown[]): number {
+  for (const input of inputs) {
+    if (typeof input === "number" && Number.isFinite(input)) {
+      return input;
+    }
+  }
+  throw new AuthHttpError(
+    200,
+    "backend_unavailable",
+    "Backend returned invalid payload"
+  );
 }
 
 function readAuthType(input: unknown): AuthType {

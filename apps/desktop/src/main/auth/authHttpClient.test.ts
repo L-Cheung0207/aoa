@@ -24,7 +24,12 @@ function createEmptyResponse(status = 204): Response {
 describe("auth http client", () => {
   it("posts email code requests to /aoa_api/auth/email-code/send", async () => {
     const fetchImpl = vi.fn(async () =>
-      createJsonResponse({ cooldownSeconds: 60, extra: "drop-me" })
+      createJsonResponse({
+        ok: true,
+        expiresInSeconds: 300,
+        resendAfterSeconds: 60,
+        extra: "drop-me"
+      })
     );
     const client = createAuthHttpClient({
       baseUrl: "https://api.example.com",
@@ -39,14 +44,20 @@ describe("auth http client", () => {
       "https://api.example.com/aoa_api/auth/email-code/send",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ "content-type": "application/json" }),
-        body: JSON.stringify({ email: "user@example.com", ...device })
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          "x-installation-id": "install-1",
+          "x-app-version": "0.1.0"
+        }),
+        body: JSON.stringify({ email: "user@example.com", scene: "login" })
       })
     );
   });
 
   it("uses a base URL that already points at /aoa_api", async () => {
-    const fetchImpl = vi.fn(async () => createJsonResponse({ cooldownSeconds: 160 }));
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({ ok: true, expiresInSeconds: 300, resendAfterSeconds: 60 })
+    );
     const client = createAuthHttpClient({
       baseUrl: "https://api.example.com/aoa_api/",
       fetch: fetchImpl
@@ -60,7 +71,9 @@ describe("auth http client", () => {
   });
 
   it("normalizes base URLs with path, query, and hash before appending /aoa_api", async () => {
-    const fetchImpl = vi.fn(async () => createJsonResponse({ cooldownSeconds: 60 }));
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({ ok: true, expiresInSeconds: 300, resendAfterSeconds: 60 })
+    );
     const client = createAuthHttpClient({
       baseUrl: "https://api.example.com/root?x=1#frag",
       fetch: fetchImpl
@@ -113,11 +126,18 @@ describe("auth http client", () => {
       "https://api.example.com/aoa_api/auth/login/email-code",
       expect.objectContaining({
         method: "POST",
+        headers: expect.objectContaining({
+          "x-installation-id": "install-1",
+          "x-app-version": "0.1.0"
+        }),
         body: JSON.stringify({
           email: "user@example.com",
           code: "123456",
           rememberMe: true,
-          ...device
+          deviceName: "ALEX-PC",
+          platform: "windows",
+          appVersion: "0.1.0",
+          locale: "zh-CN"
         })
       })
     );
@@ -188,6 +208,10 @@ describe("auth http client", () => {
       "https://api.example.com/aoa_api/auth/login/ldap",
       expect.objectContaining({
         method: "POST",
+        headers: expect.objectContaining({
+          "x-installation-id": "install-1",
+          "x-app-version": "0.1.0"
+        }),
         body: JSON.stringify({
           account: "ALEX\\dana",
           passwordCipher: "cipher",
@@ -195,7 +219,10 @@ describe("auth http client", () => {
           nonce: "nonce-1",
           timestamp: "2026-06-17T09:00:00.000Z",
           rememberMe: true,
-          ...device
+          deviceName: "ALEX-PC",
+          platform: "windows",
+          appVersion: "0.1.0",
+          locale: "zh-CN"
         })
       })
     );
@@ -237,6 +264,10 @@ describe("auth http client", () => {
     expect(fetchImpl.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
         method: "POST",
+        headers: expect.objectContaining({
+          "x-installation-id": "install-1",
+          "x-app-version": "0.1.0"
+        }),
         body: JSON.stringify({ refreshToken: "old-refresh", ...device })
       })
     );
@@ -248,7 +279,9 @@ describe("auth http client", () => {
         method: "POST",
         body: JSON.stringify({ refreshToken: "new-refresh", ...device }),
         headers: expect.objectContaining({
-          authorization: "Bearer new-access"
+          authorization: "Bearer new-access",
+          "x-installation-id": "install-1",
+          "x-app-version": "0.1.0"
         })
       })
     );

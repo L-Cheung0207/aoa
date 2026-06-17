@@ -29,6 +29,21 @@ describe("desktop development Electron launcher", () => {
         "Voice Assistant Dev.exe",
       ),
     );
+    expect(paths.sourceConfigPath).toBe(
+      join("D:/repo/apps/desktop", "config.json"),
+    );
+    expect(paths.devResourcesDir).toBe(
+      join("D:/repo/apps/desktop", ".dev-electron", "electron-dist", "resources"),
+    );
+    expect(paths.devConfigPath).toBe(
+      join(
+        "D:/repo/apps/desktop",
+        ".dev-electron",
+        "electron-dist",
+        "resources",
+        "config.json",
+      ),
+    );
     expect(paths.iconPath).toBe(
       join("D:/repo/apps/desktop", "resources", "app-icon.ico"),
     );
@@ -147,14 +162,24 @@ describe("desktop development Electron launcher", () => {
       sourceElectronExe: "electron.exe",
       devElectronDir: ".dev-electron",
       devElectronExe: join(".dev-electron", "Voice Assistant Dev.exe"),
+      sourceConfigPath: "config.json",
+      devResourcesDir: join(".dev-electron", "resources"),
+      devConfigPath: join(".dev-electron", "resources", "config.json"),
     });
 
     expect(mkdirSync).toHaveBeenCalledWith(".dev-electron", { recursive: true });
+    expect(mkdirSync).toHaveBeenCalledWith(join(".dev-electron", "resources"), {
+      recursive: true,
+    });
     expect(cpSync).toHaveBeenCalledWith("electron-dist", ".dev-electron", {
       force: true,
       recursive: true,
     });
     expect(copyFileSync).toHaveBeenCalledWith("electron.exe", join(".dev-electron", "Voice Assistant Dev.exe"));
+    expect(copyFileSync).toHaveBeenCalledWith(
+      "config.json",
+      join(".dev-electron", "resources", "config.json"),
+    );
     expect(spawnSync).toHaveBeenCalledWith(
       "rcedit-x64.exe",
       [
@@ -199,9 +224,19 @@ describe("desktop development Electron launcher", () => {
       sourceElectronExe: "electron.exe",
       devElectronDir: ".dev-electron",
       devElectronExe: join(".dev-electron", "Voice Assistant Dev.exe"),
+      sourceConfigPath: "config.json",
+      devResourcesDir: join(".dev-electron", "resources"),
+      devConfigPath: join(".dev-electron", "resources", "config.json"),
     });
 
-    expect(copyFileSync).not.toHaveBeenCalled();
+    expect(copyFileSync).toHaveBeenCalledWith(
+      "config.json",
+      join(".dev-electron", "resources", "config.json"),
+    );
+    expect(copyFileSync).not.toHaveBeenCalledWith(
+      "electron.exe",
+      join(".dev-electron", "Voice Assistant Dev.exe"),
+    );
     expect(cpSync).not.toHaveBeenCalled();
     expect(spawnSync).toHaveBeenCalledWith(
       "rcedit-x64.exe",

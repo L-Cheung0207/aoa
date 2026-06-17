@@ -61,7 +61,13 @@ function getStepIndex(step: LoginSetupStep): number {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  const authHttpErrorPrefix = "AuthHttpError:";
+  const authHttpErrorIndex = message.lastIndexOf(authHttpErrorPrefix);
+  if (authHttpErrorIndex >= 0) {
+    return message.slice(authHttpErrorIndex + authHttpErrorPrefix.length).trim();
+  }
+  return message;
 }
 
 export function LoginSetupPage(): React.JSX.Element {

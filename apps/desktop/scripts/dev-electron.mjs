@@ -21,6 +21,9 @@ export function createDevElectronPaths(
     sourceElectronExe: join(sourceElectronDir, "electron.exe"),
     devElectronDir,
     devElectronExe: join(devElectronDir, `${PRODUCT_NAME} Dev.exe`),
+    sourceConfigPath: join(packageRoot, "config.json"),
+    devResourcesDir: join(devElectronDir, "resources"),
+    devConfigPath: join(devElectronDir, "resources", "config.json"),
     iconPath: join(packageRoot, "resources", "app-icon.ico"),
   };
 }
@@ -98,11 +101,18 @@ export function prepareDevElectronExecutable({
   sourceElectronDir,
   devElectronDir,
   devElectronExe,
+  sourceConfigPath,
+  devResourcesDir,
+  devConfigPath,
 }) {
   if (!existsSync(devElectronExe)) {
     mkdirSync(devElectronDir, { recursive: true });
     cpSync(sourceElectronDir, devElectronDir, { recursive: true, force: true });
     copyFileSync(sourceElectronExe, devElectronExe);
+  }
+  if (sourceConfigPath && devResourcesDir && devConfigPath) {
+    mkdirSync(devResourcesDir, { recursive: true });
+    copyFileSync(sourceConfigPath, devConfigPath);
   }
 
   const resolvedRceditPath =
@@ -138,6 +148,9 @@ export function runDevElectron(scriptUrl = import.meta.url) {
     sourceElectronExe: paths.sourceElectronExe,
     devElectronDir: paths.devElectronDir,
     devElectronExe: paths.devElectronExe,
+    sourceConfigPath: paths.sourceConfigPath,
+    devResourcesDir: paths.devResourcesDir,
+    devConfigPath: paths.devConfigPath,
   });
 
   const result = spawnSync("electron-vite", ["dev"], {
