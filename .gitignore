@@ -83,6 +83,7 @@ $RECYCLE.BIN/
 
 # ===== Local config / temp =====
 *.local
+.worktrees/
 .tmp/
 tmp/
 .cache/
