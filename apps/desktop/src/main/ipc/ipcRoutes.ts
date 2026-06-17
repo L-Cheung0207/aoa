@@ -339,6 +339,7 @@ export interface IpcRouteLogger {
 export interface RegisterIpcRoutesOptions {
   logger?: IpcRouteLogger | undefined;
   now?: (() => number) | undefined;
+  revealSensitiveLogs?: boolean | undefined;
 }
 
 export function registerIpcRoutes(
@@ -349,6 +350,7 @@ export function registerIpcRoutes(
   const logger = options.logger ?? console;
   const handlers = createIpcRouteHandlers({ ...dependencies, logger });
   const now = options.now ?? Date.now;
+  const logOptions = { revealSensitive: options.revealSensitiveLogs === true };
   let nextRequestId = 0;
 
   const handle = (
@@ -363,7 +365,7 @@ export function registerIpcRoutes(
           channel,
           requestId,
           ...(input === undefined ? {} : { input })
-        })}`
+        }, logOptions)}`
       );
       try {
         const result = await listener(event, input);
@@ -373,7 +375,7 @@ export function registerIpcRoutes(
             requestId,
             status: "ok",
             durationMs: now() - startedAt
-          })}`
+          }, logOptions)}`
         );
         return result;
       } catch (error) {
@@ -384,7 +386,7 @@ export function registerIpcRoutes(
             status: "error",
             durationMs: now() - startedAt,
             error: getErrorMessage(error)
-          })}`
+          }, logOptions)}`
         );
         throw error;
       }

@@ -90,4 +90,45 @@ describe("connectivityService logging", () => {
     ]);
     expect([...logs, ...warnings].join("\n")).not.toContain("token=secret");
   });
+
+  it("reveals websocket URL secrets in development logs while hiding proxy passwords", async () => {
+    const { logs, logger } = createLogger();
+    const sockets: Array<{
+      listeners: Partial<Record<"open" | "error", (error?: Error) => void>>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+
+    const promise = testWebSocket(
+      {
+        url: "wss://api.example/ws?AccessCode=secret&keep=yes",
+        proxy: "proxy.example:8080",
+        proxyUsername: "alex",
+        proxyPassword: "secret-password",
+      },
+      {
+        logger,
+        revealSensitiveLogs: true,
+        createWebSocket: () => {
+          const socket = {
+            listeners: {},
+            terminate: vi.fn(),
+            once: vi.fn((event: "open" | "error", listener: (error?: Error) => void) => {
+              socket.listeners[event] = listener;
+              return socket;
+            }),
+          };
+          sockets.push(socket);
+          return socket;
+        },
+      },
+    );
+
+    sockets[0]?.listeners.open?.();
+    await expect(promise).resolves.toMatchObject({ ok: true });
+
+    expect(logs[0]).toBe(
+      "[connectivity] websocket test start url=wss://api.example/ws?AccessCode=secret&keep=yes proxy=http://alex:***@proxy.example:8080/ agent=enabled"
+    );
+    expect(logs.join("\n")).not.toContain("secret-password");
+  });
 });

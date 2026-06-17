@@ -67,6 +67,7 @@
     "asar": true,
     "npmRebuild": false,
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",

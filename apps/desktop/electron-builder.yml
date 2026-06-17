@@ -32,6 +32,7 @@ extraResources:
     to: voice_native_helper.node
 
 win:
+  signAndEditExecutable: false
   target:
     - target: nsis
       arch:

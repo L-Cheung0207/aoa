@@ -41,6 +41,7 @@ const JAVA_VOICE_SESSION_START_TIMEOUT_MS = 10000;
 
 export interface CreateJavaVoiceSessionProviderOptions {
   url?: string;
+  revealSensitiveLogs?: boolean | undefined;
   WebSocketConstructor?: typeof WebSocket;
 }
 
@@ -56,6 +57,7 @@ function createJavaVoiceTranscriptionProvider(
   const listeners = new Set<(event: TranscriptionEvent) => void>();
   const WebSocketConstructor = options.WebSocketConstructor ?? WebSocket;
   const url = options.url ?? JAVA_VOICE_WS_URL;
+  const revealSensitiveLogs = options.revealSensitiveLogs === true;
   let socket: WebSocket | undefined;
   let sessionId = "";
   let sequence = 0;
@@ -126,7 +128,7 @@ function createJavaVoiceTranscriptionProvider(
       sessionStarted = false;
 
       console.log(
-        `[java-voice] connecting url=${redactUrlForLog(url)} sessionId=${sessionId} mode=${input.mode ?? "direct"}`,
+        `[java-voice] connecting url=${redactUrlForLog(url, revealSensitiveLogs)} sessionId=${sessionId} mode=${input.mode ?? "direct"}`,
       );
       const activeSocket = new WebSocketConstructor(url);
       socket = activeSocket;
@@ -199,7 +201,7 @@ function createJavaVoiceTranscriptionProvider(
         console.log(`[java-voice] connected sessionId=${sessionId}`);
         const sessionStartPayload = buildSessionStart(sessionId, input);
         console.log(
-          `[java-voice] session_start summary ${formatSessionStartForLog(sessionStartPayload)}`,
+          `[java-voice] session_start summary ${formatSessionStartForLog(sessionStartPayload, revealSensitiveLogs)}`,
         );
         sendJson(sessionStartPayload);
         console.log(
@@ -215,7 +217,7 @@ function createJavaVoiceTranscriptionProvider(
         );
       } catch (error) {
         console.error(
-          `[java-voice] connect failed sessionId=${sessionId} url=${redactUrlForLog(url)}`,
+          `[java-voice] connect failed sessionId=${sessionId} url=${redactUrlForLog(url, revealSensitiveLogs)}`,
           error,
         );
         cleanup(error instanceof Error ? error : new Error(String(error)));
@@ -292,27 +294,50 @@ function buildSessionStart(
     audioFormat: "pcm16",
     selectedText: input.selectedText ?? "",
     postprocessMode: input.postprocessMode ?? "clean",
-    targetLanguage: input.targetLanguage ?? "en-US",
+    ...(input.mode === "translate" && input.targetLanguage
+      ? { targetLanguage: input.targetLanguage }
+      : {}),
     ...(input.appContext ? { appContext: input.appContext } : {}),
   };
 }
 
-function formatSessionStartForLog(payload: Record<string, unknown>): string {
+function formatSessionStartForLog(
+  payload: Record<string, unknown>,
+  revealSensitive: boolean,
+): string {
   const selectedText =
     typeof payload.selectedText === "string" ? payload.selectedText : "";
-  return [
+  const parts = [
     `sessionId=${payload.sessionId ?? ""}`,
     `mode=${payload.mode ?? ""}`,
     `language=${payload.language ?? ""}`,
     `sampleRate=${payload.sampleRate ?? ""}`,
     `postprocessMode=${payload.postprocessMode ?? ""}`,
-    `targetLanguage=${payload.targetLanguage ?? ""}`,
     `selectedTextLength=${selectedText.length}`,
-    `hasAppContext=${payload.appContext !== undefined}`
-  ].join(" ");
+    `hasAppContext=${payload.appContext !== undefined}`,
+  ];
+  if (payload.targetLanguage !== undefined) {
+    parts.push(`targetLanguage=${payload.targetLanguage ?? ""}`);
+  }
+  if (revealSensitive) {
+    parts.push(`selectedText=${selectedText}`);
+    if (isRecord(payload.appContext)) {
+      const appContext = payload.appContext;
+      parts.push(`appName=${String(appContext.appName ?? "")}`);
+      parts.push(`windowTitle=${String(appContext.windowTitle ?? "")}`);
+    }
+  }
+  return parts.join(" ");
 }
 
-function redactUrlForLog(input: string): string {
+function redactUrlForLog(input: string, revealSensitive = false): string {
+  if (revealSensitive) {
+    try {
+      return new URL(input).toString();
+    } catch {
+      return input;
+    }
+  }
   try {
     const parsed = new URL(input);
     for (const key of Array.from(parsed.searchParams.keys())) {
@@ -327,6 +352,10 @@ function redactUrlForLog(input: string): string {
       "$1***",
     );
   }
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null;
 }
 
 function toPostprocessOutput(message: JavaVoiceFinalResult): PostprocessResult {

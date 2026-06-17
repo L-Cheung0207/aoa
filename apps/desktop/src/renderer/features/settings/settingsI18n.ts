@@ -228,8 +228,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
         { key: "简体中文（中国大陆）", value: "zh-CN" },
       ],
       waveforms: [
-        { key: "脉冲焰", value: "waveform-sunset" },
         { key: "银核灰", value: "waveform-mono" },
+        { key: "脉冲焰", value: "waveform-sunset" },
         { key: "霓虹糖", value: "waveform-candy" },
       ],
     },
@@ -349,8 +349,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
         { key: "簡體中文（中國大陸）", value: "zh-CN" },
       ],
       waveforms: [
-        { key: "脈衝焰", value: "waveform-sunset" },
         { key: "銀核灰", value: "waveform-mono" },
+        { key: "脈衝焰", value: "waveform-sunset" },
         { key: "霓虹糖", value: "waveform-candy" },
       ],
     },
@@ -483,8 +483,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
         { key: "Simplified Chinese (Mainland China)", value: "zh-CN" },
       ],
       waveforms: [
-        { key: "Pulse Flame", value: "waveform-sunset" },
         { key: "Silver Core", value: "waveform-mono" },
+        { key: "Pulse Flame", value: "waveform-sunset" },
         { key: "Neon Candy", value: "waveform-candy" },
       ],
     },

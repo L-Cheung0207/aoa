@@ -31,6 +31,7 @@ export interface MainTranscriptionService {
 export interface CreateMainTranscriptionServiceOptions {
   getSettings(): Pick<AppSettings, "ws">;
   createProvider?: (server: WsServerConfig) => TranscriptionProvider;
+  revealSensitiveLogs?: boolean | undefined;
 }
 
 interface ActiveProvider {
@@ -81,7 +82,7 @@ export function createMainTranscriptionService(
         throw new Error("No WS server configured");
       }
       console.log(
-        `[asr-main] request params url=${redactWsUrl(selectedUrl)} ` +
+        `[asr-main] request params url=${redactWsUrl(selectedUrl, options.revealSensitiveLogs === true)} ` +
           `language=${input.language} sampleRate=${input.sampleRate} ` +
           `selectedIndex=${wsSettings.selectedIndex} ` +
           `proxy=${describeProxy(selectedServer, buildProxyUrl(selectedServer))}`
@@ -91,7 +92,10 @@ export function createMainTranscriptionService(
         options.createProvider?.(selectedServer) ??
         createDefaultTranscriptionProvider({
           url: selectedUrl,
-          socketFactory: createNodeTranscriptionSocketFactory(selectedServer)
+          revealSensitiveLogs: options.revealSensitiveLogs === true,
+          socketFactory: createNodeTranscriptionSocketFactory(selectedServer, {
+            revealSensitiveLogs: options.revealSensitiveLogs === true
+          })
         });
       activeProvider = {
         provider,
@@ -159,6 +163,7 @@ type NodeWebSocketConstructor = new (
 
 export interface CreateNodeTranscriptionSocketFactoryOptions {
   WebSocketConstructor?: NodeWebSocketConstructor;
+  revealSensitiveLogs?: boolean | undefined;
 }
 
 export function createNodeTranscriptionSocketFactory(
@@ -167,6 +172,7 @@ export function createNodeTranscriptionSocketFactory(
 ): TranscriptionSocketFactory {
   const WebSocketConstructor =
     options.WebSocketConstructor ?? (WebSocket as unknown as NodeWebSocketConstructor);
+  const revealSensitiveLogs = options.revealSensitiveLogs === true;
   const proxyUrl = buildProxyUrl(server);
   const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
   const proxySummary = describeProxy(server, proxyUrl);
@@ -175,14 +181,19 @@ export function createNodeTranscriptionSocketFactory(
     connect: (url: string) => {
       const startedAt = Date.now();
       console.log(
-        `[asr-main] connect url=${redactWsUrl(url)} proxy=${proxySummary} agent=${agent ? "enabled" : "disabled"}`
+        `[asr-main] connect url=${redactWsUrl(url, revealSensitiveLogs)} proxy=${proxySummary} agent=${agent ? "enabled" : "disabled"}`
       );
       const ws = new WebSocketConstructor(url, {
         ...(agent ? { agent } : {}),
         rejectUnauthorized: false,
         handshakeTimeout: 5_000
       } as ClientOptions);
-      return createNodeTranscriptionSocket(ws, { url, proxySummary, startedAt });
+      return createNodeTranscriptionSocket(ws, {
+        url,
+        proxySummary,
+        startedAt,
+        revealSensitiveLogs
+      });
     }
   };
 }
@@ -191,6 +202,7 @@ interface NodeTranscriptionSocketDiagnostics {
   url: string;
   proxySummary: string;
   startedAt: number;
+  revealSensitiveLogs: boolean;
 }
 
 function createNodeTranscriptionSocket(
@@ -204,7 +216,7 @@ function createNodeTranscriptionSocket(
       ws.once("open", () => {
         if (diagnostics) {
           console.log(
-            `[asr-main] open url=${redactWsUrl(diagnostics.url)} proxy=${diagnostics.proxySummary} elapsedMs=${Date.now() - diagnostics.startedAt}`
+            `[asr-main] open url=${redactWsUrl(diagnostics.url, diagnostics.revealSensitiveLogs)} proxy=${diagnostics.proxySummary} elapsedMs=${Date.now() - diagnostics.startedAt}`
           );
         }
         handler();
@@ -213,18 +225,18 @@ function createNodeTranscriptionSocket(
     onMessage: (handler: (message: string) => void) => {
       ws.on("message", (data) => {
         if (typeof data === "string") {
-          logIncomingMessage(data);
+          logIncomingMessage(data, diagnostics?.revealSensitiveLogs === true);
           handler(data);
           return;
         }
         if (data instanceof Buffer) {
           const message = data.toString("utf8");
-          logIncomingMessage(message);
+          logIncomingMessage(message, diagnostics?.revealSensitiveLogs === true);
           handler(message);
           return;
         }
         const message = String(data);
-        logIncomingMessage(message);
+        logIncomingMessage(message, diagnostics?.revealSensitiveLogs === true);
         handler(message);
       });
     },
@@ -233,7 +245,7 @@ function createNodeTranscriptionSocket(
         const normalized = error instanceof Error ? error : new Error(String(error));
         if (diagnostics) {
           console.warn(
-            `[asr-main] error url=${redactWsUrl(diagnostics.url)} proxy=${diagnostics.proxySummary} message=${normalized.message}`
+            `[asr-main] error url=${redactWsUrl(diagnostics.url, diagnostics.revealSensitiveLogs)} proxy=${diagnostics.proxySummary} message=${normalized.message}`
           );
         }
         handler(normalized);
@@ -243,7 +255,7 @@ function createNodeTranscriptionSocket(
       ws.once("close", (code, reason) => {
         if (diagnostics) {
           console.log(
-            `[asr-main] close url=${redactWsUrl(diagnostics.url)} proxy=${diagnostics.proxySummary} ${formatCloseEventForLog(code, reason)}`
+            `[asr-main] close url=${redactWsUrl(diagnostics.url, diagnostics.revealSensitiveLogs)} proxy=${diagnostics.proxySummary} ${formatCloseEventForLog(code, reason)}`
           );
         }
         handler(formatNodeCloseEvent(code, reason));
@@ -252,8 +264,13 @@ function createNodeTranscriptionSocket(
   };
 }
 
-function logIncomingMessage(message: string): void {
-  console.log(`[asr-main] raw message len=${message.length} ${summarizeAsrMessageForLog(message)}`);
+function logIncomingMessage(message: string, revealSensitive = false): void {
+  console.log(
+    `[asr-main] raw message len=${message.length} ${summarizeAsrMessageForLog(
+      message,
+      revealSensitive
+    )}`
+  );
 }
 
 function formatNodeCloseEvent(code: unknown, reason: unknown): TranscriptionSocketCloseEvent {
@@ -309,7 +326,14 @@ function describeProxy(
   }
 }
 
-function redactWsUrl(url: string): string {
+function redactWsUrl(url: string, revealSensitive = false): string {
+  if (revealSensitive) {
+    try {
+      return new URL(url).toString();
+    } catch {
+      return url;
+    }
+  }
   try {
     const parsed = new URL(url);
     for (const key of Array.from(parsed.searchParams.keys())) {
@@ -331,7 +355,7 @@ function previewLogText(value: string, limit: number): string {
   return compact.length <= limit ? compact : `${compact.slice(0, limit)}...`;
 }
 
-function summarizeAsrMessageForLog(message: string): string {
+function summarizeAsrMessageForLog(message: string, revealSensitive = false): string {
   try {
     const parsed = JSON.parse(message) as unknown;
     if (!parsed || typeof parsed !== "object") {
@@ -348,7 +372,11 @@ function summarizeAsrMessageForLog(message: string): string {
     for (const key of ["text", "rawText", "transcript", "finalText"]) {
       const value = record[key];
       if (typeof value === "string") {
-        parts.push(`${key}Length=${value.length}`);
+        parts.push(
+          revealSensitive
+            ? `${key}=${previewLogText(value, 120)}`
+            : `${key}Length=${value.length}`
+        );
       }
     }
     parts.push(`keys=${Object.keys(record).join(",")}`);

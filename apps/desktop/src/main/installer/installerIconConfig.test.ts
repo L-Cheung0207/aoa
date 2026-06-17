@@ -9,6 +9,7 @@ const installerShellBuilderConfigPath = resolve(
   "../../../electron-builder.installer-shell.yml"
 );
 const bootstrapPath = resolve(__dirname, "../bootstrap.ts");
+const appIconPath = resolve(__dirname, "../windows/appIcon.ts");
 
 describe("desktop installer icon configuration", () => {
   it("uses the shared app icon for packaging and runtime tray assets", () => {
@@ -19,10 +20,11 @@ describe("desktop installer icon configuration", () => {
       "utf8"
     );
     const bootstrap = readFileSync(bootstrapPath, "utf8");
+    const appIcon = readFileSync(appIconPath, "utf8");
 
     expect(packageJson).toContain('"from": "resources/app-icon.ico"');
     expect(packageJson).toContain('"icon": "resources/app-icon.ico"');
-    expect(packageJson).not.toContain('"signAndEditExecutable": false');
+    expect(packageJson).toContain('"signAndEditExecutable": false');
     expect(packageJson).toContain('"installerLanguages"');
     expect(packageJson).toContain('"zh_TW"');
     expect(packageJson).toContain('"language": "1028"');
@@ -33,7 +35,7 @@ describe("desktop installer icon configuration", () => {
     expect(electronBuilderConfig).toContain("from: resources/app-icon.ico");
     expect(electronBuilderConfig).toContain("to: app-icon.ico");
     expect(electronBuilderConfig).toContain("icon: resources/app-icon.ico");
-    expect(electronBuilderConfig).not.toContain("signAndEditExecutable: false");
+    expect(electronBuilderConfig).toContain("signAndEditExecutable: false");
     expect(electronBuilderConfig).toContain("allowToChangeInstallationDirectory: true");
     expect(electronBuilderConfig).toContain("installerLanguages:");
     expect(electronBuilderConfig).toContain("- zh_TW");
@@ -46,9 +48,10 @@ describe("desktop installer icon configuration", () => {
     expect(electronBuilderConfig).not.toContain("resources/tray-icon.ico");
 
     expect(installerShellBuilderConfig).toContain("icon: resources/app-icon.ico");
-    expect(installerShellBuilderConfig).not.toContain("signAndEditExecutable: false");
+    expect(installerShellBuilderConfig).toContain("signAndEditExecutable: false");
 
-    expect(bootstrap).toContain('"app-icon.ico"');
+    expect(bootstrap).not.toContain('"tray-icon.ico"');
+    expect(appIcon).toContain('const APP_ICON_FILE_NAME = "app-icon.ico"');
     expect(bootstrap).not.toContain('"tray-icon.ico"');
   });
 });

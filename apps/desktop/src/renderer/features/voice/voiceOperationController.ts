@@ -320,7 +320,7 @@ export function createVoiceOperationController(
         sampleRate: options.settings.sampleRate,
         mode: session.mode,
         selectedText: session.selectedText,
-        targetLanguage: resolveSessionTargetLanguage(options, session),
+        targetLanguage: options.settings.targetLanguage,
         postprocessMode: resolveSessionPostprocessMode(options, session),
         appContext,
       });
@@ -956,18 +956,6 @@ function resolveSessionPostprocessMode(
     : options.settings.postprocessMode;
 }
 
-function resolveSessionTargetLanguage(
-  options: CreateVoiceOperationControllerOptions,
-  session: ActiveSession,
-): VoiceOperationSettings["targetLanguage"] {
-  return session.mode === "translate"
-    ? resolveTranslateTargetLanguage(
-        options.settings.language,
-        options.settings.targetLanguage,
-      )
-    : options.settings.targetLanguage;
-}
-
 async function applyPostProcessResult(
   textTarget: VoiceTextTarget,
   session: ActiveSession,
@@ -985,23 +973,6 @@ async function applyPostProcessResult(
     `[voice] apply postprocess action=${result.action}，执行插入 finalTextLength=${result.finalText.length}`,
   );
   await textTarget.insertText(result.finalText);
-}
-
-export function resolveTranslateTargetLanguage(
-  lang: RecordingLanguage,
-  fallback: VoiceOperationSettings["targetLanguage"],
-): VoiceOperationSettings["targetLanguage"] {
-  switch (lang) {
-    case "cantonese":
-    case "mandarin":
-    case "zh-CN":
-      return "en-US";
-    case "english":
-    case "en-US":
-      return "zh-CN";
-    default:
-      return fallback;
-  }
 }
 
 function emitHistoryRecord(

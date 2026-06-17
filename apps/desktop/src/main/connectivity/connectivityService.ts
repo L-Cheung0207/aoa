@@ -24,6 +24,7 @@ interface ConnectivitySocket {
 
 export interface TestWebSocketOptions {
   logger?: ConnectivityLogger;
+  revealSensitiveLogs?: boolean | undefined;
   createWebSocket?: (
     url: string,
     options: WebSocket.ClientOptions,
@@ -65,6 +66,7 @@ export async function testWebSocket(
   options: TestWebSocketOptions = {},
 ): Promise<ConnectivityTestResult> {
   const logger = options.logger ?? console;
+  const logOptions = { revealSensitive: options.revealSensitiveLogs };
   const createWebSocket =
     options.createWebSocket ??
     ((targetUrl: string, socketOptions: WebSocket.ClientOptions) =>
@@ -84,7 +86,7 @@ export async function testWebSocket(
       url,
       proxy: proxyUrl ? redactProxyUrlForLog(proxyUrl) : "none",
       agent: agent ? "enabled" : "disabled",
-    })}`,
+    }, logOptions)}`,
   );
 
   const startedAt = Date.now();
@@ -173,8 +175,11 @@ function redactProxyUrlForLog(input: string): string {
     if (parsed.password) {
       parsed.password = "***";
     }
-    return sanitizeUrlForLog(parsed.toString());
+    return sanitizeUrlForLog(parsed.toString(), { revealSensitive: true });
   } catch {
-    return sanitizeUrlForLog(input).replace(/(:)[^:@\s]+(@)/, "$1***$2");
+    return sanitizeUrlForLog(input, { revealSensitive: true }).replace(
+      /(:)[^:@\s]+(@)/,
+      "$1***$2",
+    );
   }
 }

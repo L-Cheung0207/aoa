@@ -122,7 +122,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     aboutActions: "關於頁面操作",
     welcome: "歡迎使用 Voice Assistant Service",
     description:
-      "Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容",
+      "欢迎来到 告别打字的时代。欢迎使用 Voice Assistant。",
     currentVersionPrefix: "當前版本 ",
     checkUpdates: "檢查更新",
     contact: "聯絡我們",
@@ -511,9 +511,9 @@ export function HomeShell({
             text={shellText}
             versionLabel={versionLabel}
             onCheckUpdates={openUpdateDialog}
-            onContact={() => {}}
-            onOpenAgreement={() => {}}
-            onOpenPrivacy={() => {}}
+            onContact={() => { }}
+            onOpenAgreement={() => { }}
+            onOpenPrivacy={() => { }}
           />
         ) : null}
         {activeSection === "home" ? (

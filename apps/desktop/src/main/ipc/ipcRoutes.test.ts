@@ -942,6 +942,44 @@ describe("ipc route logging", () => {
     expect(logs.join("\n")).not.toContain("secret text");
   });
 
+  it("logs sensitive IPC input in development mode", async () => {
+    const logs: string[] = [];
+    const handles = new Map<
+      string,
+      (_event: unknown, input?: unknown) => unknown
+    >();
+    const ipcMain = {
+      handle: (
+        channel: string,
+        listener: (_event: unknown, input?: unknown) => unknown
+      ) => {
+        handles.set(channel, listener);
+      }
+    };
+
+    registerIpcRoutes(ipcMain, createDeps(), {
+      logger: {
+        log: (message) => logs.push(message),
+        warn: (message) => logs.push(message)
+      },
+      revealSensitiveLogs: true,
+      now: (() => {
+        let current = 1000;
+        return () => {
+          current += 7;
+          return current;
+        };
+      })()
+    });
+
+    await handles.get("voice:copy-text")?.({}, { text: "secret text" });
+
+    expect(logs).toEqual([
+      "[ipc] request channel=voice:copy-text requestId=ipc-1 input={\"text\":\"secret text\"}",
+      "[ipc] response channel=voice:copy-text requestId=ipc-1 status=ok durationMs=7"
+    ]);
+  });
+
   it("logs failed IPC handlers without leaking sensitive input", async () => {
     const logs: string[] = [];
     const handles = new Map<

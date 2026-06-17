@@ -9,7 +9,8 @@ export interface VolumeMeterProps {
 }
 
 const METER_BAR_COUNT = 14;
-const LEVEL_GAIN = 8;
+const LEVEL_GAIN = 3.2;
+const LEVEL_CURVE_EXPONENT = 1.35;
 const PCM_MAX = 32768;
 const WAVEFORM_GAIN = 6.4;
 
@@ -33,7 +34,7 @@ export function VolumeMeter({
   samples
 }: VolumeMeterProps): React.JSX.Element {
   const normalized = active ? Math.min(1, Math.max(0, level * LEVEL_GAIN)) : 0;
-  const voicedLevel = active ? Math.pow(normalized, 0.72) : 0;
+  const voicedLevel = active ? Math.pow(normalized, LEVEL_CURVE_EXPONENT) : 0;
   const pattern =
     WAVEFORM_AMPLITUDE_PATTERNS[styleName] ??
     WAVEFORM_AMPLITUDE_PATTERNS["waveform-sunset"];

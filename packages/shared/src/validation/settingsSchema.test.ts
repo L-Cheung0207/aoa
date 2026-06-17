@@ -24,7 +24,7 @@ describe("settings schema", () => {
     expect(settings.translation.targetLanguage).toBe("en-US");
     expect(settings.recording.sampleRate).toBe(16000);
     expect(settings.recording.inputDeviceId).toBe("");
-    expect(settings.recording.waveformStyle).toBe("waveform-sunset");
+    expect(settings.recording.waveformStyle).toBe("waveform-mono");
     expect(settings.developer.enabled).toBe(false);
     expect(settings.privacy.saveHistory).toBe(true);
     expect(settings.privacy.historyRetention).toBe("forever");

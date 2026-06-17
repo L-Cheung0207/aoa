@@ -392,7 +392,7 @@ describe("voice operation controller", () => {
     ]);
     expect(textTarget.inserted).toEqual(["明天下午三点开会。"]);
   });
-  it("translates Chinese ASR to English for Right Alt + Right Shift", async () => {
+  it("uses the configured target language for Right Alt + Right Shift", async () => {
     const recorder = new FakeRecorderService();
     const result: PostprocessResult = {
       action: "insert",
@@ -432,7 +432,7 @@ describe("voice operation controller", () => {
         mode: "translate",
         language: "mandarin",
         postprocessMode: "translate",
-        targetLanguage: "en-US"
+        targetLanguage: "zh-CN"
       }
     ]);
     expect(textTarget.inserted).toEqual(["Meeting tomorrow at 3 PM."]);

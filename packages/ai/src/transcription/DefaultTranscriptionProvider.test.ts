@@ -194,6 +194,48 @@ describe("default transcription provider", () => {
     }
   });
 
+  it("reveals URL and server text in development logs without logging audio payloads", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const socket = createFakeSocket();
+      const provider = createDefaultTranscriptionProvider({
+        url: "wss://asr.example/ws?AccessCode=secret&token=other",
+        socketFactory: { connect: () => socket },
+        generateVoiceId: () => "dev-log-voice",
+        revealSensitiveLogs: true
+      });
+
+      const startPromise = provider.start({
+        installationId: "inst",
+        language: "zh-CN",
+        sampleRate: 16000
+      });
+      socket.emitOpen?.();
+      await startPromise;
+      provider.sendAudio(createFrame());
+      socket.emitMessage?.(
+        JSON.stringify({
+          voice_id: "dev-log-voice",
+          code: "1",
+          result: { voice_text_str: "sensitive server text" }
+        })
+      );
+
+      const logs = getLoggedText(logSpy);
+      expect(logs).toContain(
+        "wss://asr.example/ws?AccessCode=secret&token=other"
+      );
+      expect(logs).toContain("voiceText=sensitive server text");
+      expect(logs).toContain("base64Len=12");
+      expect(logs).not.toContain("\"pcm\"");
+      expect(logs).not.toContain("AQD//wIA/v8=");
+
+      await provider.cancel();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it("logs fallback final text length without leaking partial text", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {

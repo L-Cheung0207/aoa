@@ -73,7 +73,7 @@ export function App(): React.JSX.Element {
   >(undefined);
   const [showModeHint, setShowModeHint] = useState(false);
   const [waveformStyle, setWaveformStyle] =
-    useState<WaveformStyle>("waveform-sunset");
+    useState<WaveformStyle>("waveform-mono");
   const [uiLanguage, setUiLanguage] = useState<InterfaceLanguage>(
     DEFAULT_INTERFACE_LANGUAGE,
   );
@@ -787,6 +787,7 @@ function playInteractionTone(frequency: number, volume: number): void {
 
 function buildController(input: BuildControllerInput): ControllerBundle {
   const workletUrl = createVoiceRecorderWorkletUrl();
+  const revealSensitiveLogs = import.meta.env.DEV;
 
   const recorder = createRecorderService({
     adapter: createBrowserRecorderAdapter({
@@ -803,14 +804,15 @@ function buildController(input: BuildControllerInput): ControllerBundle {
   });
   if (voiceService.reason === "developer-unified-endpoint") {
     console.warn(
-      `[voice] developer API URL overrides Java voice gateway url=${redactUrlForLog(voiceService.url)}`,
+      `[voice] developer API URL overrides Java voice gateway url=${redactUrlForLog(voiceService.url, revealSensitiveLogs)}`,
     );
   }
   console.log(
-    `[voice] controller using Java voice gateway url=${redactUrlForLog(voiceService.url)}`,
+    `[voice] controller using Java voice gateway url=${redactUrlForLog(voiceService.url, revealSensitiveLogs)}`,
   );
   const transcriptionProvider = createJavaVoiceSessionProvider({
     url: voiceService.url,
+    revealSensitiveLogs,
   });
 
   const textTarget: VoiceTextTarget = {
@@ -940,7 +942,14 @@ function buildController(input: BuildControllerInput): ControllerBundle {
   };
 }
 
-function redactUrlForLog(input: string): string {
+function redactUrlForLog(input: string, revealSensitive = false): string {
+  if (revealSensitive) {
+    try {
+      return new URL(input).toString();
+    } catch {
+      return input;
+    }
+  }
   try {
     const parsed = new URL(input);
     for (const key of Array.from(parsed.searchParams.keys())) {

@@ -117,6 +117,39 @@ describe("main transcription service", () => {
     }
   });
 
+  it("logs raw ASR request URL in development mode without proxy password", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const provider: TranscriptionProvider = {
+      subscribe: () => () => undefined,
+      start: async () => undefined,
+      sendAudio: () => undefined,
+      stop: async () => undefined,
+      cancel: async () => undefined
+    };
+    const service = createMainTranscriptionService({
+      getSettings: createSettings,
+      createProvider: () => provider,
+      revealSensitiveLogs: true
+    });
+
+    try {
+      await service.start({
+        installationId: "install-secret",
+        language: "cantonese",
+        sampleRate: 16000
+      });
+
+      const logs = logSpy.mock.calls.map((args) => args.map(String).join(" ")).join("\n");
+      expect(logs).toContain(
+        "url=wss://proxied.example.test/ws?AccessCode=secret&token=other-secret"
+      );
+      expect(logs).toContain("proxy=http://proxy.example.test:8080 auth=yes");
+      expect(logs).not.toContain("pass");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it("returns the last final text via stop() so renderer can compensate IPC races", async () => {
     let emitEvent: ((event: { type: "final"; text: string }) => void) | undefined;
     const provider: TranscriptionProvider = {

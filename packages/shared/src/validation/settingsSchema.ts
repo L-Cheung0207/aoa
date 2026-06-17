@@ -76,7 +76,7 @@ export function createDefaultSettings(
       sampleRate: 16000,
       maxDurationSeconds: 60,
       silenceStopMs: 900,
-      waveformStyle: "waveform-sunset",
+      waveformStyle: "waveform-mono",
     },
     ai: {
       postprocessEnabled: true,

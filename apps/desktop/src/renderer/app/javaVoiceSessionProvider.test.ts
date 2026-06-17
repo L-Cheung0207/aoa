@@ -121,6 +121,60 @@ describe("java voice session provider", () => {
     expect(sentTypes(socket!)).toEqual(["session_start", "audio_frame"]);
   });
 
+  it("omits targetLanguage for non-translate session_start payloads", async () => {
+    FakeWebSocket.instances = [];
+    const provider = createJavaVoiceSessionProvider({
+      WebSocketConstructor: FakeWebSocket as unknown as typeof WebSocket,
+      url: "ws://test",
+    });
+
+    const startPromise = provider.start({
+      ...startInput,
+      mode: "processSelection",
+      postprocessMode: "clean",
+      targetLanguage: "en-US",
+    });
+    const socket = FakeWebSocket.instances[0];
+    expect(socket).toBeDefined();
+
+    socket?.open();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const payload = JSON.parse(socket!.sent[0]) as Record<string, unknown>;
+    expect(payload.targetLanguage).toBeUndefined();
+
+    socket?.message({ type: "session_started", sessionId: "server-session" });
+    await startPromise;
+  });
+
+  it("includes targetLanguage for translate session_start payloads", async () => {
+    FakeWebSocket.instances = [];
+    const provider = createJavaVoiceSessionProvider({
+      WebSocketConstructor: FakeWebSocket as unknown as typeof WebSocket,
+      url: "ws://test",
+    });
+
+    const startPromise = provider.start({
+      ...startInput,
+      mode: "translate",
+      postprocessMode: "translate",
+      targetLanguage: "zh-CN",
+    });
+    const socket = FakeWebSocket.instances[0];
+    expect(socket).toBeDefined();
+
+    socket?.open();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const payload = JSON.parse(socket!.sent[0]) as Record<string, unknown>;
+    expect(payload.targetLanguage).toBe("zh-CN");
+
+    socket?.message({ type: "session_started", sessionId: "server-session" });
+    await startPromise;
+  });
+
   it("logs session_start metadata without leaking selected text or app context", async () => {
     FakeWebSocket.instances = [];
     const logs: string[] = [];
@@ -160,5 +214,43 @@ describe("java voice session provider", () => {
     expect(joinedLogs).not.toContain("do not log selected text");
     expect(joinedLogs).not.toContain("Private App");
     expect(joinedLogs).not.toContain("Sensitive Window");
+  });
+
+  it("logs session_start sensitive fields in development without logging audio payloads", async () => {
+    FakeWebSocket.instances = [];
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message: unknown) => {
+      logs.push(String(message));
+    });
+    const provider = createJavaVoiceSessionProvider({
+      WebSocketConstructor: FakeWebSocket as unknown as typeof WebSocket,
+      url: "ws://test?AccessCode=secret",
+      revealSensitiveLogs: true,
+    });
+
+    const startPromise = provider.start({
+      ...startInput,
+      selectedText: "log selected text in dev",
+      appContext: {
+        platform: "windows",
+        appName: "Private App",
+        windowTitle: "Sensitive Window",
+      },
+    });
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    socket?.message({ type: "session_started", sessionId: "server-session" });
+    await startPromise;
+    provider.sendAudio(audioFrame);
+
+    const joinedLogs = logs.join("\n");
+    expect(joinedLogs).toContain("url=ws://test/?AccessCode=secret");
+    expect(joinedLogs).toContain("selectedText=log selected text in dev");
+    expect(joinedLogs).toContain("windowTitle=Sensitive Window");
+    expect(joinedLogs).toContain("pcmLength=8");
+    expect(joinedLogs).not.toContain("\"pcm\"");
+    expect(joinedLogs).not.toContain("AQACAAMA");
   });
 });

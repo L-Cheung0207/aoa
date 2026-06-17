@@ -207,6 +207,6 @@ describe("config store", () => {
       defaults
     });
 
-    expect(store.get().recording.waveformStyle).toBe("waveform-sunset");
+    expect(store.get().recording.waveformStyle).toBe("waveform-mono");
   });
 });

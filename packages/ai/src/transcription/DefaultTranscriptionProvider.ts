@@ -68,6 +68,8 @@ export interface CreateDefaultTranscriptionProviderOptions {
   socketFactory?: TranscriptionSocketFactory;
   /** 自定义 uuid 生成，默认走 crypto.randomUUID，无则退化为时间戳+随机。 */
   generateVoiceId?: () => string;
+  /** Development diagnostics: reveal URL/text payloads in logs. Audio frames stay summarized. */
+  revealSensitiveLogs?: boolean | undefined;
 }
 
 const DEFAULT_URL = "wss://newswriter.teleone.com.cn/ws/transcribe";
@@ -84,6 +86,7 @@ export function createDefaultTranscriptionProvider(
     options.noResponseFinalTimeoutMs ?? DEFAULT_NO_RESPONSE_FINAL_TIMEOUT_MS;
   const socketFactory = options.socketFactory ?? createBrowserTranscriptionSocketFactory();
   const generateVoiceId = options.generateVoiceId ?? defaultGenerateVoiceId;
+  const revealSensitiveLogs = options.revealSensitiveLogs === true;
 
   const listeners = new Set<(event: TranscriptionEvent) => void>();
   const emit = (event: TranscriptionEvent): void => {
@@ -129,6 +132,13 @@ export function createDefaultTranscriptionProvider(
   };
 
   const redactUrlForLog = (input: string): string => {
+    if (revealSensitiveLogs) {
+      try {
+        return new URL(input).toString();
+      } catch {
+        return input;
+      }
+    }
     try {
       const parsed = new URL(input);
       for (const key of Array.from(parsed.searchParams.keys())) {
@@ -155,13 +165,21 @@ export function createDefaultTranscriptionProvider(
     if (result && typeof result === "object") {
       const text = (result as Record<string, unknown>)["voice_text_str"];
       if (typeof text === "string") {
-        parts.push(`voiceTextLength=${text.length}`);
+        parts.push(
+          revealSensitiveLogs
+            ? `voiceText=${previewText(text, 120)}`
+            : `voiceTextLength=${text.length}`
+        );
       }
     }
     for (const key of ["text", "rawText", "transcript", "finalText"]) {
       const value = record[key];
       if (typeof value === "string") {
-        parts.push(`${key}Length=${value.length}`);
+        parts.push(
+          revealSensitiveLogs
+            ? `${key}=${previewText(value, 120)}`
+            : `${key}Length=${value.length}`
+        );
       }
     }
     parts.push(`keys=${Object.keys(record).join(",")}`);

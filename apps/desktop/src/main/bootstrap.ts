@@ -60,7 +60,11 @@ import {
 } from "./installer/installerService";
 import { createInsertService } from "./insertion/insertService";
 import { registerIpcRoutes } from "./ipc/ipcRoutes";
-import { formatLogFields, sanitizeUrlForLog } from "./log/logSanitizer";
+import {
+  configureLogSanitizer,
+  formatLogFields,
+  sanitizeUrlForLog,
+} from "./log/logSanitizer";
 import { createNativeBridge } from "./native/nativeBridge";
 import { createSelectionService } from "./selection/selectionService";
 import {
@@ -92,6 +96,7 @@ import {
   createOverlayWindow,
   type OverlayWindowLayout,
 } from "./windows/createOverlayWindow";
+import { resolveRuntimeAppIconPath } from "./windows/appIcon";
 import { createHomeWindow } from "./windows/createHomeWindow";
 import { createInstallerWindow } from "./windows/createInstallerWindow";
 import { createUninstallWindow } from "./windows/createUninstallWindow";
@@ -424,6 +429,7 @@ export function handoffInstallerLaunch(input: {
 
 export async function bootstrap(): Promise<void> {
   configureAppIdentity();
+  configureLogSanitizer({ revealSensitive: !app.isPackaged });
   registerWindowControlIpc(ipcMain);
   if (!app.isPackaged) {
     const loadedEnvKeys = applyLocalEnvFiles([
@@ -567,6 +573,7 @@ export async function bootstrap(): Promise<void> {
   // ASR 即時轉寫服務（主程序走 node ws + https-proxy-agent，避免瀏覽器原生 WS 不支援 proxy 的問題）。
   const transcriptionService = createMainTranscriptionService({
     getSettings: () => configStore.get(),
+    revealSensitiveLogs: !app.isPackaged,
   });
   const uninstallService = createAppUninstallService();
   const versionCheckEndpoint = resolveVersionCheckEndpoint({
@@ -609,39 +616,43 @@ export async function bootstrap(): Promise<void> {
     },
   });
 
-  registerIpcRoutes(ipcMain, {
-    configStore,
-    clipboard: clipboardService,
-    insertService,
-    selectionService,
-    backendClient,
-    transcriptionService,
-    uninstallService,
-    updateService,
-    quitApp: () => app.quit(),
-    historyStore,
-    installationId,
-    appInfo: {
-      deviceName: os.hostname(),
-      appVersion: app.getVersion(),
+  registerIpcRoutes(
+    ipcMain,
+    {
+      configStore,
+      clipboard: clipboardService,
+      insertService,
+      selectionService,
+      backendClient,
+      transcriptionService,
+      uninstallService,
+      updateService,
+      quitApp: () => app.quit(),
+      historyStore,
+      installationId,
+      appInfo: {
+        deviceName: os.hostname(),
+        appVersion: app.getVersion(),
+      },
+      getAppConfig: () => readAppConfig(appConfigPath),
+      getInsertTargetWindowHandle: () => insertTargetWindowHandle,
+      onSettingsUpdated: (settings) => {
+        applyNativeTheme(settings.ui.theme);
+        applyLaunchAtLogin(settings.appBehavior.launchAtLogin);
+        configureShortcuts(settings.shortcuts);
+        refreshTrayTooltip(lastRecordingState);
+        audioDuckingService.handleSettingsChanged(settings);
+        broadcastSettingsChanged(settings);
+      },
+      onHistoryRecordCreated: (record) => {
+        broadcastHistoryRecordCreated(record);
+      },
+      onHistoryRecordDeleted: (id) => {
+        broadcastHistoryRecordDeleted(id);
+      },
     },
-    getAppConfig: () => readAppConfig(appConfigPath),
-    getInsertTargetWindowHandle: () => insertTargetWindowHandle,
-    onSettingsUpdated: (settings) => {
-      applyNativeTheme(settings.ui.theme);
-      applyLaunchAtLogin(settings.appBehavior.launchAtLogin);
-      configureShortcuts(settings.shortcuts);
-      refreshTrayTooltip(lastRecordingState);
-      audioDuckingService.handleSettingsChanged(settings);
-      broadcastSettingsChanged(settings);
-    },
-    onHistoryRecordCreated: (record) => {
-      broadcastHistoryRecordCreated(record);
-    },
-    onHistoryRecordDeleted: (id) => {
-      broadcastHistoryRecordDeleted(id);
-    },
-  });
+    { revealSensitiveLogs: !app.isPackaged },
+  );
   console.log("[bootstrap] IPC 路由已註冊");
 
   const overlayWindow = createOverlayWindow({ theme: initialSettings.ui.theme });
@@ -976,19 +987,20 @@ export async function bootstrap(): Promise<void> {
   const initialShortcutResult = configureShortcuts(configStore.get().shortcuts);
   void updateService.checkForUpdates();
 
-  // 托盤圖示：開發態從 app.getAppPath()/resources 讀取；打包後從 process.resourcesPath 讀取，
-  // 需要在 electron-builder 的 extraResources 中把 resources/app-icon.ico 投放到 resources 目錄。
-  const trayIconPath = app.isPackaged
-    ? join(process.resourcesPath, "app-icon.ico")
-    : join(app.getAppPath(), "resources", "app-icon.ico");
+  const trayIconPath = resolveRuntimeAppIconPath();
   const tray = createTray({
     onOpenHome: () =>
-      runLoggedTrayAction(console, "open-home", undefined, () =>
-        openHomeWindow(),
+      runLoggedTrayAction(
+        console,
+        "open-home",
+        undefined,
+        () => openHomeWindow(),
+        { revealSensitive: !app.isPackaged },
       ),
     onOpenHistory: () =>
       runLoggedTrayAction(console, "open-history", { section: "history" }, () =>
         openHomeWindow({ section: "history" }),
+        { revealSensitive: !app.isPackaged },
       ),
     onOpenSettings: () =>
       runLoggedTrayAction(
@@ -996,6 +1008,7 @@ export async function bootstrap(): Promise<void> {
         "open-settings",
         { section: "settings" },
         () => openHomeWindow({ section: "settings" }),
+        { revealSensitive: !app.isPackaged },
       ),
     onCheckUpdates: () =>
       runLoggedTrayAction(
@@ -1003,13 +1016,21 @@ export async function bootstrap(): Promise<void> {
         "check-updates",
         { section: "about", showUpdates: true },
         () => openHomeWindow({ section: "about", showUpdates: true }),
+        { revealSensitive: !app.isPackaged },
       ),
     onOpenAbout: () =>
       runLoggedTrayAction(console, "open-about", { section: "about" }, () =>
         openHomeWindow({ section: "about" }),
+        { revealSensitive: !app.isPackaged },
       ),
     onQuit: () =>
-      runLoggedTrayAction(console, "quit", undefined, () => app.quit()),
+      runLoggedTrayAction(
+        console,
+        "quit",
+        undefined,
+        () => app.quit(),
+        { revealSensitive: !app.isPackaged },
+      ),
     iconPath: trayIconPath,
   });
   refreshTrayTooltip = (state) => {
@@ -1135,6 +1156,7 @@ export async function bootstrap(): Promise<void> {
       "open-home-on-launch",
       { argv: summarizeArgvForLog(process.argv) },
       () => openHomeWindow(),
+      { revealSensitive: !app.isPackaged },
     );
   }
 
@@ -1322,8 +1344,9 @@ export function runLoggedTrayAction<T>(
   action: string,
   input: unknown,
   task: () => T,
+  options: { revealSensitive?: boolean } = {},
 ): T {
-  return runLoggedAction(logger, "[tray] action", action, input, task);
+  return runLoggedAction(logger, "[tray] action", action, input, task, options);
 }
 
 export function runLoggedBootstrapAction<T>(
@@ -1331,8 +1354,16 @@ export function runLoggedBootstrapAction<T>(
   action: string,
   input: unknown,
   task: () => T,
+  options: { revealSensitive?: boolean } = {},
 ): T {
-  return runLoggedAction(logger, "[bootstrap-action]", action, input, task);
+  return runLoggedAction(
+    logger,
+    "[bootstrap-action]",
+    action,
+    input,
+    task,
+    options,
+  );
 }
 
 function runLoggedAction<T>(
@@ -1341,12 +1372,14 @@ function runLoggedAction<T>(
   action: string,
   input: unknown,
   task: () => T,
+  options: { revealSensitive?: boolean } = {},
 ): T {
+  const logOptions = { revealSensitive: options.revealSensitive === true };
   logger.log(
     `${prefix} ${formatLogFields({
       action,
       ...(input === undefined ? {} : { input }),
-    })}`,
+    }, logOptions)}`,
   );
   try {
     const result = task();
@@ -1354,7 +1387,7 @@ function runLoggedAction<T>(
       return result.then(
         (value) => {
           logger.log(
-            `${prefix} ${formatLogFields({ action, status: "ok" })}`,
+            `${prefix} ${formatLogFields({ action, status: "ok" }, logOptions)}`,
           );
           return value;
         },
@@ -1364,13 +1397,13 @@ function runLoggedAction<T>(
               action,
               status: "error",
               error: error instanceof Error ? error.message : String(error),
-            })}`,
+            }, logOptions)}`,
           );
           throw error;
         },
       ) as T;
     }
-    logger.log(`${prefix} ${formatLogFields({ action, status: "ok" })}`);
+    logger.log(`${prefix} ${formatLogFields({ action, status: "ok" }, logOptions)}`);
     return result;
   } catch (error) {
     logger.warn(
@@ -1378,7 +1411,7 @@ function runLoggedAction<T>(
         action,
         status: "error",
         error: error instanceof Error ? error.message : String(error),
-      })}`,
+      }, logOptions)}`,
     );
     throw error;
   }
@@ -1388,12 +1421,14 @@ export function logDirectIpcRequest(
   logger: Pick<DirectIpcLogger, "log">,
   channel: string,
   input?: unknown,
+  options: { revealSensitive?: boolean } = {},
 ): void {
+  const logOptions = { revealSensitive: options.revealSensitive === true };
   logger.log(
     `[ipc-direct] request ${formatLogFields({
       channel,
       ...(input === undefined ? {} : { input }),
-    })}`,
+    }, logOptions)}`,
   );
 }
 
