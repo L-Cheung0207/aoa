@@ -1,4 +1,5 @@
 export { mapBackendError } from "./backendErrors";
+export { BackendHttpError, createHttpBackendClient } from "./httpBackendClient";
 export { createMockBackendClient } from "./mockBackendClient";
 export type {
   AnonymousQuota,
@@ -17,5 +18,5 @@ export type {
   PostprocessStyle,
   ServiceStatusSnapshot,
   TranscriptionSession,
-  TranscriptionSessionRequest
+  TranscriptionSessionRequest,
 } from "./types";

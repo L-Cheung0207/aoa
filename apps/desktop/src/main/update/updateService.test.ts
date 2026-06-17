@@ -9,7 +9,7 @@ import {
   createBackendInstallerLauncher,
   inspectWindowsExecutableMetadata,
   createUpdateService,
-  shouldCheckForUpdates
+  shouldCheckForUpdates,
 } from "./updateService";
 import type { VersionCheckClient } from "./versionCheckClient";
 
@@ -22,14 +22,16 @@ describe("update service", () => {
   it("returns up-to-date when the backend reports no update", async () => {
     const autoUpdater = createAutoUpdater();
     const versionCheckClient = createVersionCheckClient(async () => ({
-      hasUpdate: false
+      hasUpdate: false,
     }));
     const service = createService({ autoUpdater, versionCheckClient });
 
-    await expect(service.checkForUpdates()).resolves.toEqual({ status: "up-to-date" });
+    await expect(service.checkForUpdates()).resolves.toEqual({
+      status: "up-to-date",
+    });
     expect(versionCheckClient.check).toHaveBeenCalledWith({
       platform: "WINDOWS",
-      currentVersion: "1.2.3"
+      currentVersion: "1.2.3",
     });
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
   });
@@ -53,17 +55,17 @@ describe("update service", () => {
             phase: "downloading",
             percent: 50,
             transferredBytes: 78643200,
-            totalBytes: 157286400
+            totalBytes: 157286400,
           });
           input.onProgress?.({
             phase: "verifying",
             percent: 100,
             transferredBytes: 157286400,
-            totalBytes: 157286400
+            totalBytes: 157286400,
           });
           return "C:/Temp/Voice Assistant Setup 1.2.4.exe";
-        }
-      )
+        },
+      ),
     };
     const service = createService({
       autoUpdater,
@@ -81,8 +83,8 @@ describe("update service", () => {
         packageSha256:
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageSize: 157286400,
-        packageName: "Voice Assistant Setup 1.2.4.exe"
-      }))
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      })),
     });
 
     await expect(service.checkForUpdates()).resolves.toEqual({
@@ -95,7 +97,7 @@ describe("update service", () => {
       packageSha256:
         "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
       packageSize: 157286400,
-      packageName: "Voice Assistant Setup 1.2.4.exe"
+      packageName: "Voice Assistant Setup 1.2.4.exe",
     });
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(directDownloader.download).toHaveBeenCalledWith(
@@ -105,8 +107,8 @@ describe("update service", () => {
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageName: "Voice Assistant Setup 1.2.4.exe",
         packageSize: 157286400,
-        onProgress: expect.any(Function)
-      })
+        onProgress: expect.any(Function),
+      }),
     );
     expect(onDownloadProgress).toHaveBeenCalledWith({
       phase: "downloading",
@@ -114,7 +116,7 @@ describe("update service", () => {
       transferredBytes: 0,
       totalBytes: 157286400,
       packageName: "Voice Assistant Setup 1.2.4.exe",
-      version: "1.2.4"
+      version: "1.2.4",
     });
     expect(onDownloadProgress).toHaveBeenCalledWith({
       phase: "downloading",
@@ -122,7 +124,7 @@ describe("update service", () => {
       transferredBytes: 78643200,
       totalBytes: 157286400,
       packageName: "Voice Assistant Setup 1.2.4.exe",
-      version: "1.2.4"
+      version: "1.2.4",
     });
     expect(onDownloadProgress).toHaveBeenCalledWith({
       phase: "verifying",
@@ -130,7 +132,7 @@ describe("update service", () => {
       transferredBytes: 157286400,
       totalBytes: 157286400,
       packageName: "Voice Assistant Setup 1.2.4.exe",
-      version: "1.2.4"
+      version: "1.2.4",
     });
     expect(updateReady).toHaveBeenCalledWith({
       version: "1.2.4",
@@ -141,13 +143,13 @@ describe("update service", () => {
       packageSha256:
         "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
       packageSize: 157286400,
-      packageName: "Voice Assistant Setup 1.2.4.exe"
+      packageName: "Voice Assistant Setup 1.2.4.exe",
     });
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] backend update available version=1.2.4 type=FORCED"
+      "[update] backend update available version=1.2.4 type=FORCED",
     );
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] backend installer downloaded path=C:/Temp/Voice Assistant Setup 1.2.4.exe version=1.2.4"
+      "[update] backend installer downloaded path=C:/Temp/Voice Assistant Setup 1.2.4.exe version=1.2.4",
     );
   });
 
@@ -159,16 +161,16 @@ describe("update service", () => {
       onError,
       versionCheckClient: createVersionCheckClient(async () => {
         throw new Error("BACKEND_DOWN");
-      })
+      }),
     });
 
     await expect(service.checkForUpdates()).resolves.toEqual({
       status: "error",
-      message: "BACKEND_DOWN"
+      message: "BACKEND_DOWN",
     });
     expect(onError).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
-      "[update] check failed message=BACKEND_DOWN"
+      "[update] check failed message=BACKEND_DOWN",
     );
   });
 
@@ -177,7 +179,7 @@ describe("update service", () => {
     const autoUpdater = createAutoUpdater({
       checkForUpdates: vi.fn(async () => {
         throw new Error("FEED_UNAVAILABLE");
-      })
+      }),
     });
     const service = createService({
       autoUpdater,
@@ -190,8 +192,8 @@ describe("update service", () => {
         updateLog: "优化稳定性",
         downloadUrl: "/appVersion/download/abc",
         packageSize: 1024,
-        packageName: "setup.exe"
-      }))
+        packageName: "setup.exe",
+      })),
     });
 
     await expect(service.checkForUpdates()).resolves.toEqual({
@@ -203,7 +205,7 @@ describe("update service", () => {
       downloadUrl: "/appVersion/download/abc",
       packageSize: 1024,
       packageName: "setup.exe",
-      updaterError: "FEED_UNAVAILABLE"
+      updaterError: "FEED_UNAVAILABLE",
     });
     expect(onError).toHaveBeenCalledTimes(1);
   });
@@ -212,15 +214,19 @@ describe("update service", () => {
     const updateReady = vi.fn();
     const logger = createLogger();
     const directDownloader = {
-      download: vi.fn(async () => "C:/Users/Alex/AppData/Local/Temp/voice-updates/setup.exe")
+      download: vi.fn(
+        async () => "C:/Users/Alex/AppData/Local/Temp/voice-updates/setup.exe",
+      ),
     };
     const autoUpdater = createAutoUpdater({
       checkForUpdates: vi.fn(async () => {
         throw Object.assign(
-          new Error("ENOENT: no such file or directory, open 'C:\\app\\resources\\app-update.yml'"),
-          { code: "ENOENT" }
+          new Error(
+            "ENOENT: no such file or directory, open 'C:\\app\\resources\\app-update.yml'",
+          ),
+          { code: "ENOENT" },
         );
-      })
+      }),
     });
     const service = createService({
       autoUpdater,
@@ -237,8 +243,8 @@ describe("update service", () => {
         packageSha256:
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageName: "Voice Assistant Setup 1.2.4.exe",
-        packageSize: 1024
-      }))
+        packageSize: 1024,
+      })),
     });
 
     await expect(service.checkForUpdates()).resolves.toEqual({
@@ -251,7 +257,7 @@ describe("update service", () => {
       packageSha256:
         "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
       packageName: "Voice Assistant Setup 1.2.4.exe",
-      packageSize: 1024
+      packageSize: 1024,
     });
     expect(directDownloader.download).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -260,8 +266,8 @@ describe("update service", () => {
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageName: "Voice Assistant Setup 1.2.4.exe",
         packageSize: 1024,
-        onProgress: expect.any(Function)
-      })
+        onProgress: expect.any(Function),
+      }),
     );
     expect(updateReady).toHaveBeenCalledWith({
       version: "1.2.4",
@@ -272,11 +278,11 @@ describe("update service", () => {
       packageSha256:
         "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
       packageName: "Voice Assistant Setup 1.2.4.exe",
-      packageSize: 1024
+      packageSize: 1024,
     });
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] backend installer download started url=https://api.example.com/aoa_api/appVersion/download/abc packageName=Voice Assistant Setup 1.2.4.exe"
+      "[update] backend installer download started url=https://api.example.com/aoa_api/appVersion/download/abc packageName=Voice Assistant Setup 1.2.4.exe",
     );
   });
 
@@ -286,7 +292,7 @@ describe("update service", () => {
     const directDownloader = {
       download: vi.fn(async () => {
         throw new Error("UPDATE_INSTALLER_DOWNLOAD_HTTP_400");
-      })
+      }),
     };
     const autoUpdater = createAutoUpdater();
     const service = createService({
@@ -304,27 +310,29 @@ describe("update service", () => {
         packageSha256:
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageName: "Voice Assistant Setup 1.2.4.exe",
-        packageSize: 1024
-      }))
+        packageSize: 1024,
+      })),
     });
 
     await expect(service.checkForUpdates()).resolves.toEqual({
       status: "error",
-      message: "UPDATE_INSTALLER_DOWNLOAD_HTTP_400"
+      message: "UPDATE_INSTALLER_DOWNLOAD_HTTP_400",
     });
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "UPDATE_INSTALLER_DOWNLOAD_HTTP_400" })
+      expect.objectContaining({
+        message: "UPDATE_INSTALLER_DOWNLOAD_HTTP_400",
+      }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      "[update] backend installer download failed url=https://api.example.com/aoa_api/appVersion/download/abc message=UPDATE_INSTALLER_DOWNLOAD_HTTP_400"
+      "[update] backend installer download failed url=https://api.example.com/aoa_api/appVersion/download/abc message=UPDATE_INSTALLER_DOWNLOAD_HTTP_400",
     );
   });
 
   it("redacts secret query parameters from backend installer download logs", async () => {
     const logger = createLogger();
     const directDownloader = {
-      download: vi.fn(async () => "C:/Temp/Voice Assistant Setup 1.2.4.exe")
+      download: vi.fn(async () => "C:/Temp/Voice Assistant Setup 1.2.4.exe"),
     };
     const service = createService({
       directDownloader,
@@ -339,20 +347,20 @@ describe("update service", () => {
         packageSha256:
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageName: "Voice Assistant Setup 1.2.4.exe",
-        packageSize: 1024
-      }))
+        packageSize: 1024,
+      })),
     });
 
     await expect(service.checkForUpdates()).resolves.toMatchObject({
-      status: "ready"
+      status: "ready",
     });
     expect(directDownloader.download).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: "https://api.example.com/download/abc?token=secret"
-      })
+        url: "https://api.example.com/download/abc?token=secret",
+      }),
     );
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] backend installer download started url=https://api.example.com/download/abc?token=*** packageName=Voice Assistant Setup 1.2.4.exe"
+      "[update] backend installer download started url=https://api.example.com/download/abc?token=*** packageName=Voice Assistant Setup 1.2.4.exe",
     );
     expect(logger.log.mock.calls.join("\n")).not.toContain("token=secret");
   });
@@ -361,12 +369,14 @@ describe("update service", () => {
     const updateReady = vi.fn();
     const onError = vi.fn();
     const directDownloader = {
-      download: vi.fn(async () => "C:/Temp/Codex Installer.exe")
+      download: vi.fn(async () => "C:/Temp/Codex Installer.exe"),
     };
     const autoUpdater = createAutoUpdater({
       checkForUpdates: vi.fn(async () => {
-        throw Object.assign(new Error("ENOENT: app-update.yml"), { code: "ENOENT" });
-      })
+        throw Object.assign(new Error("ENOENT: app-update.yml"), {
+          code: "ENOENT",
+        });
+      }),
     });
     const service = createService({
       autoUpdater,
@@ -383,18 +393,18 @@ describe("update service", () => {
         packageSha256:
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
         packageName: "Codex Installer.exe",
-        packageSize: 1294880
-      }))
+        packageSize: 1294880,
+      })),
     });
 
     await expect(service.checkForUpdates()).resolves.toEqual({
       status: "error",
-      message: "UPDATE_INSTALLER_PACKAGE_MISMATCH"
+      message: "UPDATE_INSTALLER_PACKAGE_MISMATCH",
     });
     expect(directDownloader.download).not.toHaveBeenCalled();
     expect(updateReady).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "UPDATE_INSTALLER_PACKAGE_MISMATCH" })
+      expect.objectContaining({ message: "UPDATE_INSTALLER_PACKAGE_MISMATCH" }),
     );
   });
 
@@ -402,13 +412,15 @@ describe("update service", () => {
     const spawnInstaller = vi.fn();
     const autoUpdater = createAutoUpdater({
       checkForUpdates: vi.fn(async () => {
-        throw Object.assign(new Error("ENOENT: app-update.yml"), { code: "ENOENT" });
-      })
+        throw Object.assign(new Error("ENOENT: app-update.yml"), {
+          code: "ENOENT",
+        });
+      }),
     });
     const service = createService({
       autoUpdater,
       directDownloader: {
-        download: vi.fn(async () => "C:/Temp/Voice Assistant Setup 1.2.4.exe")
+        download: vi.fn(async () => "C:/Temp/Voice Assistant Setup 1.2.4.exe"),
       },
       spawnInstaller,
       currentInstallDir: "C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
@@ -421,8 +433,8 @@ describe("update service", () => {
         downloadUrl: "https://api.example.com/aoa_api/appVersion/download/abc",
         packageSha256:
           "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
-        packageName: "Voice Assistant Setup 1.2.4.exe"
-      }))
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      })),
     });
 
     await service.checkForUpdates();
@@ -430,7 +442,7 @@ describe("update service", () => {
 
     expect(spawnInstaller).toHaveBeenCalledWith({
       installerPath: "C:/Temp/Voice Assistant Setup 1.2.4.exe",
-      installDir: "C:/Users/Alex/AppData/Local/Programs/Voice Assistant"
+      installDir: "C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
     });
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
@@ -443,7 +455,7 @@ describe("update service", () => {
 
     launcher({
       installerPath: "C:/Temp/Voice Assistant Setup 1.2.4.exe",
-      installDir: "C:/Users/Alex/AppData/Local/Programs/Voice Assistant"
+      installDir: "C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
     });
 
     expect(spawnProcess).toHaveBeenCalledWith(
@@ -454,13 +466,13 @@ describe("update service", () => {
         "/S",
         "--force-run",
         "/currentuser",
-        "/D=C:/Users/Alex/AppData/Local/Programs/Voice Assistant"
+        "/D=C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
       ],
       expect.objectContaining({
         detached: true,
         stdio: "ignore",
-        windowsHide: true
-      })
+        windowsHide: true,
+      }),
     );
     expect(child.unref).toHaveBeenCalled();
   });
@@ -473,8 +485,8 @@ describe("update service", () => {
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     try {
@@ -482,7 +494,7 @@ describe("update service", () => {
         url: "https://api.example.com/download/abc",
         packageSha256:
           "9c0d294c05fc1d88d698034609bb81c0c69196327594e4c69d2915c80fd9850c",
-        packageName: "../Voice:Assistant?.exe"
+        packageName: "../Voice:Assistant?.exe",
       });
 
       expect(installerPath).toBe(join(updatesDir, "Voice_Assistant_.exe"));
@@ -503,9 +515,9 @@ describe("update service", () => {
         statusText: "OK",
         body: ReadableStream.from([
           new TextEncoder().encode("voice"),
-          new TextEncoder().encode("-installer")
-        ])
-      }))
+          new TextEncoder().encode("-installer"),
+        ]),
+      })),
     });
 
     try {
@@ -515,26 +527,26 @@ describe("update service", () => {
           "544955daeb1a7103b3373075c2e714d614ef52285c3edb47a7e819cf584165a3",
         packageName: "Voice Assistant Setup 1.2.4.exe",
         packageSize: 15,
-        onProgress
+        onProgress,
       });
 
       expect(onProgress).toHaveBeenCalledWith({
         phase: "downloading",
         percent: 33,
         transferredBytes: 5,
-        totalBytes: 15
+        totalBytes: 15,
       });
       expect(onProgress).toHaveBeenCalledWith({
         phase: "downloading",
         percent: 100,
         transferredBytes: 15,
-        totalBytes: 15
+        totalBytes: 15,
       });
       expect(onProgress).toHaveBeenCalledWith({
         phase: "verifying",
         percent: 100,
         transferredBytes: 15,
-        totalBytes: 15
+        totalBytes: 15,
       });
     } finally {
       await rm(updatesDir, { recursive: true, force: true });
@@ -552,9 +564,9 @@ describe("update service", () => {
         statusText: "OK",
         body: ReadableStream.from([
           new TextEncoder().encode("voice"),
-          new TextEncoder().encode("-installer")
-        ])
-      }))
+          new TextEncoder().encode("-installer"),
+        ]),
+      })),
     });
 
     try {
@@ -563,19 +575,21 @@ describe("update service", () => {
         packageSha256:
           "544955daeb1a7103b3373075c2e714d614ef52285c3edb47a7e819cf584165a3",
         packageName: "Voice Assistant Setup 1.2.4.exe",
-        onProgress
+        onProgress,
       });
 
-      await expect(readFile(installerPath, "utf8")).resolves.toBe("voice-installer");
+      await expect(readFile(installerPath, "utf8")).resolves.toBe(
+        "voice-installer",
+      );
       expect(onProgress).toHaveBeenCalledWith({
         phase: "downloading",
         percent: undefined,
-        transferredBytes: 5
+        transferredBytes: 5,
       });
       expect(onProgress).toHaveBeenCalledWith({
         phase: "verifying",
         percent: undefined,
-        transferredBytes: 15
+        transferredBytes: 15,
       });
     } finally {
       await rm(updatesDir, { recursive: true, force: true });
@@ -591,14 +605,14 @@ describe("update service", () => {
         fileDescription: "Store Installer",
         companyName: "Microsoft Corporation",
         originalFilename: "StoreInstaller.exe",
-        internalName: "StoreInstaller.exe"
+        internalName: "StoreInstaller.exe",
       })),
       fetchImpl: vi.fn(async () => ({
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     try {
@@ -607,8 +621,8 @@ describe("update service", () => {
           url: "https://api.example.com/download/abc",
           packageSha256:
             "9c0d294c05fc1d88d698034609bb81c0c69196327594e4c69d2915c80fd9850c",
-          packageName: "Voice Assistant Setup 1.2.4.exe"
-        })
+          packageName: "Voice Assistant Setup 1.2.4.exe",
+        }),
       ).rejects.toThrow("UPDATE_INSTALLER_METADATA_MISMATCH");
     } finally {
       await rm(updatesDir, { recursive: true, force: true });
@@ -624,9 +638,9 @@ describe("update service", () => {
           FileDescription: "",
           CompanyName: "",
           OriginalFilename: "",
-          InternalName: ""
-        })
-      )
+          InternalName: "",
+        }),
+      ),
     );
 
     expect(metadata).toEqual({
@@ -634,7 +648,7 @@ describe("update service", () => {
       fileDescription: "",
       companyName: "",
       originalFilename: "",
-      internalName: ""
+      internalName: "",
     });
   });
 
@@ -644,8 +658,8 @@ describe("update service", () => {
         ok: false,
         status: 500,
         statusText: "Internal Server Error",
-        body: streamFromText("")
-      }))
+        body: streamFromText(""),
+      })),
     });
 
     await expect(
@@ -653,8 +667,8 @@ describe("update service", () => {
         url: "https://api.example.com/download/abc",
         packageSha256:
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        packageName: "setup.exe"
-      })
+        packageName: "setup.exe",
+      }),
     ).rejects.toThrow("UPDATE_INSTALLER_DOWNLOAD_HTTP_500");
   });
 
@@ -668,22 +682,22 @@ describe("update service", () => {
         fileDescription: "Voice Assistant Setup",
         companyName: "",
         originalFilename: "Voice Assistant Setup.exe",
-        internalName: "Voice Assistant Setup.exe"
+        internalName: "Voice Assistant Setup.exe",
       })),
       fetchImpl: vi.fn(async () => ({
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     try {
       await expect(
         downloader.download({
           url: "https://api.example.com/download/abc",
-          packageName: "Voice Assistant Setup 1.2.4.exe"
-        })
+          packageName: "Voice Assistant Setup 1.2.4.exe",
+        }),
       ).resolves.toBe(join(updatesDir, "Voice Assistant Setup 1.2.4.exe"));
     } finally {
       await rm(updatesDir, { recursive: true, force: true });
@@ -698,15 +712,15 @@ describe("update service", () => {
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     await expect(
       downloader.download({
         url: "https://api.example.com/download/abc",
-        packageName: "Voice Assistant Setup 1.2.4.exe"
-      })
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      }),
     ).rejects.toThrow("UPDATE_INSTALLER_TRUST_UNVERIFIED");
   });
 
@@ -718,21 +732,21 @@ describe("update service", () => {
         fileDescription: "",
         companyName: "",
         originalFilename: "",
-        internalName: ""
+        internalName: "",
       })),
       fetchImpl: vi.fn(async () => ({
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     await expect(
       downloader.download({
         url: "https://api.example.com/download/abc",
-        packageName: "Voice Assistant Setup 1.2.4.exe"
-      })
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      }),
     ).rejects.toThrow("UPDATE_INSTALLER_TRUST_UNVERIFIED");
   });
 
@@ -743,22 +757,22 @@ describe("update service", () => {
         fileDescription: "",
         companyName: "",
         originalFilename: "",
-        internalName: ""
+        internalName: "",
       })),
       fetchImpl: vi.fn(async () => ({
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     await expect(
       downloader.download({
         url: "https://api.example.com/download/abc",
         packageSha256: "not-a-sha256",
-        packageName: "Voice Assistant Setup 1.2.4.exe"
-      })
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      }),
     ).rejects.toThrow("UPDATE_INSTALLER_SHA256_INVALID");
   });
 
@@ -768,8 +782,8 @@ describe("update service", () => {
         ok: true,
         status: 200,
         statusText: "OK",
-        body: streamFromText("installer")
-      }))
+        body: streamFromText("installer"),
+      })),
     });
 
     await expect(
@@ -777,8 +791,8 @@ describe("update service", () => {
         url: "https://api.example.com/download/abc",
         packageSha256:
           "0000000000000000000000000000000000000000000000000000000000000000",
-        packageName: "Voice Assistant Setup 1.2.4.exe"
-      })
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      }),
     ).rejects.toThrow("UPDATE_INSTALLER_SHA256_MISMATCH");
   });
 
@@ -790,7 +804,7 @@ describe("update service", () => {
         const existing = listeners.get(event) ?? [];
         existing.push(listener);
         listeners.set(event, existing);
-      })
+      }),
     });
     const updateReady = vi.fn();
     const service = createService({
@@ -805,8 +819,8 @@ describe("update service", () => {
         updateLog: "新增体验优化",
         downloadUrl: "/appVersion/download/abc",
         packageSize: 2048,
-        packageName: "setup.exe"
-      }))
+        packageName: "setup.exe",
+      })),
     });
 
     await service.checkForUpdates();
@@ -819,10 +833,10 @@ describe("update service", () => {
       updateLog: "新增体验优化",
       downloadUrl: "/appVersion/download/abc",
       packageSize: 2048,
-      packageName: "setup.exe"
+      packageName: "setup.exe",
     });
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] download ready version=1.2.4 type=OPTIONAL"
+      "[update] download ready version=1.2.4 type=OPTIONAL",
     );
   });
 
@@ -832,7 +846,7 @@ describe("update service", () => {
       () =>
         new Promise<{ hasUpdate: false }>((resolve) => {
           resolveCheck = resolve;
-        })
+        }),
     );
     const service = createService({ versionCheckClient });
 
@@ -842,9 +856,149 @@ describe("update service", () => {
 
     await expect(Promise.all([first, second])).resolves.toEqual([
       { status: "up-to-date" },
-      { status: "up-to-date" }
+      { status: "up-to-date" },
     ]);
     expect(versionCheckClient.check).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops an in-flight backend check after dispose before starting electron-updater", async () => {
+    const backendCheck =
+      createDeferred<Awaited<ReturnType<VersionCheckClient["check"]>>>();
+    const autoUpdater = createAutoUpdater();
+    const onDownloadProgress = vi.fn();
+    const onUpdateReady = vi.fn();
+    const service = createService({
+      autoUpdater,
+      onDownloadProgress,
+      onUpdateReady,
+      versionCheckClient: createVersionCheckClient(() => backendCheck.promise),
+    });
+
+    const checkPromise = service.checkForUpdates();
+    expect(onDownloadProgress).toHaveBeenCalledWith({
+      phase: "checking",
+      percent: 0,
+    });
+
+    service.dispose?.();
+    backendCheck.resolve({
+      hasUpdate: true,
+      versionCode: "1.2.4",
+      phase: "RELEASE",
+      updateType: "OPTIONAL",
+      updateLog: "notes",
+      downloadUrl: "/appVersion/download/abc",
+      packageName: "setup.exe",
+    });
+
+    await expect(checkPromise).resolves.toEqual({ status: "disabled" });
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(onUpdateReady).not.toHaveBeenCalled();
+    expect(onDownloadProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not publish a direct installer update that finishes after dispose", async () => {
+    const installerDownload = createDeferred<string>();
+    const onUpdateReady = vi.fn();
+    const spawnInstaller = vi.fn();
+    const directDownloader = {
+      download: vi.fn(() => installerDownload.promise),
+    };
+    const service = createService({
+      directDownloader,
+      onUpdateReady,
+      spawnInstaller,
+      versionCheckClient: createVersionCheckClient(async () => ({
+        hasUpdate: true,
+        versionCode: "1.2.4",
+        phase: "RELEASE",
+        updateType: "OPTIONAL",
+        updateLog: "notes",
+        downloadUrl: "https://api.example.com/aoa_api/appVersion/download/abc",
+        packageSha256:
+          "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      })),
+    });
+
+    const checkPromise = service.checkForUpdates();
+    await vi.waitFor(() =>
+      expect(directDownloader.download).toHaveBeenCalled(),
+    );
+    service.dispose?.();
+    installerDownload.resolve("C:/Temp/Voice Assistant Setup 1.2.4.exe");
+
+    await expect(checkPromise).resolves.toEqual({ status: "disabled" });
+    expect(onUpdateReady).not.toHaveBeenCalled();
+
+    service.restartToUpdate();
+
+    expect(spawnInstaller).not.toHaveBeenCalled();
+  });
+
+  it("does not publish direct installer errors that finish after dispose", async () => {
+    const installerDownload = createDeferred<string>();
+    const logger = createLogger();
+    const onError = vi.fn();
+    const directDownloader = {
+      download: vi.fn(() => installerDownload.promise),
+    };
+    const service = createService({
+      directDownloader,
+      logger,
+      onError,
+      versionCheckClient: createVersionCheckClient(async () => ({
+        hasUpdate: true,
+        versionCode: "1.2.4",
+        phase: "RELEASE",
+        updateType: "OPTIONAL",
+        updateLog: "notes",
+        downloadUrl: "https://api.example.com/aoa_api/appVersion/download/abc",
+        packageSha256:
+          "9e6d2547e97c688d192e0dfc090b0cba99d1c2745cab6f15955e2b8a65c0a082",
+        packageName: "Voice Assistant Setup 1.2.4.exe",
+      })),
+    });
+
+    const checkPromise = service.checkForUpdates();
+    await vi.waitFor(() =>
+      expect(directDownloader.download).toHaveBeenCalled(),
+    );
+    service.dispose?.();
+    installerDownload.reject(new Error("UPDATE_INSTALLER_DOWNLOAD_HTTP_500"));
+
+    await expect(checkPromise).resolves.toEqual({ status: "disabled" });
+    expect(onError).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("backend installer download failed"),
+    );
+  });
+
+  it("does not publish development backend updates that finish after dispose", async () => {
+    const backendCheck =
+      createDeferred<Awaited<ReturnType<VersionCheckClient["check"]>>>();
+    const onUpdateReady = vi.fn();
+    const service = createService({
+      allowDevelopmentBackendCheck: true,
+      isPackaged: false,
+      onUpdateReady,
+      versionCheckClient: createVersionCheckClient(() => backendCheck.promise),
+    });
+
+    const checkPromise = service.checkForUpdates();
+    service.dispose?.();
+    backendCheck.resolve({
+      hasUpdate: true,
+      versionCode: "1.2.4",
+      phase: "RELEASE",
+      updateType: "OPTIONAL",
+      updateLog: "notes",
+      downloadUrl: "/appVersion/download/real",
+      packageName: "real-setup.exe",
+    });
+
+    await expect(checkPromise).resolves.toEqual({ status: "disabled" });
+    expect(onUpdateReady).not.toHaveBeenCalled();
   });
 
   it("configures a generic update feed when a feed URL is provided", () => {
@@ -852,11 +1006,11 @@ describe("update service", () => {
 
     createService({
       autoUpdater,
-      updateFeedUrl: " https://updates.example.com/aoa/ "
+      updateFeedUrl: " https://updates.example.com/aoa/ ",
     });
 
     expect(autoUpdater.setFeedURL).toHaveBeenCalledWith(
-      "https://updates.example.com/aoa/"
+      "https://updates.example.com/aoa/",
     );
   });
 
@@ -877,27 +1031,27 @@ describe("update service", () => {
       autoUpdater,
       isPackaged: false,
       logger,
-      onUpdateReady: updateReady
+      onUpdateReady: updateReady,
     });
 
     await expect(
-      service.checkForUpdates({ allowDevelopmentFakeUpdate: true })
+      service.checkForUpdates({ allowDevelopmentFakeUpdate: true }),
     ).resolves.toEqual({
       status: "ready",
       version: "0.1.1-dev",
       updateType: "OPTIONAL",
       updateLog: "Development fake update",
-      phase: "RELEASE"
+      phase: "RELEASE",
     });
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(updateReady).toHaveBeenCalledWith({
       version: "0.1.1-dev",
       updateType: "OPTIONAL",
       updateLog: "Development fake update",
-      phase: "RELEASE"
+      phase: "RELEASE",
     });
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] development fake update ready version=0.1.1-dev"
+      "[update] development fake update ready version=0.1.1-dev",
     );
   });
 
@@ -913,7 +1067,7 @@ describe("update service", () => {
       updateLog: "真实后端更新",
       downloadUrl: "/appVersion/download/real",
       packageSize: 4096,
-      packageName: "real-setup.exe"
+      packageName: "real-setup.exe",
     }));
     const service = createService({
       allowDevelopmentBackendCheck: true,
@@ -921,11 +1075,11 @@ describe("update service", () => {
       isPackaged: false,
       logger,
       onUpdateReady: updateReady,
-      versionCheckClient
+      versionCheckClient,
     });
 
     await expect(
-      service.checkForUpdates({ allowDevelopmentFakeUpdate: true })
+      service.checkForUpdates({ allowDevelopmentFakeUpdate: true }),
     ).resolves.toEqual({
       status: "ready",
       version: "1.2.4",
@@ -934,11 +1088,11 @@ describe("update service", () => {
       updateLog: "真实后端更新",
       downloadUrl: "/appVersion/download/real",
       packageSize: 4096,
-      packageName: "real-setup.exe"
+      packageName: "real-setup.exe",
     });
     expect(versionCheckClient.check).toHaveBeenCalledWith({
       platform: "WINDOWS",
-      currentVersion: "1.2.3"
+      currentVersion: "1.2.3",
     });
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(updateReady).toHaveBeenCalledWith({
@@ -948,16 +1102,16 @@ describe("update service", () => {
       updateLog: "真实后端更新",
       downloadUrl: "/appVersion/download/real",
       packageSize: 4096,
-      packageName: "real-setup.exe"
+      packageName: "real-setup.exe",
     });
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] development backend check enabled"
+      "[update] development backend check enabled",
     );
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] electron-updater check skipped: unpackaged runtime"
+      "[update] electron-updater check skipped: unpackaged runtime",
     );
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] development backend update ready version=1.2.4 type=OPTIONAL"
+      "[update] development backend update ready version=1.2.4 type=OPTIONAL",
     );
   });
 
@@ -965,7 +1119,7 @@ describe("update service", () => {
     const autoUpdater = createAutoUpdater();
     const service = createService({
       autoUpdater,
-      isPackaged: false
+      isPackaged: false,
     });
 
     service.restartToUpdate();
@@ -973,25 +1127,102 @@ describe("update service", () => {
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 
+  it("removes auto-updater listeners when disposed", () => {
+    const listeners = new Map<string, unknown>();
+    const autoUpdater = createAutoUpdater({
+      on: vi.fn((event: string, listener: unknown) => {
+        listeners.set(event, listener);
+      }),
+      off: vi.fn(),
+    });
+    const service = createService({ autoUpdater });
+
+    service.dispose?.();
+
+    expect(autoUpdater.off).toHaveBeenCalledWith(
+      "update-downloaded",
+      listeners.get("update-downloaded"),
+    );
+    expect(autoUpdater.off).toHaveBeenCalledWith(
+      "error",
+      listeners.get("error"),
+    );
+  });
+
+  it("restores the previous auto-download setting when disposed", () => {
+    const autoUpdater = createAutoUpdater({ autoDownload: false });
+    const service = createService({ autoUpdater });
+
+    expect(autoUpdater.autoDownload).toBe(true);
+
+    service.dispose?.();
+
+    expect(autoUpdater.autoDownload).toBe(false);
+  });
+
+  it("restores the previous feed URL when disposed and the adapter exposes it", () => {
+    const autoUpdater = createAutoUpdater({
+      getFeedURL: vi.fn(() => "https://updates.example.com/original.yml"),
+      setFeedURL: vi.fn(),
+    });
+    const service = createService({
+      autoUpdater,
+      updateFeedUrl: "https://updates.example.com/authenticated.yml",
+    });
+
+    service.dispose?.();
+
+    expect(autoUpdater.setFeedURL).toHaveBeenNthCalledWith(
+      1,
+      "https://updates.example.com/authenticated.yml",
+    );
+    expect(autoUpdater.setFeedURL).toHaveBeenNthCalledWith(
+      2,
+      "https://updates.example.com/original.yml",
+    );
+  });
+
+  it("disposes update service side effects only once", () => {
+    const autoUpdater = createAutoUpdater({
+      autoDownload: false,
+      getFeedURL: vi.fn(() => "https://updates.example.com/original.yml"),
+      setFeedURL: vi.fn(),
+      off: vi.fn(),
+    });
+    const service = createService({
+      autoUpdater,
+      updateFeedUrl: "https://updates.example.com/authenticated.yml",
+    });
+
+    service.dispose?.();
+    service.dispose?.();
+
+    expect(autoUpdater.autoDownload).toBe(false);
+    expect(autoUpdater.setFeedURL).toHaveBeenCalledTimes(2);
+    expect(autoUpdater.off).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores update checks in development", async () => {
     const autoUpdater = createAutoUpdater();
     const logger = createLogger();
     const versionCheckClient = createVersionCheckClient(async () => ({
-      hasUpdate: false
+      hasUpdate: false,
     }));
     const service = createService({
       autoUpdater,
       isPackaged: false,
       logger,
-      versionCheckClient
+      versionCheckClient,
     });
 
-    await expect(service.checkForUpdates()).resolves.toEqual({ status: "disabled" });
+    await expect(service.checkForUpdates()).resolves.toEqual({
+      status: "disabled",
+    });
 
     expect(versionCheckClient.check).not.toHaveBeenCalled();
     expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(logger.log).toHaveBeenCalledWith(
-      "[update] check disabled: unpackaged runtime"
+      "[update] check disabled: unpackaged runtime",
     );
   });
 });
@@ -1011,7 +1242,9 @@ function createService({
   quitApp,
   spawnInstaller,
   updateFeedUrl,
-  versionCheckClient = createVersionCheckClient(async () => ({ hasUpdate: false }))
+  versionCheckClient = createVersionCheckClient(async () => ({
+    hasUpdate: false,
+  })),
 }: Partial<Parameters<typeof createUpdateService>[0]> = {}) {
   return createUpdateService({
     allowDevelopmentBackendCheck,
@@ -1028,14 +1261,14 @@ function createService({
     quitApp,
     spawnInstaller,
     updateFeedUrl,
-    versionCheckClient
+    versionCheckClient,
   });
 }
 
 function createLogger() {
   return {
     log: vi.fn(),
-    warn: vi.fn()
+    warn: vi.fn(),
   };
 }
 
@@ -1044,20 +1277,32 @@ function createAutoUpdater(overrides: Record<string, unknown> = {}) {
     autoDownload: false,
     checkForUpdates: vi.fn(async () => ({
       isUpdateAvailable: true,
-      updateInfo: { version: "1.2.4" }
+      updateInfo: { version: "1.2.4" },
     })),
     quitAndInstall: vi.fn(),
     on: vi.fn(),
-    ...overrides
+    ...overrides,
   };
 }
 
 function createVersionCheckClient(
-  check: VersionCheckClient["check"]
-): VersionCheckClient & { check: ReturnType<typeof vi.fn<VersionCheckClient["check"]>> } {
+  check: VersionCheckClient["check"],
+): VersionCheckClient & {
+  check: ReturnType<typeof vi.fn<VersionCheckClient["check"]>>;
+} {
   return {
-    check: vi.fn(check)
+    check: vi.fn(check),
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function streamFromText(text: string): ReadableStream<Uint8Array> {
