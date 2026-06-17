@@ -53,6 +53,24 @@ export interface ApplyHistoryRetentionInput {
   now?: string;
 }
 
+export interface SendEmailCodeIpcInput {
+  email: string;
+}
+
+export interface EmailCodeLoginIpcInput {
+  email: string;
+  code: string;
+  rememberMe: boolean;
+}
+
+export interface LdapLoginIpcInput {
+  account: string;
+  password: string;
+  rememberMe: boolean;
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const RECORDING_MODES: readonly RecordingMode[] = [
   "direct",
   "processSelection",
@@ -842,6 +860,65 @@ export function parseDeleteHistoryRecordInput(
   return { id: input.id };
 }
 
+// Auth IPC accepts renderer payloads and returns only normalized credentials.
+export function parseSendEmailCodeInput(input: unknown): SendEmailCodeIpcInput {
+  if (!isRecord(input) || typeof input.email !== "string") {
+    throw new Error("Auth email is required");
+  }
+
+  const email = input.email.trim();
+  if (!EMAIL_PATTERN.test(email)) {
+    throw new Error("Auth email must be a valid email address");
+  }
+
+  return { email };
+}
+
+export function parseEmailCodeLoginInput(
+  input: unknown,
+): EmailCodeLoginIpcInput {
+  if (!isRecord(input)) {
+    throw new Error("Auth email login input must be an object");
+  }
+
+  const { email } = parseSendEmailCodeInput(input);
+  if (typeof input.code !== "string" || !/^\d{6}$/.test(input.code)) {
+    throw new Error("Auth code must be 6 digits");
+  }
+  if (typeof input.rememberMe !== "boolean") {
+    throw new Error("Auth rememberMe must be a boolean");
+  }
+
+  return {
+    email,
+    code: input.code,
+    rememberMe: input.rememberMe,
+  };
+}
+
+export function parseLdapLoginInput(input: unknown): LdapLoginIpcInput {
+  if (!isRecord(input)) {
+    throw new Error("Auth LDAP login input must be an object");
+  }
+
+  if (typeof input.account !== "string" || input.account.trim().length === 0) {
+    throw new Error("Auth LDAP account is required");
+  }
+  if (typeof input.password !== "string" || input.password.trim().length === 0) {
+    throw new Error("Auth LDAP password is required");
+  }
+  if (typeof input.rememberMe !== "boolean") {
+    throw new Error("Auth rememberMe must be a boolean");
+  }
+
+  return {
+    account: input.account.trim(),
+    password: input.password,
+    rememberMe: input.rememberMe,
+  };
+}
+
+/** 瑙ｆ瀽鏉ヨ嚜 Settings 椤电殑 銆學S 娴嬭瘯銆嶈姹備綋锛屼粎鏍￠獙蹇呭～瀛楁銆?*/
 export function parseApplyHistoryRetentionInput(
   input: unknown,
 ): ApplyHistoryRetentionInput {

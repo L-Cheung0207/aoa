@@ -100,6 +100,43 @@ export interface AppInfo {
   appVersion: string;
 }
 
+export type AuthSessionStatus =
+  | "authenticated"
+  | "unauthenticated"
+  | "expired"
+  | "offline"
+  | "error";
+
+export interface AuthUserSnapshot {
+  id: string;
+  displayName: string;
+  email?: string;
+  authType: "email_code" | "ldap";
+}
+
+export interface AuthSessionSnapshot {
+  status: AuthSessionStatus;
+  user?: AuthUserSnapshot;
+  featureFlags?: Record<string, boolean>;
+  message?: string;
+}
+
+export interface SendEmailCodeInput {
+  email: string;
+}
+
+export interface EmailCodeLoginInput {
+  email: string;
+  code: string;
+  rememberMe: boolean;
+}
+
+export interface LdapLoginInput {
+  account: string;
+  password: string;
+  rememberMe: boolean;
+}
+
 export interface UpdateReadyPayload {
   version?: string;
   phase?: "ALPHA" | "BETA" | "PREVIEW" | "RELEASE";
@@ -145,6 +182,11 @@ export interface VoiceAIAPI {
     expectedSelectedText?: string
   ): Promise<InsertResult>;
   getServiceStatus(): Promise<ServiceStatusSnapshot>;
+  getAuthSession(): Promise<AuthSessionSnapshot>;
+  sendEmailCode(input: SendEmailCodeInput): Promise<{ cooldownSeconds: number }>;
+  loginWithEmailCode(input: EmailCodeLoginInput): Promise<AuthSessionSnapshot>;
+  loginWithLdap(input: LdapLoginInput): Promise<AuthSessionSnapshot>;
+  logout(): Promise<AuthSessionSnapshot>;
   refreshAnonymousClient(): Promise<ServiceStatusSnapshot>;
   bootstrapClient(): Promise<BootstrapClientResponse>;
   createTranscriptionSession(
@@ -202,6 +244,7 @@ export interface VoiceAIAPI {
   onShortcutHelp(callback: (payload: ShortcutHelpPayload) => void): () => void;
   onShortcutHelpDismiss(callback: () => void): () => void;
   onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
+  onAuthSessionChanged(callback: (snapshot: AuthSessionSnapshot) => void): () => void;
   onHistoryRecordCreated(callback: (record: HistoryRecord) => void): () => void;
   onHistoryRecordDeleted(callback: (payload: { id: string }) => void): () => void;
   onOpenSettingsPanel(callback: () => void): () => void;
@@ -236,6 +279,12 @@ export const voiceAI: VoiceAIAPI = {
     return ipcRenderer.invoke("voice:replace-selected-text", payload);
   },
   getServiceStatus: () => ipcRenderer.invoke("voice:get-service-status"),
+  getAuthSession: () => ipcRenderer.invoke("voice:auth:get-session"),
+  sendEmailCode: (input) => ipcRenderer.invoke("voice:auth:send-email-code", input),
+  loginWithEmailCode: (input) =>
+    ipcRenderer.invoke("voice:auth:login-email-code", input),
+  loginWithLdap: (input) => ipcRenderer.invoke("voice:auth:login-ldap", input),
+  logout: () => ipcRenderer.invoke("voice:auth:logout"),
   refreshAnonymousClient: () => ipcRenderer.invoke("voice:refresh-anonymous-client"),
   bootstrapClient: () => ipcRenderer.invoke("voice:bootstrap-client"),
   createTranscriptionSession: (input) =>
@@ -374,6 +423,16 @@ export const voiceAI: VoiceAIAPI = {
     };
     ipcRenderer.on("voice:settings-changed", listener);
     return () => ipcRenderer.removeListener("voice:settings-changed", listener);
+  },
+  onAuthSessionChanged: (callback) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      snapshot: AuthSessionSnapshot
+    ): void => {
+      callback(snapshot);
+    };
+    ipcRenderer.on("voice:auth:session-changed", listener);
+    return () => ipcRenderer.removeListener("voice:auth:session-changed", listener);
   },
   onHistoryRecordCreated: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, record: HistoryRecord): void => {

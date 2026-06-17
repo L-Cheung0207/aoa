@@ -19,6 +19,7 @@ import type {
   HistoryRecord,
   HistoryStore
 } from "../history/historyStore";
+import type { AuthSessionSnapshot } from "../auth/authTypes";
 
 interface FakeBackendCalls {
   bootstrap: ClientBootstrapRequest[];
@@ -96,6 +97,9 @@ function createDeps(overrides: Partial<Parameters<typeof createIpcRouteHandlers>
   const insertService: InsertService = {
     insertText: async (text, options) => ({ ok: true, strategy: options.strategy })
   };
+  const authSessionSnapshot: AuthSessionSnapshot = {
+    status: "unauthenticated"
+  };
   const uninstallService: UninstallService = {
     performUninstall: async () => ({
       ok: true,
@@ -132,6 +136,13 @@ function createDeps(overrides: Partial<Parameters<typeof createIpcRouteHandlers>
     updateService: {
       checkForUpdates: async () => ({ status: "disabled" }),
       restartToUpdate: () => undefined
+    },
+    authService: {
+      getSessionSnapshot: () => authSessionSnapshot,
+      sendEmailCode: async () => ({ cooldownSeconds: 60 }),
+      loginWithEmailCode: async () => authSessionSnapshot,
+      loginWithLdap: async () => authSessionSnapshot,
+      logout: async () => authSessionSnapshot
     },
     quitApp: () => undefined,
     historyStore: {
@@ -901,6 +912,146 @@ describe("ipc route handlers", () => {
     expect(logs).toContain("[history] retention retention=7d deleted=1");
     expect([...logs, ...warnings].join("\n")).not.toContain("secret");
   });
+
+  it("routes auth requests through the auth service", async () => {
+    const authCalls: Array<[string, unknown]> = [];
+    const authSessionSnapshot: AuthSessionSnapshot = {
+      status: "authenticated",
+      user: {
+        id: "user-1",
+        displayName: "Alex",
+        email: "user@example.com",
+        authType: "email_code"
+      }
+    };
+    const handlers = createIpcRouteHandlers(
+      createDeps({
+        authService: {
+          getSessionSnapshot: () => authSessionSnapshot,
+          sendEmailCode: async (input) => {
+            authCalls.push(["sendEmailCode", input]);
+            return { cooldownSeconds: 60 };
+          },
+          loginWithEmailCode: async (input) => {
+            authCalls.push(["loginWithEmailCode", input]);
+            return authSessionSnapshot;
+          },
+          loginWithLdap: async (input) => {
+            authCalls.push(["loginWithLdap", input]);
+            return authSessionSnapshot;
+          },
+          logout: async () => {
+            authCalls.push(["logout", undefined]);
+            return authSessionSnapshot;
+          }
+        }
+      })
+    );
+
+    expect(handlers.getAuthSession()).toBe(authSessionSnapshot);
+    await expect(handlers.sendEmailCode({ email: " user@example.com " })).resolves.toEqual({
+      cooldownSeconds: 60
+    });
+    await expect(
+      handlers.loginWithEmailCode({
+        email: "user@example.com",
+        code: "123456",
+        rememberMe: true
+      })
+    ).resolves.toBe(authSessionSnapshot);
+    await expect(
+      handlers.loginWithLdap({
+        account: "alex",
+        password: "secret",
+        rememberMe: false
+      })
+    ).resolves.toBe(authSessionSnapshot);
+    await expect(handlers.logout()).resolves.toBe(authSessionSnapshot);
+
+    expect(authCalls).toEqual([
+      ["sendEmailCode", { email: "user@example.com" }],
+      [
+        "loginWithEmailCode",
+        { email: "user@example.com", code: "123456", rememberMe: true }
+      ],
+      [
+        "loginWithLdap",
+        { account: "alex", password: "secret", rememberMe: false }
+      ],
+      ["logout", undefined]
+    ]);
+  });
+
+  it("rejects malformed auth input", async () => {
+    const handlers = createIpcRouteHandlers(
+      createDeps({
+        authService: {
+          getSessionSnapshot: () => ({ status: "unauthenticated" }),
+          sendEmailCode: async () => ({ cooldownSeconds: 60 }),
+          loginWithEmailCode: async () => ({ status: "unauthenticated" }),
+          loginWithLdap: async () => ({ status: "unauthenticated" }),
+          logout: async () => ({ status: "unauthenticated" })
+        }
+      })
+    );
+
+    await expect(handlers.sendEmailCode({ email: "not-an-email" })).rejects.toThrow(
+      "Auth email must be a valid email address"
+    );
+    await expect(
+      handlers.loginWithEmailCode({
+        email: "user@example.com",
+        code: "12",
+        rememberMe: true
+      })
+    ).rejects.toThrow("Auth code must be 6 digits");
+    await expect(
+      handlers.loginWithEmailCode({
+        email: "user@example.com",
+        code: "123456"
+      })
+    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    await expect(
+      handlers.loginWithEmailCode({
+        email: "user@example.com",
+        code: "123456",
+        rememberMe: "yes"
+      })
+    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    await expect(handlers.loginWithEmailCode("bad")).rejects.toThrow(
+      "Auth email login input must be an object"
+    );
+    await expect(
+      handlers.loginWithLdap({
+        account: "",
+        password: "secret",
+        rememberMe: false
+      })
+    ).rejects.toThrow("Auth LDAP account is required");
+    await expect(
+      handlers.loginWithLdap({
+        account: "alex",
+        password: "   ",
+        rememberMe: false
+      })
+    ).rejects.toThrow("Auth LDAP password is required");
+    await expect(
+      handlers.loginWithLdap({
+        account: "alex",
+        password: "secret"
+      })
+    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    await expect(
+      handlers.loginWithLdap({
+        account: "alex",
+        password: "secret",
+        rememberMe: 1
+      })
+    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    await expect(handlers.loginWithLdap(null)).rejects.toThrow(
+      "Auth LDAP login input must be an object"
+    );
+  });
 });
 
 describe("ipc route logging", () => {
@@ -984,6 +1135,87 @@ describe("ipc route logging", () => {
     expect(logs).toEqual([
       "[ipc] request channel=voice:check-for-updates requestId=ipc-1",
       "[ipc] response channel=voice:check-for-updates requestId=ipc-1 status=error durationMs=5 error=\"backend down\""
+    ]);
+  });
+
+  it("registers auth ipc routes", async () => {
+    const handles = new Map<
+      string,
+      (_event: unknown, input?: unknown) => unknown
+    >();
+    const authCalls: Array<[string, unknown]> = [];
+    const authSessionSnapshot: AuthSessionSnapshot = {
+      status: "authenticated",
+      user: {
+        id: "user-1",
+        displayName: "Alex",
+        authType: "ldap"
+      }
+    };
+    registerIpcRoutes(
+      {
+        handle: (channel, listener) => {
+          handles.set(channel, listener);
+        }
+      },
+      createDeps({
+        authService: {
+          getSessionSnapshot: () => authSessionSnapshot,
+          sendEmailCode: async (input) => {
+            authCalls.push(["sendEmailCode", input]);
+            return { cooldownSeconds: 60 };
+          },
+          loginWithEmailCode: async (input) => {
+            authCalls.push(["loginWithEmailCode", input]);
+            return authSessionSnapshot;
+          },
+          loginWithLdap: async (input) => {
+            authCalls.push(["loginWithLdap", input]);
+            return authSessionSnapshot;
+          },
+          logout: async () => {
+            authCalls.push(["logout", undefined]);
+            return authSessionSnapshot;
+          }
+        }
+      })
+    );
+
+    await expect(handles.get("voice:auth:get-session")?.({})).resolves.toBe(
+      authSessionSnapshot
+    );
+    await expect(
+      handles.get("voice:auth:send-email-code")?.({}, { email: " user@example.com " })
+    ).resolves.toEqual({ cooldownSeconds: 60 });
+    await expect(
+      handles.get("voice:auth:login-email-code")?.({}, {
+        email: "user@example.com",
+        code: "123456",
+        rememberMe: true
+      })
+    ).resolves.toBe(authSessionSnapshot);
+    await expect(
+      handles.get("voice:auth:login-ldap")?.({}, {
+        account: "alex",
+        password: "secret",
+        rememberMe: false
+      })
+    ).resolves.toBe(authSessionSnapshot);
+    await expect(handles.get("voice:auth:logout")?.({})).resolves.toBe(
+      authSessionSnapshot
+    );
+
+    expect(authCalls).toEqual([
+      ["sendEmailCode", { email: "user@example.com" }],
+      [
+        "loginWithEmailCode",
+        { email: "user@example.com", code: "123456", rememberMe: true }
+      ],
+      [
+        "loginWithLdap",
+        { account: "alex", password: "secret", rememberMe: false }
+      ],
+      ["logout", undefined]
     ]);
   });
 });
