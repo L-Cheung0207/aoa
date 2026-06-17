@@ -1,11 +1,13 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
+import { resolveRuntimeAppIconPath } from "./appIcon";
 
 export function createHistoryWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 920,
     height: 680,
     show: false,
+    icon: resolveRuntimeAppIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

@@ -4,6 +4,7 @@ type IconTheme = "light" | "dark";
 
 export type ThemedIconName =
   | "app"
+  | "brand"
   | "home"
   | "history"
   | "settings"
@@ -52,6 +53,7 @@ interface ThemedIconProps {
 
 const ICON_FILES: Record<ThemedIconName, Record<IconTheme, string>> = {
   app: { light: "app-chat.svg", dark: "app-chat.svg" },
+  brand: { light: "brand-logo.svg", dark: "brand-logo.svg" },
   home: { light: "nav-home-active.svg", dark: "nav-home-active.svg" },
   history: { light: "nav-history-active.svg", dark: "nav-history-active.svg" },
   settings: { light: "settings-hex.svg", dark: "settings-hex.svg" },
@@ -70,12 +72,12 @@ const ICON_FILES: Record<ThemedIconName, Record<IconTheme, string>> = {
   mail: { light: "mail.svg", dark: "mail.svg" },
   file: { light: "document-file.svg", dark: "document-file.svg" },
   privacy: { light: "settings-hex.svg", dark: "nav-settings-active.svg" },
-  keyboard: { light: "keyboard.svg", dark: "keyboard.svg" },
-  language: { light: "language-globe.svg", dark: "language-globe.svg" },
-  microphone: { light: "microphone.svg", dark: "microphone.svg" },
-  appearance: { light: "metric-rewrite.svg", dark: "metric-rewrite.svg" },
-  appBehavior: { light: "document-file.svg", dark: "document-file.svg" },
-  connection: { light: "metric-characters.svg", dark: "metric-characters.svg" },
+  keyboard: { light: "settings-shortcuts.svg", dark: "settings-shortcuts.svg" },
+  language: { light: "settings-language.svg", dark: "settings-language.svg" },
+  microphone: { light: "settings-audio.svg", dark: "settings-audio.svg" },
+  appearance: { light: "settings-appearance.svg", dark: "settings-appearance.svg" },
+  appBehavior: { light: "settings-app-behavior.svg", dark: "settings-app-behavior.svg" },
+  connection: { light: "settings-connection.svg", dark: "settings-connection.svg" },
   metricDuration: { light: "metric-duration.svg", dark: "metric-duration.svg" },
   metricCharacters: { light: "metric-characters.svg", dark: "metric-characters.svg" },
   metricRewrite: { light: "metric-rewrite.svg", dark: "metric-rewrite.svg" },
@@ -92,7 +94,7 @@ const ICON_FILES: Record<ThemedIconName, Record<IconTheme, string>> = {
 
 export function ThemedIcon({
   name,
-  mode = "mask",
+  mode = "image",
   className,
   label,
 }: ThemedIconProps): React.JSX.Element {

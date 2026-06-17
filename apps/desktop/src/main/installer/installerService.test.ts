@@ -98,6 +98,47 @@ describe("installer shell service", () => {
     );
   });
 
+  it("marks silent installer runs as updates when requested", async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout?: EventEmitter;
+      stderr?: EventEmitter;
+    };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const spawn = vi.fn(() => child);
+    const service = createInstallerService({
+      productName: "Voice Assistant",
+      resourcesPath: "C:/app/resources",
+      localAppData: "C:/Users/Alex/AppData/Local",
+      spawn,
+      existsSync: () => true,
+    });
+
+    const installPromise = service.install({
+      installDir: "C:/Tools/Voice Assistant",
+      createDesktopShortcut: true,
+      launchAtLogin: true,
+      updated: true,
+    });
+    child.emit("close", 0);
+
+    await expect(installPromise).resolves.toEqual({
+      ok: true,
+      installDir: "C:/Tools/Voice Assistant",
+    });
+    expect(spawn).toHaveBeenCalledWith(
+      join("C:/app/resources", "installer-shell-payload", "app-setup.exe"),
+      ["--updated", "/S", "/currentuser", "/D=C:/Tools/Voice Assistant"],
+      expect.objectContaining({
+        windowsHide: true,
+        env: expect.not.objectContaining({
+          VOICE_CREATE_DESKTOP_SHORTCUT: expect.any(String),
+          VOICE_LAUNCH_AT_LOGIN: expect.any(String),
+        }),
+      }),
+    );
+  });
+
   it("reports installer path, install dir, signal, and output on failure", async () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout?: EventEmitter;
@@ -125,5 +166,69 @@ describe("installer shell service", () => {
     await expect(installPromise).rejects.toThrow(
       "Installer failed (code 3221225477 / 0xc0000005, signal SIGSEGV). Payload: C:\\app\\resources\\installer-shell-payload\\app-setup.exe. Install dir: C:\\Tools\\Voice Assistant. Output: native crash",
     );
+  });
+
+  it("logs installer lifecycle without dumping installer output", async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout?: EventEmitter;
+      stderr?: EventEmitter;
+    };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const service = createInstallerService({
+      productName: "Voice Assistant",
+      resourcesPath: "C:/app/resources",
+      localAppData: "C:/Users/Alex/AppData/Local",
+      spawn: vi.fn(() => child),
+      existsSync: () => true,
+      logger: {
+        log: (message) => logs.push(message),
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    const installPromise = service.install({
+      installDir: "C:/Tools",
+      createDesktopShortcut: false,
+      launchAtLogin: true,
+    });
+    child.stderr.emit("data", Buffer.from("secret native output"));
+    child.emit("close", 1);
+
+    await expect(installPromise).rejects.toThrow("Installer failed");
+    expect(logs).toContain(
+      "[installer] install started payloadPath=C:\\app\\resources\\installer-shell-payload\\app-setup.exe installDir=C:\\Tools\\Voice Assistant createDesktopShortcut=false launchAtLogin=true updated=false",
+    );
+    expect(warnings).toContain(
+      "[installer] install failed exitCode=1 signal=none outputLength=20 installDir=C:\\Tools\\Voice Assistant",
+    );
+    expect([...logs, ...warnings].join("\n")).not.toContain("secret native output");
+  });
+
+  it("logs when installer payload is missing", async () => {
+    const warnings: string[] = [];
+    const service = createInstallerService({
+      productName: "Voice Assistant",
+      resourcesPath: "C:/app/resources",
+      localAppData: "C:/Users/Alex/AppData/Local",
+      existsSync: () => false,
+      logger: {
+        log: () => undefined,
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    await expect(
+      service.install({
+        installDir: "C:/Tools",
+        createDesktopShortcut: true,
+        launchAtLogin: true,
+      }),
+    ).rejects.toThrow("Installer payload not found");
+    expect(warnings).toEqual([
+      "[installer] payload missing payloadPath=C:\\app\\resources\\installer-shell-payload\\app-setup.exe",
+    ]);
   });
 });

@@ -97,7 +97,8 @@ describe("default transcription provider", () => {
           const text = String(message);
           return (
             text.includes("WS ← #1") &&
-            text.includes('"voice_text_str":"你好"')
+            text.includes("voiceTextLength=2") &&
+            !text.includes("你好")
           );
         })
       ).toBe(true);
@@ -108,7 +109,7 @@ describe("default transcription provider", () => {
     }
   });
 
-  it("prints full incoming WS payloads and close details without outgoing payloads", async () => {
+  it("prints incoming WS payload summaries and close details without text payloads", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
@@ -145,14 +146,85 @@ describe("default transcription provider", () => {
       await stopPromise;
 
       const logs = getLoggedText(logSpy);
-      expect(logs).toContain(`[asr] WS ← #1 ${serverPayload}`);
+      expect(logs).toContain("[asr] WS ← #1");
+      expect(logs).toContain("code=1");
+      expect(logs).toContain("voiceTextLength=480");
+      expect(logs).toContain("keys=voice_id,code,result,trace");
       expect(logs).toContain("code=4001");
       expect(logs).toContain("reason=server closed with details");
       expect(logs).toContain("wasClean=false");
+      expect(logs).not.toContain(serverPayload);
+      expect(logs).not.toContain(fullServerText);
       expect(logs).not.toContain(String(socket.sent[0]));
       expect(logs).not.toContain(String(socket.sent[1]));
     } finally {
       logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("redacts secret URL parameters in connection logs", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const socket = createFakeSocket();
+      const provider = createDefaultTranscriptionProvider({
+        url: "wss://asr.example/ws?AccessCode=secret&token=other",
+        socketFactory: { connect: () => socket },
+        generateVoiceId: () => "url-log-voice"
+      });
+
+      const startPromise = provider.start({
+        installationId: "inst",
+        language: "zh-CN",
+        sampleRate: 16000
+      });
+      socket.emitOpen?.();
+      await startPromise;
+
+      const logs = getLoggedText(logSpy);
+      expect(logs).toContain(
+        "wss://asr.example/ws?AccessCode=***&token=***"
+      );
+      expect(logs).not.toContain("AccessCode=secret");
+      expect(logs).not.toContain("token=other");
+
+      await provider.cancel();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("logs fallback final text length without leaking partial text", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const socket = createFakeSocket();
+      const provider = createDefaultTranscriptionProvider({
+        socketFactory: { connect: () => socket },
+        generateVoiceId: () => "fallback-log",
+        finalTimeoutMs: 1
+      });
+
+      const startPromise = provider.start({
+        installationId: "inst",
+        language: "zh-CN",
+        sampleRate: 16000
+      });
+      socket.emitOpen?.();
+      await startPromise;
+      socket.emitMessage?.(
+        JSON.stringify({
+          voice_id: "fallback-log",
+          code: "1",
+          result: { voice_text_str: "private fallback text" }
+        })
+      );
+      provider.sendAudio(createFrame());
+      await provider.stop();
+
+      const warnings = getLoggedText(warnSpy);
+      expect(warnings).toContain("fallbackTextLength=21");
+      expect(warnings).not.toContain("private fallback text");
+    } finally {
       warnSpy.mockRestore();
     }
   });

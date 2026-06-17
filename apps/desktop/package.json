@@ -5,7 +5,7 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev-electron.mjs",
     "build": "electron-vite build",
     "dist": "node scripts/dist-win.mjs",
     "dist:payload": "electron-builder --win nsis --config electron-builder.yml",
@@ -75,8 +75,7 @@
           ]
         }
       ],
-      "icon": "resources/app-icon.ico",
-      "signAndEditExecutable": false
+      "icon": "resources/app-icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -93,6 +92,10 @@
       ],
       "language": "1028",
       "runAfterFinish": false
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "http://172.27.209.114:8097/aoa_api/"
     }
   }
 }

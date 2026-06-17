@@ -1,3 +1,5 @@
+import { formatLogFields, sanitizeUrlForLog } from "../log/logSanitizer";
+
 export type VersionPlatform = "WINDOWS" | "MAC" | "LINUX";
 export type VersionPhase = "ALPHA" | "BETA" | "RELEASE";
 export type VersionUpdateType = "FORCED" | "RECOMMENDED" | "OPTIONAL";
@@ -17,6 +19,7 @@ export type VersionCheckResult =
       updateType: VersionUpdateType;
       updateLog: string;
       downloadUrl: string;
+      packageSha256?: string | undefined;
       packageSize?: number | undefined;
       packageName?: string | undefined;
     };
@@ -69,13 +72,21 @@ export function createHttpVersionCheckClient(
       url.searchParams.set("platform", request.platform);
       url.searchParams.set("currentVersion", request.currentVersion);
       url.searchParams.set("phase", phase);
-      logger.log(`[update] version check request url=${url.toString()}`);
+      logger.log(
+        `[update] version check request ${formatLogFields({
+          url: sanitizeUrlForLog(url.toString())
+        })}`
+      );
       const response = await fetchImpl(url.toString(), { method: "GET" });
       if (!response.ok) {
         logger.warn(`[update] version check failed status=${response.status}`);
         throw new Error(`VERSION_CHECK_HTTP_${response.status}`);
       }
-      const result = normalizeVersionCheckResponse(await response.json());
+      const responseBody = await response.json();
+      const result = normalizeVersionCheckResponse(responseBody, endpoint);
+      logger.log(
+        `[update] version check response payload ${formatVersionCheckResponsePayload(result)}`
+      );
       if ("disabled" in result) {
         logger.log("[update] version check response disabled");
       } else if (!result.hasUpdate) {
@@ -90,7 +101,32 @@ export function createHttpVersionCheckClient(
   };
 }
 
-export function normalizeVersionCheckResponse(input: unknown): VersionCheckResult {
+function formatVersionCheckResponsePayload(
+  result: VersionCheckResult
+): string {
+  if ("disabled" in result) {
+    return formatLogFields({ disabled: true });
+  }
+  if (!result.hasUpdate) {
+    return formatLogFields({ hasUpdate: false });
+  }
+  return formatLogFields({
+    hasUpdate: true,
+    version: result.versionCode,
+    phase: result.phase,
+    type: result.updateType,
+    updateLogLength: result.updateLog.length,
+    downloadUrlPresent: result.downloadUrl.length > 0,
+    packageSha256Present: result.packageSha256 !== undefined,
+    packageSize: result.packageSize,
+    packageName: result.packageName
+  });
+}
+
+export function normalizeVersionCheckResponse(
+  input: unknown,
+  endpoint?: string | undefined
+): VersionCheckResult {
   const data = unwrapData(input);
   if (!isRecord(data)) {
     throw new Error("VERSION_CHECK_INVALID_PAYLOAD");
@@ -105,7 +141,10 @@ export function normalizeVersionCheckResponse(input: unknown): VersionCheckResul
   const versionCode = readRequiredString(data.versionCode);
   const phase = readPhase(data.phase);
   const updateType = readUpdateType(data.updateType);
-  const downloadUrl = readRequiredString(data.downloadUrl);
+  const downloadUrl = resolveDownloadUrl(
+    readRequiredString(data.downloadUrl),
+    endpoint
+  );
   if (!versionCode || !downloadUrl) {
     throw new Error("VERSION_CHECK_INVALID_PAYLOAD");
   }
@@ -117,9 +156,34 @@ export function normalizeVersionCheckResponse(input: unknown): VersionCheckResul
     updateType,
     updateLog: readOptionalString(data.updateLog) ?? "",
     downloadUrl,
+    packageSha256: readOptionalString(data.packageSha256),
     packageSize: readOptionalNumber(data.packageSize),
     packageName: readOptionalString(data.packageName)
   };
+}
+
+function resolveDownloadUrl(
+  downloadUrl: string,
+  endpoint?: string | undefined
+): string {
+  if (!downloadUrl || !endpoint || !downloadUrl.startsWith("/")) {
+    return downloadUrl;
+  }
+
+  const endpointUrl = new URL(endpoint);
+  const appVersionIndex = endpointUrl.pathname.lastIndexOf("/appVersion/");
+  const apiPrefix =
+    appVersionIndex >= 0 ? endpointUrl.pathname.slice(0, appVersionIndex) : "";
+  endpointUrl.pathname = downloadUrl.startsWith(`${apiPrefix}/`)
+    ? downloadUrl
+    : joinUrlPath(apiPrefix, downloadUrl);
+  endpointUrl.search = "";
+  endpointUrl.hash = "";
+  return endpointUrl.toString();
+}
+
+function joinUrlPath(prefix: string, path: string): string {
+  return `${prefix.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 
 function unwrapData(input: unknown): unknown {

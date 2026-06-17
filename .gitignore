@@ -25,6 +25,7 @@ lerna-debug.log*
 
 # ===== Electron / electron-builder =====
 dist-electron/
+apps/desktop/.dev-electron/
 release-builds/
 app/dist/
 *.exe

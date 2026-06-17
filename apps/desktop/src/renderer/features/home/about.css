@@ -54,14 +54,15 @@
 .about-page__content {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 44px;
+  bottom: 0;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
-  width: min(540px, calc(100% - 72px));
+  justify-content: flex-start;
+  gap: 14px;
+  width: min(520px, calc(100% - 72px));
   text-align: center;
 }
 
@@ -69,29 +70,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  width: 92px;
+  height: 92px;
   color: rgba(248, 250, 252, 0.92);
 }
 
 .about-page__brand .themed-icon {
-  width: 64px;
-  height: 64px;
+  width: 84px;
+  height: 84px;
 }
 
 :root[data-theme="light"] .about-page__brand {
-  background: rgba(15, 23, 42, 0.06);
-  border-color: rgba(15, 23, 42, 0.1);
   color: rgba(15, 23, 42, 0.82);
 }
 
 .about-page__headline {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .about-page__welcome {
@@ -112,17 +108,36 @@
   color: rgba(226, 232, 240, 0.7);
 }
 
+.about-page__description {
+  width: 100%;
+  margin: 22px 0 0;
+  color: rgba(226, 232, 240, 0.66);
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+  text-align: left;
+}
+
 .about-page__actions {
-  width: min(360px, 100%);
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 20px));
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
-  margin-top: 2px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0;
 }
 
 :root[data-theme="light"] .about-page__version {
   color: rgba(15, 23, 42, 0.6);
+}
+
+:root[data-theme="light"] .about-page__description {
+  color: rgba(15, 23, 42, 0.66);
 }
 
 .about-row {
@@ -132,6 +147,7 @@
   gap: 10px;
   min-height: 36px;
   padding: 0;
+  white-space: nowrap;
   color: rgba(226, 232, 240, 0.86);
   background: transparent;
   border: 0;

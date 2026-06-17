@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { InterfaceLanguage } from "@voice/shared";
-import type { UpdateCheckResult, UpdateReadyPayload } from "../../../preload/voiceApi";
+import type {
+  UpdateCheckResult,
+  UpdateDownloadProgressPayload,
+  UpdateReadyPayload
+} from "../../../preload/voiceApi";
 import { ThemedIcon } from "../../shared/ui/ThemedIcon";
 
 interface UpdateReadyDialogProps {
@@ -12,6 +16,7 @@ interface UpdateReadyDialogProps {
 }
 
 type DialogState = "checking" | "available" | "latest" | "ready" | "error";
+type DownloadProgressState = UpdateDownloadProgressPayload | undefined;
 
 interface UpdateDialogProps {
   currentVersion?: string | undefined;
@@ -108,6 +113,7 @@ export function UpdateDialog({
   const [payload, setPayload] = useState<UpdateReadyPayload | undefined>(readyPayload);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const [checkingProgress, setCheckingProgress] = useState(0);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgressState>(undefined);
 
   const versionLabel = useMemo(
     () => formatVersionLabel(currentVersion ?? "0.0.0"),
@@ -120,6 +126,7 @@ export function UpdateDialog({
     if (result.status === "up-to-date") {
       setState("latest");
       setPayload(undefined);
+      setDownloadProgress(undefined);
       return;
     }
     if (result.status === "available") {
@@ -127,6 +134,7 @@ export function UpdateDialog({
       if (nextPayload.updateType === "OPTIONAL" && isSkippedOptionalUpdate(nextPayload)) {
         setState("latest");
         setPayload(undefined);
+        setDownloadProgress(undefined);
         return;
       }
       setPayload(nextPayload);
@@ -137,6 +145,7 @@ export function UpdateDialog({
     if (result.status === "ready") {
       setPayload(toPayload(result));
       setState("ready");
+      setDownloadProgress(undefined);
       return;
     }
     if (result.status === "disabled") {
@@ -145,6 +154,7 @@ export function UpdateDialog({
       return;
     }
     setErrorMessage(result.message);
+    setDownloadProgress(undefined);
     setState("error");
   }, []);
 
@@ -152,6 +162,7 @@ export function UpdateDialog({
     const startedAt = Date.now();
     setState("checking");
     setErrorMessage(undefined);
+    setDownloadProgress(undefined);
     setCheckingProgress(8);
     void window.voiceAI
       .checkForUpdates()
@@ -162,6 +173,7 @@ export function UpdateDialog({
       .catch(async (error: unknown) => {
         await waitForMinimumCheckingDuration(startedAt);
         setErrorMessage(error instanceof Error ? error.message : String(error));
+        setDownloadProgress(undefined);
         setState("error");
       });
   }, [applyResult]);
@@ -180,10 +192,11 @@ export function UpdateDialog({
     setPayload(readyPayload);
     setState("ready");
     setErrorMessage(undefined);
+    setDownloadProgress(undefined);
   }, [readyPayload]);
 
   useEffect(() => {
-    if (state !== "checking") {
+    if (state !== "checking" || isRealDownloadProgress(downloadProgress)) {
       return;
     }
     const interval = window.setInterval(() => {
@@ -192,7 +205,23 @@ export function UpdateDialog({
       );
     }, CHECKING_PROGRESS_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [state]);
+  }, [downloadProgress, state]);
+
+  useEffect(() => {
+    return window.voiceAI.onUpdateDownloadProgress((progress) => {
+      if (progress.phase === "checking") {
+        setDownloadProgress(undefined);
+        setCheckingProgress(progress.percent ?? 8);
+        return;
+      }
+      setState("checking");
+      setErrorMessage(undefined);
+      setDownloadProgress(progress);
+      if (typeof progress.percent === "number") {
+        setCheckingProgress(progress.percent);
+      }
+    });
+  }, []);
 
   const close = (): void => {
     if (canClose) {
@@ -201,12 +230,17 @@ export function UpdateDialog({
   };
 
   const restart = (): void => {
-    void window.voiceAI.restartToUpdate().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      setErrorMessage(message);
-      setState("error");
-      onRestartError?.(message);
-    });
+    void window.voiceAI
+      .restartToUpdate()
+      .then(() => {
+        onClose();
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setErrorMessage(message);
+        setState("error");
+        onRestartError?.(message);
+      });
   };
 
   const skipOptional = (): void => {
@@ -231,7 +265,11 @@ export function UpdateDialog({
         ) : null}
 
         {state === "checking" ? (
-          <CheckingState versionLabel={versionLabel} progress={checkingProgress} />
+          <CheckingState
+            versionLabel={versionLabel}
+            progress={checkingProgress}
+            downloadProgress={downloadProgress}
+          />
         ) : null}
 
         {state === "latest" ? (
@@ -301,6 +339,10 @@ function ProgressPanel({
 }): React.JSX.Element {
   return (
     <div className="update-dialog__progress-panel">
+      <div className="update-dialog__progress-head">
+        <span>进度</span>
+        <strong>{label}</strong>
+      </div>
       <div
         className="update-dialog__progress"
         role="progressbar"
@@ -310,24 +352,41 @@ function ProgressPanel({
       >
         <div className="update-dialog__progress-fill" style={{ width: `${progress}%` }} />
       </div>
-      <p>{label}</p>
     </div>
   );
 }
 
 function CheckingState({
   versionLabel,
-  progress
+  progress,
+  downloadProgress
 }: {
   versionLabel: string;
   progress: number;
+  downloadProgress?: DownloadProgressState;
 }): React.JSX.Element {
+  const shownProgress = normalizeProgress(
+    typeof downloadProgress?.percent === "number" ? downloadProgress.percent : progress
+  );
+  const isDownloading = downloadProgress?.phase === "downloading";
+  const isVerifying = downloadProgress?.phase === "verifying";
+  const title = isVerifying
+    ? "正在校验安装包"
+    : isDownloading
+      ? "正在下载安装包"
+      : "正在检查更新";
+  const description = isVerifying
+    ? "安装包已下载完成，正在进行完整性校验。"
+    : isDownloading
+      ? undefined
+      : `当前版本 ${versionLabel}，正在连接更新服务。`;
+
   return (
     <section className="update-dialog__checking">
       <p className="update-dialog__eyebrow">检查更新</p>
-      <h1>正在检查更新</h1>
-      <p>当前版本 {versionLabel}，正在连接更新服务。</p>
-      <ProgressPanel progress={progress} label={`${progress}%`} />
+      <h1>{title}</h1>
+      {description ? <p>{description}</p> : null}
+      <ProgressPanel progress={shownProgress} label={`${shownProgress}%`} />
     </section>
   );
 }
@@ -469,6 +528,14 @@ function formatPackageSize(size: number | undefined): string {
   }
   const mb = size / 1024 / 1024;
   return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`;
+}
+
+function isRealDownloadProgress(progress: DownloadProgressState): boolean {
+  return progress?.phase === "downloading" || progress?.phase === "verifying";
+}
+
+function normalizeProgress(progress: number): number {
+  return Math.min(100, Math.max(0, Math.round(progress)));
 }
 
 function formatVersionLabel(version: string): string {

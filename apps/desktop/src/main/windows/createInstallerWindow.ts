@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
+import { resolveRuntimeAppIconPath } from "./appIcon";
 import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 
 export function createInstallerWindow(): BrowserWindow {
@@ -9,6 +10,7 @@ export function createInstallerWindow(): BrowserWindow {
     resizable: false,
     maximizable: false,
     show: false,
+    icon: resolveRuntimeAppIconPath(),
     backgroundColor: "#f2f3f5",
     frame: false,
     autoHideMenuBar: true,

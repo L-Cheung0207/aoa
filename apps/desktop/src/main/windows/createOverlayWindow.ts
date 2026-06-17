@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { BrowserWindow, screen } from "electron";
 import type { AppSettings } from "@voice/shared";
+import { resolveRuntimeAppIconPath } from "./appIcon";
 
 export type OverlayWindowLayout =
   | "pill"
@@ -65,7 +66,7 @@ const OVERLAY_LAYOUT_SIZE: Record<OverlayWindowLayout, { width: number; height: 
   canceledPill: { width: 184, height: 40 },
   thinkingPill: { width: 184, height: 70 },
   busyHint: { width: 380, height: 196 },
-  micError: { width: 360, height: 168 },
+  micError: { width: 360, height: 184 },
   selectionError: { width: 360, height: 112 },
   shortcutHelp: { width: 340, height: 258 },
   /** LLM 回答结果面板，接近 Typeless 的居中白色浮层。 */
@@ -193,6 +194,7 @@ export function createOverlayWindow(
     height: OVERLAY_LAYOUT_SIZE.pill.height,
     show: false,
     frame: false,
+    icon: resolveRuntimeAppIconPath(),
     autoHideMenuBar: true,
     transparent: true,
     backgroundColor: "#00000000",

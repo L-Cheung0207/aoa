@@ -88,7 +88,7 @@ export function createIpcTranscriptionProvider(
         typeof result.finalText === "string"
       ) {
         console.warn(
-          `[transcription-ipc] stop reply 先於 final event 到達，使用返回值補發 finalText="${result.finalText}"`
+          `[transcription-ipc] stop reply 先於 final event 到達，使用返回值補發 finalTextLength=${result.finalText.length}`
         );
         receivedFinal = true;
         emit({ type: "final", text: result.finalText });

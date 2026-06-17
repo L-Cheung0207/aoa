@@ -11,6 +11,10 @@ electronDist: ../../node_modules/electron/dist
 asar: true
 npmRebuild: false
 
+publish:
+  provider: generic
+  url: http://172.27.209.114:8097/aoa_api/
+
 files:
   - out/**/*
   - package.json
@@ -28,7 +32,6 @@ extraResources:
     to: voice_native_helper.node
 
 win:
-  signAndEditExecutable: false
   target:
     - target: nsis
       arch:

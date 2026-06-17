@@ -26,7 +26,6 @@ extraResources:
     to: installer-shell-payload
 
 win:
-  signAndEditExecutable: false
   target:
     - target: portable
       arch:

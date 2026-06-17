@@ -17,7 +17,7 @@ function createSettings(): Pick<AppSettings, "ws"> {
       servers: [
         { url: "wss://direct.example.test/ws" },
         {
-          url: "wss://proxied.example.test/ws?AccessCode=secret",
+          url: "wss://proxied.example.test/ws?AccessCode=secret&token=other-secret",
           proxy: "proxy.example.test:8080",
           proxyUsername: "user",
           proxyPassword: "pass"
@@ -103,7 +103,9 @@ describe("main transcription service", () => {
 
       const logs = logSpy.mock.calls.map((args) => args.map(String).join(" ")).join("\n");
       expect(logs).toContain("[asr-main] request params");
-      expect(logs).toContain("url=wss://proxied.example.test/ws?AccessCode=***");
+      expect(logs).toContain(
+        "url=wss://proxied.example.test/ws?AccessCode=***&token=***"
+      );
       expect(logs).toContain("language=cantonese");
       expect(logs).toContain("sampleRate=16000");
       expect(logs).toContain("selectedIndex=1");
@@ -249,5 +251,46 @@ describe("main transcription service", () => {
     closeHandler?.(4001, Buffer.from("server detail", "utf8"));
 
     expect(closeEvents).toEqual([{ code: 4001, reason: "server detail" }]);
+  });
+
+  it("logs incoming ASR messages without leaking transcript text", () => {
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message: unknown) => {
+      logs.push(String(message));
+    });
+    let messageHandler: ((payload: string) => void) | undefined;
+    const socketFactory = createNodeTranscriptionSocketFactory(
+      { url: "wss://direct.example.test/ws" },
+      {
+        WebSocketConstructor: class FakeWebSocket {
+          on(event: string, handler: (payload: string) => void): void {
+            if (event === "message") {
+              messageHandler = handler;
+            }
+          }
+          once(): void {}
+          send(): void {}
+          close(): void {}
+        } as never
+      }
+    ) as TranscriptionSocketFactory;
+
+    const socket = socketFactory.connect("wss://direct.example.test/ws");
+    socket.onMessage(() => undefined);
+    messageHandler?.(
+      JSON.stringify({
+        type: "final",
+        text: "sensitive recognized speech",
+        rawText: "another private transcript"
+      })
+    );
+
+    const joinedLogs = logs.join("\n");
+    expect(joinedLogs).toContain("[asr-main] raw message len=");
+    expect(joinedLogs).toContain("type=final");
+    expect(joinedLogs).toContain("textLength=27");
+    expect(joinedLogs).toContain("rawTextLength=26");
+    expect(joinedLogs).not.toContain("sensitive recognized speech");
+    expect(joinedLogs).not.toContain("another private transcript");
   });
 });

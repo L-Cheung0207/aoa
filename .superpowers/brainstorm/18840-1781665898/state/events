@@ -1,0 +1,2 @@
+{"type":"click","text":"B\n    \n      软门禁\n      未登录显示登录页，但部分本地设置/关于页可访问；业务能力仍锁住。","choice":"soft-login","id":null,"timestamp":1781666189868}
+{"type":"click","text":"A\n    \n      严格门禁\n      未登录时只允许登录窗口；首页、悬浮窗、快捷键、语音请求都不启动。","choice":"strict-login","id":null,"timestamp":1781666190391}

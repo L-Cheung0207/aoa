@@ -51,6 +51,15 @@ export interface ShortcutManager {
   dispose(): void;
 }
 
+interface ShortcutManagerLogger {
+  log(message: string): void;
+  warn(message: string): void;
+}
+
+interface CreateShortcutManagerOptions {
+  logger?: ShortcutManagerLogger | undefined;
+}
+
 interface ShortcutBinding {
   key: keyof ShortcutConfig;
   mode: RecordingMode;
@@ -62,8 +71,12 @@ const BINDINGS: ShortcutBinding[] = [
   { key: "translateDictation", mode: "translate" }
 ];
 
-export function createShortcutManager(registrar: ShortcutRegistrar): ShortcutManager {
+export function createShortcutManager(
+  registrar: ShortcutRegistrar,
+  options: CreateShortcutManagerOptions = {}
+): ShortcutManager {
   const active: ConfiguredShortcut[] = [];
+  const logger = options.logger ?? console;
   let shortcutHelpShowRegistered = false;
   let shortcutHelpDismissRegistered = false;
   let savedConfig: ShortcutConfig | undefined;
@@ -88,6 +101,7 @@ export function createShortcutManager(registrar: ShortcutRegistrar): ShortcutMan
     config: ShortcutConfig,
     handlers: ShortcutHandlers
   ): ShortcutConfigureResult => {
+    logger.log(`[shortcut] configure requested ${formatShortcutConfig(config)}`);
     unregisterAll();
     registrar.configureShortcuts?.(config);
 
@@ -111,12 +125,17 @@ export function createShortcutManager(registrar: ShortcutRegistrar): ShortcutMan
       if (ok) {
         active.push(entry);
         registered.push(entry);
+        logger.log(`[shortcut] registered ${formatConfiguredShortcut(entry)}`);
       } else {
         conflicts.push(entry);
+        logger.warn(`[shortcut] conflict ${formatConfiguredShortcut(entry)}`);
       }
     }
 
     if (conflicts.length > 0) {
+      logger.log(
+        `[shortcut] configure completed ok=false registered=${registered.length} conflicts=${conflicts.length}`
+      );
       return { ok: false, registered, conflicts };
     }
 
@@ -129,6 +148,9 @@ export function createShortcutManager(registrar: ShortcutRegistrar): ShortcutMan
       shortcutHelpDismissRegistered = true;
     }
 
+    logger.log(
+      `[shortcut] configure completed ok=true registered=${registered.length} conflicts=0`
+    );
     return { ok: true, registered };
   };
 
@@ -139,18 +161,21 @@ export function createShortcutManager(registrar: ShortcutRegistrar): ShortcutMan
       return configureBindings(config, handlers);
     },
     suspend: () => {
+      logger.log(`[shortcut] suspend active=${active.length}`);
       registrar.unregisterAll();
       shortcutHelpShowRegistered = false;
       shortcutHelpDismissRegistered = false;
       active.length = 0;
     },
     resume: () => {
+      logger.log("[shortcut] resume requested");
       if (!savedConfig || !savedHandlers) {
         return undefined;
       }
       return configureBindings(savedConfig, savedHandlers);
     },
     dispose: () => {
+      logger.log(`[shortcut] dispose active=${active.length}`);
       registrar.unregisterAll();
       shortcutHelpShowRegistered = false;
       shortcutHelpDismissRegistered = false;
@@ -159,4 +184,14 @@ export function createShortcutManager(registrar: ShortcutRegistrar): ShortcutMan
       savedHandlers = undefined;
     }
   };
+}
+
+function formatShortcutConfig(config: ShortcutConfig): string {
+  return `toggleRecording=${config.toggleRecording || "none"} processSelection=${
+    config.processSelection || "none"
+  } translateDictation=${config.translateDictation || "none"}`;
+}
+
+function formatConfiguredShortcut(shortcut: ConfiguredShortcut): string {
+  return `key=${shortcut.key} accelerator=${shortcut.accelerator} mode=${shortcut.mode}`;
 }

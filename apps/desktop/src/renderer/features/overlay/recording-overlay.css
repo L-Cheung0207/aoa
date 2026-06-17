@@ -548,14 +548,17 @@
 }
 
 .mic-error-hint {
+  --mic-error-hint-radius: 8px;
+
   box-sizing: border-box;
   width: 100vw;
   padding: 28px 16px 26px;
   color: #f4f4f5;
   background: rgba(24, 24, 27, 0.98);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--mic-error-hint-radius);
   box-shadow: none;
+  overflow: hidden;
   -webkit-app-region: no-drag;
 }
 

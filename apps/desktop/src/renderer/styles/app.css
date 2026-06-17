@@ -8,6 +8,7 @@
 @import "../features/settings/settings-window.css";
 @import "../features/settings/waveform-preview.css";
 @import "../features/home/about.css";
+@import "../features/home/microphone-help-dialog.css";
 @import "../features/update/update-dialog.css";
 @import "../features/home/home-shell.css";
 @import "../features/history/history.css";

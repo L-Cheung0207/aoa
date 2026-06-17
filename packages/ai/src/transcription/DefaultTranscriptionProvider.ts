@@ -128,6 +128,58 @@ export function createDefaultTranscriptionProvider(
     return compact.length <= max ? compact : `${compact.slice(0, max)}…(${compact.length}字)`;
   };
 
+  const redactUrlForLog = (input: string): string => {
+    try {
+      const parsed = new URL(input);
+      for (const key of Array.from(parsed.searchParams.keys())) {
+        if (/^(?:AccessCode|accessCode|token|apiKey|password|secret)$/i.test(key)) {
+          parsed.searchParams.set(key, "***");
+        }
+      }
+      return parsed.toString();
+    } catch {
+      return input.replace(
+        /([?&](?:AccessCode|accessCode|token|apiKey|password|secret)=)[^&\s]+/gi,
+        "$1***"
+      );
+    }
+  };
+
+  const summarizeServerRecordForLog = (record: Record<string, unknown>): string => {
+    const parts: string[] = [];
+    const code = record["code"];
+    if (code !== undefined && code !== null) {
+      parts.push(`code=${String(code)}`);
+    }
+    const result = record["result"];
+    if (result && typeof result === "object") {
+      const text = (result as Record<string, unknown>)["voice_text_str"];
+      if (typeof text === "string") {
+        parts.push(`voiceTextLength=${text.length}`);
+      }
+    }
+    for (const key of ["text", "rawText", "transcript", "finalText"]) {
+      const value = record[key];
+      if (typeof value === "string") {
+        parts.push(`${key}Length=${value.length}`);
+      }
+    }
+    parts.push(`keys=${Object.keys(record).join(",")}`);
+    return parts.join(" ");
+  };
+
+  const summarizeServerPayloadForLog = (raw: string): string => {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object") {
+        return `rawLength=${raw.length} summary=non-object`;
+      }
+      return summarizeServerRecordForLog(parsed as Record<string, unknown>);
+    } catch {
+      return `rawLength=${raw.length} preview=${previewText(raw)}`;
+    }
+  };
+
   const formatLogTimestamp = (date = new Date()): string =>
     new Intl.DateTimeFormat("sv-SE", {
       timeZone: "Asia/Shanghai",
@@ -183,7 +235,7 @@ export function createDefaultTranscriptionProvider(
       return;
     }
     finalEmitted = true;
-    transcriptionWarn(`${reason}，使用最近 partial 兜底 text="${previewText(lastPartialText)}"`);
+    transcriptionWarn(`${reason}，使用最近 partial 兜底 fallbackTextLength=${lastPartialText.length}`);
     emit({ type: "final", text: lastPartialText });
   };
 
@@ -203,16 +255,23 @@ export function createDefaultTranscriptionProvider(
 
   const handleMessage = (raw: string): void => {
     recvMessageCount += 1;
-    transcriptionLog(`${normalizedReceiveIcon(raw)} 接收到的信息: [asr] WS ← #${recvMessageCount} ${raw}`);
+    transcriptionLog(
+      `${normalizedReceiveIcon(raw)} 接收到的信息: [asr] WS ← #${recvMessageCount} ${summarizeServerPayloadForLog(raw)}`
+    );
     let msg: unknown;
     try {
       msg = JSON.parse(raw);
     } catch (error) {
-      transcriptionWarn(`⚠️ 解析服务端消息失败（已忽略）#${recvMessageCount} raw=${raw}`, error);
+      transcriptionWarn(
+        `⚠️ 解析服务端消息失败（已忽略）#${recvMessageCount} ${summarizeServerPayloadForLog(raw)}`,
+        error
+      );
       return;
     }
     if (typeof msg !== "object" || msg === null) {
-      transcriptionWarn(`⚠️ 服务端消息非对象结构（已忽略）#${recvMessageCount} raw=${raw}`);
+      transcriptionWarn(
+        `⚠️ 服务端消息非对象结构（已忽略）#${recvMessageCount} ${summarizeServerPayloadForLog(raw)}`
+      );
       return;
     }
     const record = msg as Record<string, unknown>;
@@ -220,7 +279,9 @@ export function createDefaultTranscriptionProvider(
     // old python：`if recv_id and recv_id != voice_id: return` —— 仅当显式不匹配时丢弃。
     const recvId = typeof record["voice_id"] === "string" ? (record["voice_id"] as string) : "";
     if (recvId && recvId !== voiceId) {
-      transcriptionWarn(`⚠️ 丢弃 voice_id 不匹配的消息 #${recvMessageCount}：收到=${recvId} 会话=${voiceId} raw=${raw}`);
+      transcriptionWarn(
+        `⚠️ 丢弃 voice_id 不匹配的消息 #${recvMessageCount}：收到=${recvId} 会话=${voiceId} ${summarizeServerRecordForLog(record)}`
+      );
       return;
     }
 
@@ -239,7 +300,7 @@ export function createDefaultTranscriptionProvider(
       // - 非空 partial 且文本变化：正常打印，附 raw。
       if (!normalized) {
         emptyPartialStreak += 1;
-        lastEmptyPartialRaw = raw;
+        lastEmptyPartialRaw = summarizeServerRecordForLog(record);
         if (emptyPartialStreak % 50 === 0) {
           transcriptionLog(`🔇 空 partial 心跳 累计连续 ${emptyPartialStreak} 条（静音中，已静默） sample=${lastEmptyPartialRaw}`);
         }
@@ -251,7 +312,9 @@ export function createDefaultTranscriptionProvider(
         lastEmptyPartialRaw = "";
       }
       if (normalized !== lastPrintedPartialText) {
-        transcriptionLog(`🔊 收到 partial #${recvMessageCount} text="${previewText(normalized)}" raw=${raw}`);
+        transcriptionLog(
+          `🔊 收到 partial #${recvMessageCount} textLength=${normalized.length} ${summarizeServerRecordForLog(record)}`
+        );
         lastPrintedPartialText = normalized;
       }
       lastPartialText = normalized;
@@ -260,7 +323,9 @@ export function createDefaultTranscriptionProvider(
     }
 
     if (code === "0" || code === "2") {
-      transcriptionLog(`🔇 收到 final #${recvMessageCount} code=${code} text="${previewText(normalized)}" raw=${raw}`);
+      transcriptionLog(
+        `🔇 收到 final #${recvMessageCount} code=${code} textLength=${normalized.length} ${summarizeServerRecordForLog(record)}`
+      );
       if (!finalEmitted) {
         finalEmitted = true;
         // 即便 normalized 为空（old 里会走"未听清或无声音"），也发射空串，
@@ -274,7 +339,9 @@ export function createDefaultTranscriptionProvider(
     }
 
     // 其他 code（握手、心跳、未知扩展字段等）也记录一条，便于排查。
-    transcriptionLog(`🔊 收到其他消息 #${recvMessageCount} code="${code}" keys=${Object.keys(record).join(",")} raw=${raw}`);
+    transcriptionLog(
+      `🔊 收到其他消息 #${recvMessageCount} code="${code}" ${summarizeServerRecordForLog(record)}`
+    );
   };
 
   const formatCloseEvent = (event: TranscriptionSocketCloseEvent = {}): string => {
@@ -360,7 +427,7 @@ export function createDefaultTranscriptionProvider(
       lastEmptyPartialRaw = "";
 
       transcriptionLog(`🚀 准备发送音频, voice_id: ${voiceId}, language: ${language}`);
-      transcriptionLog(`🌐 准备发起 WS 连接: ${url} input.language=${input.language} sampleRate=${input.sampleRate}`);
+      transcriptionLog(`🌐 准备发起 WS 连接: ${redactUrlForLog(url)} input.language=${input.language} sampleRate=${input.sampleRate}`);
 
       const activeSocket = socketFactory.connect(url);
       socket = activeSocket;
@@ -373,7 +440,7 @@ export function createDefaultTranscriptionProvider(
           }
           settled = true;
           socketOpen = true;
-          transcriptionLog(`✅ WS连接已建立: ${url}`);
+          transcriptionLog(`✅ WS连接已建立: ${redactUrlForLog(url)}`);
           flushPendingAudioFrames(activeSocket);
           emit({ type: "started" });
           resolve();

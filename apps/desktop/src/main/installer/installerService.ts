@@ -12,6 +12,7 @@ export interface InstallerShellInstallInput {
   installDir: string;
   createDesktopShortcut: boolean;
   launchAtLogin: boolean;
+  updated?: boolean | undefined;
 }
 
 export interface InstallerShellInstallResult {
@@ -31,6 +32,12 @@ export interface CreateInstallerServiceInput {
   localAppData: string;
   spawn?: typeof spawn;
   existsSync?: (path: string) => boolean;
+  logger?: InstallerLogger | undefined;
+}
+
+interface InstallerLogger {
+  log(message: string): void;
+  warn(message: string): void;
 }
 
 export function resolveDefaultInstallDir(input: {
@@ -90,6 +97,7 @@ export function createInstallerService(
 ): InstallerService {
   const spawnProcess = input.spawn ?? spawn;
   const fileExists = input.existsSync ?? existsSync;
+  const logger = input.logger ?? console;
   const payloadPath = resolveInstallerPayloadPath(input.resourcesPath);
 
   return {
@@ -105,6 +113,7 @@ export function createInstallerService(
       appendProductDirectory(path, input.productName),
     install: (installInput) => {
       if (!fileExists(payloadPath)) {
+        logger.warn(`[installer] payload missing payloadPath=${payloadPath}`);
         return Promise.reject(
           new Error(`Installer payload not found: ${payloadPath}`),
         );
@@ -119,7 +128,9 @@ export function createInstallerService(
         installDir,
         createDesktopShortcut: installInput.createDesktopShortcut,
         launchAtLogin: installInput.launchAtLogin,
+        updated: installInput.updated,
         spawn: spawnProcess,
+        logger,
       });
     },
   };
@@ -130,25 +141,35 @@ function runSilentInstaller(input: {
   installDir: string;
   createDesktopShortcut: boolean;
   launchAtLogin: boolean;
+  updated?: boolean | undefined;
   spawn: typeof spawn;
+  logger: InstallerLogger;
 }): Promise<InstallerShellInstallResult> {
   return new Promise((resolve, reject) => {
+    const args = input.updated ? ["--updated"] : [];
+    args.push("/S", "/currentuser", `/D=${input.installDir}`);
+    const env = { ...process.env };
+    if (!input.updated) {
+      env.VOICE_CREATE_DESKTOP_SHORTCUT = input.createDesktopShortcut ? "1" : "0";
+      env.VOICE_LAUNCH_AT_LOGIN = input.launchAtLogin ? "1" : "0";
+    }
     const child = input.spawn(
       input.payloadPath,
-      ["/S", "/currentuser", `/D=${input.installDir}`],
+      args,
       {
         windowsHide: true,
-        env: {
-          ...process.env,
-          VOICE_CREATE_DESKTOP_SHORTCUT: input.createDesktopShortcut
-            ? "1"
-            : "0",
-          VOICE_LAUNCH_AT_LOGIN: input.launchAtLogin ? "1" : "0",
-        },
+        env,
       },
     ) as ChildProcessWithoutNullStreams;
 
     let output = "";
+    input.logger.log(
+      `[installer] install started payloadPath=${input.payloadPath} installDir=${
+        input.installDir
+      } createDesktopShortcut=${input.createDesktopShortcut} launchAtLogin=${
+        input.launchAtLogin
+      } updated=${Boolean(input.updated)}`
+    );
     child.stdout?.on("data", (chunk: Buffer) => {
       output += chunk.toString();
     });
@@ -156,6 +177,9 @@ function runSilentInstaller(input: {
       output += chunk.toString();
     });
     child.on("error", (error) => {
+      input.logger.warn(
+        `[installer] install start failed message=${JSON.stringify(error.message)} installDir=${input.installDir}`,
+      );
       reject(
         new Error(
           `Installer failed to start. Payload: ${input.payloadPath}. Install dir: ${input.installDir}. ${error.message}`,
@@ -164,12 +188,20 @@ function runSilentInstaller(input: {
     });
     child.on("close", (code, signal) => {
       if (code === 0) {
+        input.logger.log(
+          `[installer] install completed exitCode=0 signal=${signal ?? "none"} installDir=${input.installDir}`,
+        );
         resolve({
           ok: true,
           installDir: input.installDir,
         });
         return;
       }
+      input.logger.warn(
+        `[installer] install failed exitCode=${code ?? "unknown"} signal=${
+          signal ?? "none"
+        } outputLength=${output.trim().length} installDir=${input.installDir}`,
+      );
       reject(
         new Error(
           `Installer failed (${formatExitStatus(code, signal)}). Payload: ${input.payloadPath}. Install dir: ${input.installDir}.${formatInstallerOutput(output)}`,

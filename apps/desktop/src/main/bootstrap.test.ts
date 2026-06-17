@@ -3,23 +3,37 @@ import { app, nativeTheme } from "electron";
 import {
   applyLaunchAtLogin,
   applyNativeTheme,
+  configureAppIdentity,
   formatShortcutHelpLabel,
   handoffInstallerLaunch,
   launchInstalledAppHome,
+  parseSilentUpdateInstallDir,
   formatTrayTooltip,
+  handleOpenMicrophoneHelpRequest,
+  runLoggedBootstrapAction,
+  logDirectIpcError,
+  logDirectIpcRequest,
+  logDirectIpcResponse,
+  runLoggedTrayAction,
   resolveShortcutTriggerOverlayLayout,
   resolveShortcutTriggerOverlayAction,
   resolveOverlayVisibility,
   resolveOverlayWindowLayout,
   shouldRunScheduledOverlayHide,
   shouldOpenHomeOnLaunch,
+  firstConfiguredValue,
+  resolveVersionCheckEndpoint,
   resolvePackagedVersionPhase,
+  redactUrlForLog,
+  summarizeArgvForLog,
   shouldReplayMicErrorOverlay,
   shouldShowShortcutHelpForState
 } from "./bootstrap";
 
 vi.mock("electron", () => ({
   app: {
+    setAppUserModelId: vi.fn(),
+    setName: vi.fn(),
     setLoginItemSettings: vi.fn()
   },
   nativeTheme: {
@@ -161,6 +175,34 @@ describe("bootstrap overlay visibility", () => {
     expect(shouldShowShortcutHelpForState("canceled")).toBe(false);
   });
 
+  it("hides the overlay and opens the microphone help in the home window", () => {
+    const overlayWindow = {
+      isDestroyed: vi.fn(() => false),
+      isVisible: vi.fn(() => true),
+      hide: vi.fn(),
+    };
+    const overlayWindowFollower = {
+      stop: vi.fn(),
+    };
+    const cancelPendingOverlayHide = vi.fn();
+    const openHomeWindow = vi.fn();
+
+    handleOpenMicrophoneHelpRequest({
+      overlayWindow,
+      overlayWindowFollower,
+      cancelPendingOverlayHide,
+      openHomeWindow,
+    });
+
+    expect(cancelPendingOverlayHide).toHaveBeenCalledTimes(1);
+    expect(overlayWindowFollower.stop).toHaveBeenCalledTimes(1);
+    expect(overlayWindow.hide).toHaveBeenCalledTimes(1);
+    expect(openHomeWindow).toHaveBeenCalledWith({
+      section: "home",
+      showMicrophoneHelp: true,
+    });
+  });
+
   it("resolves packaged version phase from build-time configuration", () => {
     expect(resolvePackagedVersionPhase(undefined)).toBe("ALPHA");
     expect(resolvePackagedVersionPhase("")).toBe("ALPHA");
@@ -168,9 +210,78 @@ describe("bootstrap overlay visibility", () => {
     expect(resolvePackagedVersionPhase("RELEASE")).toBe("RELEASE");
     expect(resolvePackagedVersionPhase("PREVIEW")).toBe("ALPHA");
   });
+
+  it("resolves update endpoint with environment-style overrides first", () => {
+    expect(firstConfiguredValue("", " http://config.example/check ")).toBe(
+      "http://config.example/check"
+    );
+    expect(
+      resolveVersionCheckEndpoint({
+        backendBaseUrl: "http://backend.example/aoa_api",
+        versionCheckUrl: " http://updates.example/appVersion/check "
+      })
+    ).toBe("http://updates.example/appVersion/check");
+    expect(
+      resolveVersionCheckEndpoint({
+        backendBaseUrl: " http://backend.example/aoa_api ",
+        versionCheckUrl: undefined
+      })
+    ).toBe("http://backend.example/aoa_api/appVersion/check");
+  });
+
+  it("redacts secret URL parameters for bootstrap logs", () => {
+    expect(
+      redactUrlForLog("wss://api.example/ws?AccessCode=secret&token=other&keep=yes")
+    ).toBe("wss://api.example/ws?AccessCode=***&token=***&keep=yes");
+  });
+
+  it("sets the Windows app identity used by the taskbar", () => {
+    configureAppIdentity("win32");
+
+    expect(app.setName).toHaveBeenCalledWith("Voice Assistant");
+    expect(app.setAppUserModelId).toHaveBeenCalledWith("com.ctm.voice-assistant");
+  });
+
+  it("summarizes argv for logs without exposing local paths", () => {
+    const summary = summarizeArgvForLog([
+      "C:/Users/Alex/AppData/Local/Programs/Voice Assistant/Voice Assistant.exe",
+      "--install-dir=C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
+      "/uninstall",
+      "C:/Users/Alex/Documents/private.txt"
+    ]);
+
+    expect(summary).toEqual({
+      count: 4,
+      flags: ["--install-dir", "/uninstall"]
+    });
+    expect(JSON.stringify(summary)).not.toContain("Alex");
+    expect(JSON.stringify(summary)).not.toContain("private.txt");
+  });
 });
 
 describe("installer launch handoff", () => {
+  it("parses the silent update install directory from installer-shell arguments", () => {
+    expect(
+      parseSilentUpdateInstallDir([
+        "Voice Assistant Setup.exe",
+        "--silent-update",
+        "--install-dir=C:/Users/Alex/AppData/Local/Programs/Voice Assistant"
+      ])
+    ).toBe("C:/Users/Alex/AppData/Local/Programs/Voice Assistant");
+    expect(
+      parseSilentUpdateInstallDir([
+        "Voice Assistant Setup.exe",
+        "--install-dir",
+        "C:/Users/Alex/AppData/Local/Programs/Voice Assistant",
+        "--silent-update"
+      ])
+    ).toBe("C:/Users/Alex/AppData/Local/Programs/Voice Assistant");
+    expect(parseSilentUpdateInstallDir(["Voice Assistant Setup.exe"])).toBeUndefined();
+    expect(
+      parseSilentUpdateInstallDir(["Voice Assistant Setup.exe", "--silent-update"])
+    ).toBeUndefined();
+  });
+
   it("detects explicit home launch arguments", () => {
     expect(shouldOpenHomeOnLaunch(["app.exe", "--open-home"])).toBe(true);
     expect(shouldOpenHomeOnLaunch(["app.exe", "/open-home"])).toBe(true);
@@ -227,5 +338,116 @@ describe("installer launch handoff", () => {
     });
     expect(exitApp).toHaveBeenCalledWith(0);
     vi.useRealTimers();
+  });
+});
+
+describe("direct bootstrap IPC logging", () => {
+  it("logs direct IPC request lifecycle with sanitized summaries", () => {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const logger = {
+      log: (message: string) => logs.push(message),
+      warn: (message: string) => warnings.push(message)
+    };
+
+    logDirectIpcRequest(logger, "voice:installer-install", {
+      installDir: "C:/Tools",
+      createDesktopShortcut: true,
+      selectedText: "secret text"
+    });
+    logDirectIpcResponse(logger, "voice:installer-install", "ok");
+    logDirectIpcError(logger, "voice:installer-install", new Error("install failed"));
+
+    expect(logs).toEqual([
+      "[ipc-direct] request channel=voice:installer-install input={\"installDir\":\"C:/Tools\",\"createDesktopShortcut\":true,\"selectedTextLength\":11}",
+      "[ipc-direct] response channel=voice:installer-install status=ok"
+    ]);
+    expect(warnings).toEqual([
+      "[ipc-direct] response channel=voice:installer-install status=error error=\"install failed\""
+    ]);
+    expect([...logs, ...warnings].join("\n")).not.toContain("secret text");
+  });
+
+  it("logs launch actions with summarized argv", () => {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const logger = {
+      log: (message: string) => logs.push(message),
+      warn: (message: string) => warnings.push(message)
+    };
+    const action = vi.fn();
+
+    runLoggedBootstrapAction(
+      logger,
+      "open-home-on-launch",
+      {
+        argv: summarizeArgvForLog([
+          "C:/Users/Alex/AppData/Local/Programs/Voice Assistant/Voice Assistant.exe",
+          "--open-home",
+          "C:/Users/Alex/Documents/private.txt"
+        ])
+      },
+      action
+    );
+
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(logs).toEqual([
+      "[bootstrap-action] action=open-home-on-launch input={\"argv\":{\"count\":3,\"flags\":[\"--open-home\"]}}",
+      "[bootstrap-action] action=open-home-on-launch status=ok"
+    ]);
+    expect(warnings).toEqual([]);
+    expect(logs.join("\n")).not.toContain("Alex");
+    expect(logs.join("\n")).not.toContain("private.txt");
+  });
+});
+
+describe("tray action logging", () => {
+  it("logs tray action lifecycle with sanitized summaries", () => {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const logger = {
+      log: (message: string) => logs.push(message),
+      warn: (message: string) => warnings.push(message)
+    };
+    const action = vi.fn();
+
+    runLoggedTrayAction(
+      logger,
+      "open-about",
+      {
+        section: "about",
+        token: "secret"
+      },
+      action
+    );
+
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(logs).toEqual([
+      "[tray] action action=open-about input={\"section\":\"about\",\"token\":\"***\"}",
+      "[tray] action action=open-about status=ok"
+    ]);
+    expect(warnings).toEqual([]);
+    expect(logs.join("\n")).not.toContain("secret");
+  });
+
+  it("logs tray action failures before rethrowing", () => {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const logger = {
+      log: (message: string) => logs.push(message),
+      warn: (message: string) => warnings.push(message)
+    };
+    const error = new Error("quit failed");
+
+    expect(() =>
+      runLoggedTrayAction(logger, "quit", undefined, () => {
+        throw error;
+      })
+    ).toThrow(error);
+
+    expect(logs).toEqual(["[tray] action action=quit"]);
+    expect(warnings).toEqual([
+      "[tray] action action=quit status=error error=\"quit failed\""
+    ]);
   });
 });

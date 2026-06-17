@@ -110,6 +110,15 @@ export interface UpdateReadyPayload {
   packageName?: string;
 }
 
+export interface UpdateDownloadProgressPayload {
+  phase: "checking" | "downloading" | "verifying";
+  percent?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  packageName?: string;
+  version?: string;
+}
+
 export type UpdateCheckResult =
   | { status: "disabled" }
   | { status: "up-to-date" }
@@ -179,6 +188,7 @@ export interface VoiceAIAPI {
   reportRecordingState(update: RecordingStateUpdate): void;
   controlHomeWindow(action: HomeWindowControlAction): void;
   openHomeSection(input: OpenHomeSectionInput): void;
+  openMicrophoneHelp(): void;
   /** 录入快捷键时暂停/恢复全局 Right Alt 快捷键，避免与语音功能冲突。 */
   setShortcutCaptureActive(active: boolean): Promise<void>;
   onToggleRecording(callback: (payload: ToggleRecordingPayload) => void): () => void;
@@ -197,8 +207,12 @@ export interface VoiceAIAPI {
   onOpenSettingsPanel(callback: () => void): () => void;
   onOpenHomeSection(callback: (section: HomeSection) => void): () => void;
   onOpenOnboardingStep(callback: (step: number) => void): () => void;
+  onOpenMicrophoneHelp(callback: () => void): () => void;
   onOpenUpdateDialog(callback: () => void): () => void;
   onUpdateReady(callback: (payload: UpdateReadyPayload) => void): () => void;
+  onUpdateDownloadProgress(
+    callback: (payload: UpdateDownloadProgressPayload) => void
+  ): () => void;
   /**
    * 主进程在「处理阶段」（processing/inserting）临时注册的全局 Escape 被按下时，
    * 通过此事件通知 renderer 走 controller.cancel() 链路退出处理。
@@ -275,6 +289,9 @@ export const voiceAI: VoiceAIAPI = {
   },
   openHomeSection: (input) => {
     ipcRenderer.send("voice:open-home-section-request", input);
+  },
+  openMicrophoneHelp: () => {
+    ipcRenderer.send("voice:open-microphone-help-request");
   },
   setShortcutCaptureActive: (active) =>
     ipcRenderer.invoke("voice:set-shortcut-capture-active", { active }),
@@ -397,6 +414,13 @@ export const voiceAI: VoiceAIAPI = {
     return () =>
       ipcRenderer.removeListener("voice:open-onboarding-step", listener);
   },
+  onOpenMicrophoneHelp: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent): void => {
+      callback();
+    };
+    ipcRenderer.on("voice:open-microphone-help", listener);
+    return () => ipcRenderer.removeListener("voice:open-microphone-help", listener);
+  },
   onOpenUpdateDialog: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent): void => {
       callback();
@@ -413,6 +437,17 @@ export const voiceAI: VoiceAIAPI = {
     };
     ipcRenderer.on("voice:update-ready", listener);
     return () => ipcRenderer.removeListener("voice:update-ready", listener);
+  },
+  onUpdateDownloadProgress: (callback) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: UpdateDownloadProgressPayload
+    ): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("voice:update-download-progress", listener);
+    return () =>
+      ipcRenderer.removeListener("voice:update-download-progress", listener);
   },
   onCancelRequested: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent): void => {

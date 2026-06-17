@@ -356,5 +356,5 @@ function getShortcutDisplay(
 }
 
 function BrandIcon(): React.JSX.Element {
-  return <ThemedIcon name="app" />;
+  return <ThemedIcon name="brand" mode="image" />;
 }

@@ -61,6 +61,7 @@ export function createDistWinCommands(scriptUrl = import.meta.url, options = {})
   ];
 }
 
+
 export function createDistInstallerShellCommands(
   scriptUrl = import.meta.url,
   options = {}

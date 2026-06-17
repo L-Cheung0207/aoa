@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings, HistoryRecord } from "@voice/shared";
 import { HistoryPage } from "../features/history/HistoryPage";
 import { HomePage } from "../features/home/HomePage";
+import { MicrophoneHelpDialog } from "../features/home/MicrophoneHelpDialog";
 import { OnboardingGuide } from "../features/home/components/OnboardingGuide";
 import { buildHomeUsageStats } from "../features/home/homeUsageStats";
+import microphoneUnavailableHelpMarkdown from "../features/home/microphone-unavailable-help.md?raw";
 import { normalizeConnectionSettings } from "../features/settings/connectionSettings";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ThemedIcon } from "../shared/ui/ThemedIcon";
@@ -46,6 +48,7 @@ type HomeShellText = {
   aboutPage: string;
   aboutActions: string;
   welcome: string;
+  description: string;
   currentVersionPrefix: string;
   checkUpdates: string;
   contact: string;
@@ -82,6 +85,8 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     aboutPage: "关于页面",
     aboutActions: "关于页面操作",
     welcome: "欢迎使用 Voice Assistant Service",
+    description:
+      "Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容，Voice Assistant Service 介绍内容",
     currentVersionPrefix: "当前版本 ",
     checkUpdates: "检查更新",
     contact: "联系我们",
@@ -116,6 +121,8 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     aboutPage: "關於頁面",
     aboutActions: "關於頁面操作",
     welcome: "歡迎使用 Voice Assistant Service",
+    description:
+      "Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容，Voice Assistant Service 介紹內容",
     currentVersionPrefix: "當前版本 ",
     checkUpdates: "檢查更新",
     contact: "聯絡我們",
@@ -150,6 +157,8 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     aboutPage: "About page",
     aboutActions: "About page actions",
     welcome: "Welcome to Voice Assistant Service",
+    description:
+      "Voice Assistant Service introduction content. Voice Assistant Service introduction content. Voice Assistant Service introduction content. Voice Assistant Service introduction content. Voice Assistant Service introduction content.",
     currentVersionPrefix: "Current version ",
     checkUpdates: "Check for updates",
     contact: "Contact us",
@@ -195,6 +204,7 @@ export function HomeShell({
     () => initialSection ?? "home",
   );
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [microphoneHelpOpen, setMicrophoneHelpOpen] = useState(false);
   const [updateReady, setUpdateReady] = useState<
     UpdateReadyPayload | undefined
   >(undefined);
@@ -333,7 +343,16 @@ export function HomeShell({
       (step) => {
         setOnboardingStep(step);
         setOnboardingOpen(true);
+        setMicrophoneHelpOpen(false);
         setActiveSection("home");
+      },
+    );
+    const unsubscribeOpenMicrophoneHelp = window.voiceAI.onOpenMicrophoneHelp(
+      () => {
+        setActiveSection("home");
+        setOnboardingOpen(false);
+        setMicrophoneHelpOpen(true);
+        setToast(undefined);
       },
     );
     const unsubscribeOpenUpdateDialog =
@@ -362,6 +381,7 @@ export function HomeShell({
       unsubscribeOpenSettings();
       unsubscribeOpenHomeSection();
       unsubscribeOpenOnboardingStep();
+      unsubscribeOpenMicrophoneHelp();
       unsubscribeOpenUpdateDialog();
       unsubscribeUpdateReady();
       unsubscribeSettingsChanged();
@@ -391,7 +411,10 @@ export function HomeShell({
 
   return (
     <main className="home-page">
-      <WindowControls modalOpen={onboardingOpen} text={shellText} />
+      <WindowControls
+        modalOpen={onboardingOpen || updateDialogOpen || microphoneHelpOpen}
+        text={shellText}
+      />
       <aside className="home-sidebar">
         <nav className="home-nav" aria-label={shellText.mainNav}>
           <button
@@ -544,6 +567,12 @@ export function HomeShell({
           onRestartError={setToast}
         />
       ) : null}
+      {microphoneHelpOpen ? (
+        <MicrophoneHelpDialog
+          markdown={microphoneUnavailableHelpMarkdown}
+          onClose={() => setMicrophoneHelpOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -594,6 +623,8 @@ function AboutPage({
             {versionLabel}
           </p>
         </div>
+
+        <p className="about-page__description">{text.description}</p>
 
         <div
           className="about-page__actions"
@@ -758,15 +789,15 @@ function InfoIcon({ active }: { active: boolean }): React.JSX.Element {
 }
 
 function UserIcon(): React.JSX.Element {
-  return <ThemedIcon name="app" />;
+  return <ThemedIcon name="app" mode="image" />;
 }
 
 function PowerIcon(): React.JSX.Element {
-  return <ThemedIcon name="power" />;
+  return <ThemedIcon name="power" mode="image" />;
 }
 
 function BrandIcon(): React.JSX.Element {
-  return <ThemedIcon name="app" />;
+  return <ThemedIcon name="brand" mode="image" />;
 }
 
 function RefreshIcon(): React.JSX.Element {

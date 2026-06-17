@@ -299,6 +299,13 @@ voice_disk_space_unknown:
 FunctionEnd
 
 Function VoiceWriteInstallOptions
+  IfSilent 0 voice_write_install_options_continue
+  ${GetParameters} $0
+  ${GetOptions} "$0" "--updated" $1
+  IfErrors voice_write_install_options_continue
+  Goto voice_write_install_options_done
+
+voice_write_install_options_continue:
   CreateDirectory "$INSTDIR\resources"
   ClearErrors
   FileOpen $0 "$INSTDIR\resources\install-options.json" w

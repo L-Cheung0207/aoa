@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { join } from "node:path";
 
 const electronMock = vi.hoisted(() => {
   const instances: Array<{
@@ -38,6 +39,10 @@ const electronMock = vi.hoisted(() => {
 
 vi.mock("electron", () => ({
   BrowserWindow: electronMock.BrowserWindow,
+  app: {
+    getAppPath: () => join(__dirname, "../../.."),
+    isPackaged: false
+  },
   screen: electronMock.screen
 }));
 
@@ -108,9 +113,9 @@ describe("overlay window bounds", () => {
   it("sizes the microphone error card without an outer frame", () => {
     expect(calculateOverlayWindowBounds(workArea, "micError")).toEqual({
       width: 360,
-      height: 168,
+      height: 184,
       x: 780,
-      y: 800
+      y: 784
     });
   });
 
@@ -147,6 +152,16 @@ describe("overlay window bounds", () => {
     expect(electronMock.instances[0]?.on).toHaveBeenCalledWith(
       "page-title-updated",
       expect.any(Function)
+    );
+  });
+
+  it("sets the shared app icon before any taskbar-visible window opens", () => {
+    createOverlayWindow();
+
+    expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        icon: join(__dirname, "../../../resources/app-icon.ico")
+      })
     );
   });
 

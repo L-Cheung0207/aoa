@@ -629,7 +629,7 @@ export function SettingsPage({
 
 function SettingsSectionIcon({
   name,
-  mode = "mask",
+  mode = "image",
 }: {
   name: ThemedIconName;
   mode?: "mask" | "image";

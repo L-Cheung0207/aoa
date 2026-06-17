@@ -126,7 +126,7 @@ function createJavaVoiceTranscriptionProvider(
       sessionStarted = false;
 
       console.log(
-        `[java-voice] connecting url=${url} sessionId=${sessionId} mode=${input.mode ?? "direct"}`,
+        `[java-voice] connecting url=${redactUrlForLog(url)} sessionId=${sessionId} mode=${input.mode ?? "direct"}`,
       );
       const activeSocket = new WebSocketConstructor(url);
       socket = activeSocket;
@@ -199,7 +199,7 @@ function createJavaVoiceTranscriptionProvider(
         console.log(`[java-voice] connected sessionId=${sessionId}`);
         const sessionStartPayload = buildSessionStart(sessionId, input);
         console.log(
-          `[java-voice] session_start payload=${JSON.stringify(sessionStartPayload)}`,
+          `[java-voice] session_start summary ${formatSessionStartForLog(sessionStartPayload)}`,
         );
         sendJson(sessionStartPayload);
         console.log(
@@ -215,7 +215,7 @@ function createJavaVoiceTranscriptionProvider(
         );
       } catch (error) {
         console.error(
-          `[java-voice] connect failed sessionId=${sessionId} url=${url}`,
+          `[java-voice] connect failed sessionId=${sessionId} url=${redactUrlForLog(url)}`,
           error,
         );
         cleanup(error instanceof Error ? error : new Error(String(error)));
@@ -295,6 +295,38 @@ function buildSessionStart(
     targetLanguage: input.targetLanguage ?? "en-US",
     ...(input.appContext ? { appContext: input.appContext } : {}),
   };
+}
+
+function formatSessionStartForLog(payload: Record<string, unknown>): string {
+  const selectedText =
+    typeof payload.selectedText === "string" ? payload.selectedText : "";
+  return [
+    `sessionId=${payload.sessionId ?? ""}`,
+    `mode=${payload.mode ?? ""}`,
+    `language=${payload.language ?? ""}`,
+    `sampleRate=${payload.sampleRate ?? ""}`,
+    `postprocessMode=${payload.postprocessMode ?? ""}`,
+    `targetLanguage=${payload.targetLanguage ?? ""}`,
+    `selectedTextLength=${selectedText.length}`,
+    `hasAppContext=${payload.appContext !== undefined}`
+  ].join(" ");
+}
+
+function redactUrlForLog(input: string): string {
+  try {
+    const parsed = new URL(input);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (/^(?:AccessCode|accessCode|token|apiKey|password|secret)$/i.test(key)) {
+        parsed.searchParams.set(key, "***");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return input.replace(
+      /([?&](?:AccessCode|accessCode|token|apiKey|password|secret)=)[^&\s]+/gi,
+      "$1***",
+    );
+  }
 }
 
 function toPostprocessOutput(message: JavaVoiceFinalResult): PostprocessResult {

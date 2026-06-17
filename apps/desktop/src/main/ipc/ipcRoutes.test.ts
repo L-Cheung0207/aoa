@@ -13,7 +13,7 @@ import type { AudioFrame } from "@voice/shared";
 import type { InsertService } from "../insertion/insertService";
 import type { MainTranscriptionService } from "../transcription/mainTranscriptionService";
 import type { UninstallService } from "../uninstall/uninstallService";
-import { createIpcRouteHandlers } from "./ipcRoutes";
+import { createIpcRouteHandlers, registerIpcRoutes } from "./ipcRoutes";
 import type {
   CreateHistoryRecordInput,
   HistoryRecord,
@@ -833,5 +833,157 @@ describe("ipc route handlers", () => {
       deletedIds: ["old-1", "old-2"]
     });
     expect(deletedIds).toEqual(["old-1", "old-2"]);
+  });
+
+  it("logs history mutations without transcript or audio payloads", async () => {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const historyStore: HistoryStore = {
+      create: async (input) => ({
+        id: "history-1",
+        createdAt: "2026-05-27T08:00:00.000Z",
+        ...input
+      }),
+      update: async (id, input) => ({
+        id,
+        createdAt: "2026-05-27T08:00:00.000Z",
+        ...input
+      }),
+      list: async () => [],
+      readAudio: async () => undefined,
+      delete: async () => true,
+      pruneBefore: async () => ["old-1"]
+    };
+    const handlers = createIpcRouteHandlers(
+      createDeps({
+        historyStore,
+        logger: {
+          log: (message) => logs.push(message),
+          warn: (message) => warnings.push(message)
+        }
+      } as Partial<Parameters<typeof createIpcRouteHandlers>[0]>)
+    );
+
+    await handlers.createHistoryRecord({
+      startedAt: "2026-05-27T07:59:00.000Z",
+      durationMs: 1000,
+      mode: "direct",
+      status: "completed",
+      transcript: "secret transcript",
+      finalText: "secret final",
+      audio: {
+        pcm: new Int16Array([1, -1]),
+        sampleRate: 16000
+      }
+    });
+    await handlers.updateHistoryRecord({
+      id: "history-1",
+      startedAt: "2026-05-27T07:59:00.000Z",
+      durationMs: 1200,
+      mode: "direct",
+      status: "completed",
+      transcript: "updated secret",
+      finalText: "updated final"
+    });
+    await handlers.deleteHistoryRecord({ id: "history-1" });
+    await handlers.applyHistoryRetention({
+      retention: "7d",
+      now: "2026-05-28T00:00:00.000Z"
+    });
+
+    expect(logs).toContain(
+      "[history] create id=history-1 mode=direct status=completed durationMs=1000 transcriptLength=17 finalTextLength=12 hasAudio=true"
+    );
+    expect(logs).toContain(
+      "[history] update id=history-1 status=completed durationMs=1200 transcriptLength=14 finalTextLength=13"
+    );
+    expect(logs).toContain("[history] delete id=history-1 deleted=true");
+    expect(logs).toContain("[history] retention retention=7d deleted=1");
+    expect([...logs, ...warnings].join("\n")).not.toContain("secret");
+  });
+});
+
+describe("ipc route logging", () => {
+  it("logs channel lifecycle with sanitized input and duration", async () => {
+    const logs: string[] = [];
+    const handles = new Map<
+      string,
+      (_event: unknown, input?: unknown) => unknown
+    >();
+    const ipcMain = {
+      handle: (
+        channel: string,
+        listener: (_event: unknown, input?: unknown) => unknown
+      ) => {
+        handles.set(channel, listener);
+      }
+    };
+
+    registerIpcRoutes(ipcMain, createDeps(), {
+      logger: {
+        log: (message) => logs.push(message),
+        warn: (message) => logs.push(message)
+      },
+      now: (() => {
+        let current = 1000;
+        return () => {
+          current += 7;
+          return current;
+        };
+      })()
+    });
+
+    await handles.get("voice:copy-text")?.({}, { text: "secret text" });
+
+    expect(logs).toEqual([
+      "[ipc] request channel=voice:copy-text requestId=ipc-1 input={\"textLength\":11}",
+      "[ipc] response channel=voice:copy-text requestId=ipc-1 status=ok durationMs=7"
+    ]);
+    expect(logs.join("\n")).not.toContain("secret text");
+  });
+
+  it("logs failed IPC handlers without leaking sensitive input", async () => {
+    const logs: string[] = [];
+    const handles = new Map<
+      string,
+      (_event: unknown, input?: unknown) => unknown
+    >();
+    registerIpcRoutes(
+      {
+        handle: (channel, listener) => {
+          handles.set(channel, listener);
+        }
+      },
+      createDeps({
+        updateService: {
+          checkForUpdates: async () => {
+            throw new Error("backend down");
+          },
+          restartToUpdate: () => undefined
+        }
+      }),
+      {
+        logger: {
+          log: (message) => logs.push(message),
+          warn: (message) => logs.push(message)
+        },
+        now: (() => {
+          let current = 2000;
+          return () => {
+            current += 5;
+            return current;
+          };
+        })()
+      }
+    );
+
+    await expect(handles.get("voice:check-for-updates")?.({})).rejects.toThrow(
+      "backend down"
+    );
+
+    expect(logs).toEqual([
+      "[ipc] request channel=voice:check-for-updates requestId=ipc-1",
+      "[ipc] response channel=voice:check-for-updates requestId=ipc-1 status=error durationMs=5 error=\"backend down\""
+    ]);
   });
 });

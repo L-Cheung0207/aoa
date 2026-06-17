@@ -253,7 +253,7 @@ function createNodeTranscriptionSocket(
 }
 
 function logIncomingMessage(message: string): void {
-  console.log(`[asr-main] raw message len=${message.length} preview=${previewLogText(message, 160)}`);
+  console.log(`[asr-main] raw message len=${message.length} ${summarizeAsrMessageForLog(message)}`);
 }
 
 function formatNodeCloseEvent(code: unknown, reason: unknown): TranscriptionSocketCloseEvent {
@@ -312,18 +312,50 @@ function describeProxy(
 function redactWsUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    if (parsed.searchParams.has("AccessCode")) {
-      parsed.searchParams.set("AccessCode", "***");
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (/^(?:AccessCode|accessCode|token|apiKey|password|secret)$/i.test(key)) {
+        parsed.searchParams.set(key, "***");
+      }
     }
     return parsed.toString();
   } catch {
-    return url.replace(/(AccessCode=)[^&\s]+/i, "$1***");
+    return url.replace(
+      /([?&](?:AccessCode|accessCode|token|apiKey|password|secret)=)[^&\s]+/gi,
+      "$1***"
+    );
   }
 }
 
 function previewLogText(value: string, limit: number): string {
   const compact = value.replace(/\s+/g, " ");
   return compact.length <= limit ? compact : `${compact.slice(0, limit)}...`;
+}
+
+function summarizeAsrMessageForLog(message: string): string {
+  try {
+    const parsed = JSON.parse(message) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return "summary=non-object";
+    }
+    const record = parsed as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof record.type === "string") {
+      parts.push(`type=${record.type}`);
+    }
+    if (typeof record.code === "string" || typeof record.code === "number") {
+      parts.push(`code=${record.code}`);
+    }
+    for (const key of ["text", "rawText", "transcript", "finalText"]) {
+      const value = record[key];
+      if (typeof value === "string") {
+        parts.push(`${key}Length=${value.length}`);
+      }
+    }
+    parts.push(`keys=${Object.keys(record).join(",")}`);
+    return parts.join(" ");
+  } catch {
+    return `preview=${previewLogText(message, 80)}`;
+  }
 }
 
 function resolveSelectedWsServer(

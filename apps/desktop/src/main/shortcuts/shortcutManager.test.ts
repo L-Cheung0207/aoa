@@ -182,4 +182,33 @@ describe("shortcut manager", () => {
     }
     expect(onToggle).toHaveBeenCalledTimes(3);
   });
+
+  it("logs shortcut configure, conflicts, suspend, and resume lifecycle", () => {
+    const registrar = createRegistrar(new Set(["RightAlt+Space"]));
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const manager = createShortcutManager(registrar, {
+      logger: {
+        log: (message) => logs.push(message),
+        warn: (message) => warnings.push(message)
+      }
+    });
+
+    manager.configure(DEFAULT_CONFIG, { onToggle: () => undefined });
+    manager.suspend();
+    manager.resume();
+
+    expect(logs).toContain(
+      "[shortcut] configure requested toggleRecording=RightAlt processSelection=RightAlt+Space translateDictation=RightAlt+RightShift"
+    );
+    expect(logs).toContain(
+      "[shortcut] registered key=toggleRecording accelerator=RightAlt mode=direct"
+    );
+    expect(logs).toContain("[shortcut] configure completed ok=false registered=2 conflicts=1");
+    expect(logs).toContain("[shortcut] suspend active=2");
+    expect(logs).toContain("[shortcut] resume requested");
+    expect(warnings).toContain(
+      "[shortcut] conflict key=processSelection accelerator=RightAlt+Space mode=processSelection"
+    );
+  });
 });

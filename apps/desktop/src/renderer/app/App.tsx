@@ -47,11 +47,11 @@ const SNAPSHOT_POLL_INTERVAL_MS = 120;
 const MODE_HINT_VISIBLE_MS = 2000;
 const BUSY_HINT_VISIBLE_MS = 5000;
 const INTERACTION_SOUND_DURATION_MS = 90;
+const INTERACTION_SOUND_VOLUME_MULTIPLIER = 2;
 const RECORDING_LIMIT_WARNING_SECONDS = 60;
 const MIN_START_LOADING_MS = 2000;
 const THINKING_TIMEOUT_MS = 10000;
 const CANCELED_OVERLAY_TIMEOUT_MS = 3000;
-const ONBOARDING_MICROPHONE_STEP = 1;
 
 interface ControllerBundle {
   controller: VoiceOperationController;
@@ -239,10 +239,12 @@ export function App(): React.JSX.Element {
   };
 
   const openMicrophoneHelp = (): void => {
-    window.voiceAI.openHomeSection({
-      section: "home",
-      onboardingStep: ONBOARDING_MICROPHONE_STEP,
+    hideBusyHint();
+    hideShortcutHelp();
+    bundleRef.current?.controller.cancel().catch((error) => {
+      console.error("[voice] microphone help cancel failed", error);
     });
+    window.voiceAI.openMicrophoneHelp();
   };
 
   useEffect(() => {
@@ -759,10 +761,14 @@ function playInteractionTone(frequency: number, volume: number): void {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     const now = context.currentTime;
+    const outputVolume = Math.min(
+      1,
+      volume * INTERACTION_SOUND_VOLUME_MULTIPLIER,
+    );
     oscillator.type = "sine";
     oscillator.frequency.setValueAtTime(frequency, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(volume, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(outputVolume, now + 0.015);
     gain.gain.exponentialRampToValueAtTime(
       0.0001,
       now + INTERACTION_SOUND_DURATION_MS / 1000,
@@ -797,11 +803,11 @@ function buildController(input: BuildControllerInput): ControllerBundle {
   });
   if (voiceService.reason === "developer-unified-endpoint") {
     console.warn(
-      `[voice] developer API URL overrides Java voice gateway url=${voiceService.url}`,
+      `[voice] developer API URL overrides Java voice gateway url=${redactUrlForLog(voiceService.url)}`,
     );
   }
   console.log(
-    `[voice] controller using Java voice gateway url=${voiceService.url}`,
+    `[voice] controller using Java voice gateway url=${redactUrlForLog(voiceService.url)}`,
   );
   const transcriptionProvider = createJavaVoiceSessionProvider({
     url: voiceService.url,
@@ -932,4 +938,21 @@ function buildController(input: BuildControllerInput): ControllerBundle {
       URL.revokeObjectURL(workletUrl);
     },
   };
+}
+
+function redactUrlForLog(input: string): string {
+  try {
+    const parsed = new URL(input);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (/^(?:AccessCode|accessCode|token|apiKey|password|secret)$/i.test(key)) {
+        parsed.searchParams.set(key, "***");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return input.replace(
+      /([?&](?:AccessCode|accessCode|token|apiKey|password|secret)=)[^&\s]+/gi,
+      "$1***",
+    );
+  }
 }

@@ -123,35 +123,35 @@
   z-index: 120;
   display: grid;
   place-items: center;
-  background: rgba(9, 12, 18, 0.32);
+  background: rgba(0, 0, 0, 0.48);
   backdrop-filter: blur(1px);
 }
 
 .update-dialog__window {
   position: relative;
   display: grid;
-  width: min(460px, calc(100vw - 48px));
-  min-height: 320px;
+  width: min(424px, calc(100vw - 48px));
+  min-height: 224px;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 50% 0%, rgba(73, 135, 227, 0.18), rgba(73, 135, 227, 0) 34%),
-    #20242b;
+    radial-gradient(circle at 18% 0%, rgba(120, 174, 248, 0.2), rgba(120, 174, 248, 0) 44%),
+    linear-gradient(180deg, #262b34 0%, #20242b 100%);
   box-shadow:
-    0 20px 56px rgba(0, 0, 0, 0.34),
+    0 18px 48px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .update-dialog__close {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 12px;
+  right: 12px;
   z-index: 2;
   display: inline-flex;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -224,17 +224,17 @@
 
 .update-dialog__checking {
   display: grid;
-  min-height: 320px;
+  min-height: 224px;
   align-content: center;
-  padding: 46px 48px;
+  padding: 34px 42px 32px;
 }
 
 .update-dialog__checking h1 {
-  margin: 8px 0 0;
+  margin: 9px 0 0;
   color: #fff;
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 800;
-  line-height: 1.25;
+  line-height: 1.2;
   letter-spacing: 0;
 }
 
@@ -248,7 +248,7 @@
 }
 
 .update-dialog__checking .update-dialog__progress-panel {
-  margin-top: 28px;
+  margin-top: 22px;
 }
 
 .update-dialog__available {
@@ -284,6 +284,16 @@
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+.update-dialog__checking .update-dialog__eyebrow {
+  width: max-content;
+  padding: 3px 9px;
+  color: #64a7ff;
+  border: 1px solid rgba(120, 174, 248, 0.18);
+  border-radius: 999px;
+  background: rgba(120, 174, 248, 0.1);
+  font-size: 12px;
 }
 
 .update-dialog__available .update-dialog__available-copy h1 {
@@ -421,31 +431,41 @@
 
 .update-dialog__progress-panel {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
+}
+
+.update-dialog__progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.update-dialog__progress-head strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .update-dialog__progress {
   width: 100%;
-  height: 12px;
+  height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .update-dialog__progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #4387e3, #8ccff0);
+  background: linear-gradient(90deg, #4387e3, #7fc7ee);
+  box-shadow: 0 0 12px rgba(120, 174, 248, 0.45);
   transition: width 120ms linear;
-}
-
-.update-dialog__progress-panel p {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0;
 }
 
 .update-dialog__actions--center {
@@ -489,14 +509,14 @@
 }
 
 :root[data-theme="light"] .update-dialog {
-  background: rgba(238, 242, 247, 0.36);
+  background: rgba(0, 0, 0, 0.48);
 }
 
 :root[data-theme="light"] .update-dialog__window {
   color: rgba(15, 23, 42, 0.9);
-  border-color: rgba(67, 135, 227, 0.14);
+  border-color: rgba(67, 135, 227, 0.16);
   background:
-    radial-gradient(circle at 50% 0%, rgba(214, 236, 255, 0.76), rgba(214, 236, 255, 0) 38%),
+    radial-gradient(circle at 18% 0%, rgba(214, 236, 255, 0.86), rgba(214, 236, 255, 0) 46%),
     linear-gradient(180deg, #ffffff, #f7f9fc);
   box-shadow:
     0 20px 56px rgba(77, 105, 143, 0.16),
@@ -535,6 +555,11 @@
 
 :root[data-theme="light"] .update-dialog__eyebrow {
   color: #2563d8;
+}
+
+:root[data-theme="light"] .update-dialog__checking .update-dialog__eyebrow {
+  border-color: rgba(67, 135, 227, 0.14);
+  background: rgba(67, 135, 227, 0.08);
 }
 
 :root[data-theme="light"] .update-dialog__notes {
@@ -584,6 +609,10 @@
   background: rgba(71, 85, 105, 0.14);
 }
 
-:root[data-theme="light"] .update-dialog__progress-panel p {
-  color: rgba(51, 65, 85, 0.78);
+:root[data-theme="light"] .update-dialog__progress-head {
+  color: rgba(71, 85, 105, 0.62);
+}
+
+:root[data-theme="light"] .update-dialog__progress-head strong {
+  color: rgba(15, 23, 42, 0.82);
 }

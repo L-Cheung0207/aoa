@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { join } from "node:path";
 
 const electronMock = vi.hoisted(() => {
   const instances: Array<{
@@ -20,6 +21,10 @@ const electronMock = vi.hoisted(() => {
 
 vi.mock("electron", () => ({
   BrowserWindow: electronMock.BrowserWindow,
+  app: {
+    getAppPath: () => join(__dirname, "../../.."),
+    isPackaged: false,
+  },
 }));
 
 vi.mock("./shortcutCaptureWindowGuard", () => ({
@@ -42,6 +47,18 @@ describe("createHomeWindow", () => {
       expect.objectContaining({
         autoHideMenuBar: true,
         frame: false,
+      }),
+    );
+  });
+
+  it("sets the shared app icon for the Windows taskbar", async () => {
+    const { createHomeWindow } = await import("./createHomeWindow");
+
+    createHomeWindow();
+
+    expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        icon: join(__dirname, "../../../resources/app-icon.ico"),
       }),
     );
   });

@@ -78,12 +78,25 @@ export interface PostprocessResult {
   warnings: string[];
 }
 
+export interface PostprocessRequest {
+  installationId: string;
+  rawText: string;
+  selectedText: string;
+  appContext: AppContext;
+  mode: PostprocessMode;
+  language: "auto" | "zh-CN" | "en-US";
+  style: PostprocessStyle;
+  targetLanguage?: "zh-CN" | "en-US";
+  dictionaryTerms: DictionaryTermContext[];
+}
+
 export interface BackendClient {
   bootstrap(request: ClientBootstrapRequest): Promise<ClientBootstrapSnapshot>;
   getServiceStatus(installationId: string): Promise<ServiceStatusSnapshot>;
   createTranscriptionSession(
     request: TranscriptionSessionRequest,
   ): Promise<TranscriptionSession>;
+  postprocess(request: PostprocessRequest): Promise<PostprocessResult>;
 }
 
 export interface BackendErrorPayload {

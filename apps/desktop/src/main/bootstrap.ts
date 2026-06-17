@@ -1,7 +1,7 @@
 import os, { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawn, type SpawnOptions } from "node:child_process";
 import {
   app,
@@ -41,7 +41,11 @@ import {
   createConfigStore,
   type ConfigStorageAdapter,
 } from "./config/configStore";
-import { readAppConfig, resolveAppConfigPath } from "./config/appConfig";
+import {
+  readAppConfig,
+  readMainAppConfig,
+  resolveAppConfigPath,
+} from "./config/appConfig";
 import { createElectronStoreAdapter } from "./config/electronStoreAdapter";
 import { applyLocalEnvFiles } from "./config/localEnv";
 import { getOrCreateInstallationId } from "./installation/installationId";
@@ -56,6 +60,7 @@ import {
 } from "./installer/installerService";
 import { createInsertService } from "./insertion/insertService";
 import { registerIpcRoutes } from "./ipc/ipcRoutes";
+import { formatLogFields, sanitizeUrlForLog } from "./log/logSanitizer";
 import { createNativeBridge } from "./native/nativeBridge";
 import { createSelectionService } from "./selection/selectionService";
 import {
@@ -67,7 +72,10 @@ import { createShortcutCaptureSession } from "./shortcuts/shortcutCaptureSession
 import { createShortcutManager } from "./shortcuts/shortcutManager";
 import { createMainTranscriptionService } from "./transcription/mainTranscriptionService";
 import { createTray } from "./tray/createTray";
-import { createUpdateService } from "./update/updateService";
+import {
+  createUpdateService,
+  type UpdateDownloadProgressPayload,
+} from "./update/updateService";
 import {
   createHttpVersionCheckClient,
   type VersionPhase,
@@ -296,6 +304,28 @@ export function shouldShowShortcutHelpForState(state: string): boolean {
   return state === "idle" || state === "success";
 }
 
+export function handleOpenMicrophoneHelpRequest({
+  overlayWindow,
+  overlayWindowFollower,
+  cancelPendingOverlayHide,
+  openHomeWindow,
+}: {
+  overlayWindow: Pick<BrowserWindow, "hide" | "isDestroyed" | "isVisible">;
+  overlayWindowFollower: { stop(): void };
+  cancelPendingOverlayHide(): void;
+  openHomeWindow(options: {
+    section: "home";
+    showMicrophoneHelp: true;
+  }): void;
+}): void {
+  cancelPendingOverlayHide();
+  overlayWindowFollower.stop();
+  if (!overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+    overlayWindow.hide();
+  }
+  openHomeWindow({ section: "home", showMicrophoneHelp: true });
+}
+
 export function applyNativeTheme(theme: AppSettings["ui"]["theme"]): void {
   nativeTheme.themeSource = theme;
 }
@@ -310,10 +340,41 @@ export function applyLaunchAtLogin(launchAtLogin: boolean): void {
 const OVERLAY_HIDE_DELAY_MS = 0;
 const SELECTION_COPY_DELAY_MS = 80;
 const INSTALL_TARGET_PRODUCT_NAME = "Voice Assistant";
+const WINDOWS_APP_USER_MODEL_ID = "com.ctm.voice-assistant";
 const OPEN_HOME_ON_LAUNCH_ARGS = new Set(["--open-home", "/open-home"]);
+const SILENT_UPDATE_ARGS = new Set(["--silent-update", "/silent-update"]);
+
+export function configureAppIdentity(platform: NodeJS.Platform = process.platform): void {
+  app.setName(INSTALL_TARGET_PRODUCT_NAME);
+  if (platform === "win32") {
+    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  }
+}
 
 export function shouldOpenHomeOnLaunch(argv: readonly string[]): boolean {
   return argv.some((arg) => OPEN_HOME_ON_LAUNCH_ARGS.has(arg.toLowerCase()));
+}
+
+export function parseSilentUpdateInstallDir(
+  argv: readonly string[],
+): string | undefined {
+  if (!argv.some((arg) => SILENT_UPDATE_ARGS.has(arg.toLowerCase()))) {
+    return undefined;
+  }
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    const lowerArg = arg.toLowerCase();
+    if (lowerArg.startsWith("--install-dir=")) {
+      return arg.slice("--install-dir=".length).trim() || undefined;
+    }
+    if (lowerArg === "--install-dir") {
+      return argv[index + 1]?.trim() || undefined;
+    }
+    if (lowerArg.startsWith("/d=")) {
+      return arg.slice("/D=".length).trim() || undefined;
+    }
+  }
+  return undefined;
 }
 
 export function launchInstalledAppHome(input: {
@@ -362,6 +423,7 @@ export function handoffInstallerLaunch(input: {
 }
 
 export async function bootstrap(): Promise<void> {
+  configureAppIdentity();
   registerWindowControlIpc(ipcMain);
   if (!app.isPackaged) {
     const loadedEnvKeys = applyLocalEnvFiles([
@@ -378,12 +440,34 @@ export async function bootstrap(): Promise<void> {
       existsSync(resolveInstallerModeMarkerPath(process.resourcesPath)),
     )
   ) {
-    registerInstallerOnlyIpc(createAppInstallerService());
+    const installerService = createAppInstallerService();
+    const silentUpdateInstallDir = parseSilentUpdateInstallDir(process.argv);
+    if (silentUpdateInstallDir) {
+      try {
+        await installerService.install({
+          installDir: silentUpdateInstallDir,
+          createDesktopShortcut: false,
+          launchAtLogin: false,
+          updated: true,
+        });
+        launchInstalledAppHome({ installDir: silentUpdateInstallDir });
+        app.exit(0);
+      } catch (error) {
+        console.warn("[bootstrap] silent update install failed", error);
+        app.exit(1);
+      }
+      return;
+    }
+    registerInstallerOnlyIpc(installerService);
     openInstallerWindow();
     return;
   }
   if (shouldOpenUninstallWindow(process.argv)) {
-    console.log(`[bootstrap] opening uninstall window argv=${JSON.stringify(process.argv)}`);
+    console.log(
+      `[bootstrap] opening uninstall window ${formatLogFields({
+        argv: summarizeArgvForLog(process.argv),
+      })}`,
+    );
     let uninstallConfirmed = false;
     registerUninstallOnlyIpc(createAppUninstallService(), {
       onFinish: () => {
@@ -412,6 +496,7 @@ export async function bootstrap(): Promise<void> {
   console.log(
     `[bootstrap] runtime packaged=${app.isPackaged} appPath=${app.getAppPath()} resourcesPath=${process.resourcesPath} appConfigPath=${appConfigPath}`,
   );
+  const mainAppConfig = await readMainAppConfig(appConfigPath);
   const configStore = createConfigStore({
     adapter: storeAdapter,
     defaults: createDefaultSettings({ isPackaged: app.isPackaged }),
@@ -426,7 +511,11 @@ export async function bootstrap(): Promise<void> {
   });
   const initialSettings = configStore.get();
   console.log(
-    `[bootstrap] settings developer.enabled=${initialSettings.developer.enabled} wsUrl=${initialSettings.ws.servers[initialSettings.ws.selectedIndex]?.url ?? ""}`,
+    `[bootstrap] settings developer.enabled=${
+      initialSettings.developer.enabled
+    } wsUrl=${redactUrlForLog(
+      initialSettings.ws.servers[initialSettings.ws.selectedIndex]?.url ?? "",
+    )}`,
   );
   applyNativeTheme(initialSettings.ui.theme);
   applyLaunchAtLogin(initialSettings.appBehavior.launchAtLogin);
@@ -481,19 +570,29 @@ export async function bootstrap(): Promise<void> {
   });
   const uninstallService = createAppUninstallService();
   const versionCheckEndpoint = resolveVersionCheckEndpoint({
-    backendBaseUrl: process.env.AOA_BACKEND_BASE_URL,
-    versionCheckUrl: process.env.AOA_VERSION_CHECK_URL,
+    backendBaseUrl: firstConfiguredValue(
+      process.env.AOA_BACKEND_BASE_URL,
+      mainAppConfig.backendBaseUrl
+    ),
+    versionCheckUrl: firstConfiguredValue(
+      process.env.AOA_VERSION_CHECK_URL,
+      mainAppConfig.versionCheckUrl
+    ),
   });
   const versionPhase = resolvePackagedVersionPhase(__AOA_VERSION_PHASE__);
   console.log(
-    `[bootstrap] update versionCheckEndpoint=${versionCheckEndpoint ?? "disabled"} phase=${versionPhase}`
+    `[bootstrap] update versionCheckEndpoint=${
+      versionCheckEndpoint ? redactUrlForLog(versionCheckEndpoint) : "disabled"
+    } phase=${versionPhase}`
   );
   const updateService = createUpdateService({
     allowDevelopmentBackendCheck: Boolean(versionCheckEndpoint),
     autoUpdater: electronUpdater.autoUpdater,
+    currentInstallDir: dirname(app.getPath("exe")),
     currentVersion: app.getVersion(),
     isPackaged: app.isPackaged,
     platform: resolveVersionPlatform(process.platform),
+    quitApp: () => app.quit(),
     updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
     versionCheckClient: createHttpVersionCheckClient({
       endpoint: versionCheckEndpoint,
@@ -501,6 +600,9 @@ export async function bootstrap(): Promise<void> {
     }),
     onUpdateReady: (payload) => {
       broadcastUpdateReady(payload);
+    },
+    onDownloadProgress: (payload) => {
+      broadcastUpdateDownloadProgress(payload);
     },
     onError: (error) => {
       console.warn("[bootstrap] update check failed", error);
@@ -863,6 +965,14 @@ export async function bootstrap(): Promise<void> {
     openHomeWindow({ section: "about", updateReady: payload });
   }
 
+  function broadcastUpdateDownloadProgress(payload: UpdateDownloadProgressPayload): void {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send("voice:update-download-progress", payload);
+      }
+    }
+  }
+
   const initialShortcutResult = configureShortcuts(configStore.get().shortcuts);
   void updateService.checkForUpdates();
 
@@ -872,12 +982,34 @@ export async function bootstrap(): Promise<void> {
     ? join(process.resourcesPath, "app-icon.ico")
     : join(app.getAppPath(), "resources", "app-icon.ico");
   const tray = createTray({
-    onOpenHome: () => openHomeWindow(),
-    onOpenHistory: () => openHomeWindow({ section: "history" }),
-    onOpenSettings: () => openHomeWindow({ section: "settings" }),
-    onCheckUpdates: () => openHomeWindow({ section: "about", showUpdates: true }),
-    onOpenAbout: () => openHomeWindow({ section: "about" }),
-    onQuit: () => app.quit(),
+    onOpenHome: () =>
+      runLoggedTrayAction(console, "open-home", undefined, () =>
+        openHomeWindow(),
+      ),
+    onOpenHistory: () =>
+      runLoggedTrayAction(console, "open-history", { section: "history" }, () =>
+        openHomeWindow({ section: "history" }),
+      ),
+    onOpenSettings: () =>
+      runLoggedTrayAction(
+        console,
+        "open-settings",
+        { section: "settings" },
+        () => openHomeWindow({ section: "settings" }),
+      ),
+    onCheckUpdates: () =>
+      runLoggedTrayAction(
+        console,
+        "check-updates",
+        { section: "about", showUpdates: true },
+        () => openHomeWindow({ section: "about", showUpdates: true }),
+      ),
+    onOpenAbout: () =>
+      runLoggedTrayAction(console, "open-about", { section: "about" }, () =>
+        openHomeWindow({ section: "about" }),
+      ),
+    onQuit: () =>
+      runLoggedTrayAction(console, "quit", undefined, () => app.quit()),
     iconPath: trayIconPath,
   });
   refreshTrayTooltip = (state) => {
@@ -891,6 +1023,7 @@ export async function bootstrap(): Promise<void> {
     options: {
       section?: "home" | "history" | "settings" | "about";
       showUpdates?: boolean;
+      showMicrophoneHelp?: boolean;
       updateReady?: { version?: string };
       onboardingStep?: number;
     } = {},
@@ -909,6 +1042,9 @@ export async function bootstrap(): Promise<void> {
       }
       if (options.showUpdates) {
         homeWindow.webContents.send("voice:open-update-dialog");
+      }
+      if (options.showMicrophoneHelp) {
+        homeWindow.webContents.send("voice:open-microphone-help");
       }
       if (options.onboardingStep !== undefined) {
         homeWindow.webContents.send(
@@ -935,6 +1071,9 @@ export async function bootstrap(): Promise<void> {
       if (options.showUpdates) {
         homeWindow?.webContents.send("voice:open-update-dialog");
       }
+      if (options.showMicrophoneHelp) {
+        homeWindow?.webContents.send("voice:open-microphone-help");
+      }
       if (options.onboardingStep !== undefined) {
         homeWindow?.webContents.send(
           "voice:open-onboarding-step",
@@ -951,34 +1090,52 @@ export async function bootstrap(): Promise<void> {
   }
 
   ipcMain.on("voice:open-home-section-request", (_event, input: unknown) => {
-    const request =
-      typeof input === "object" && input !== null
-        ? (input as {
-            section?: unknown;
-            onboardingStep?: unknown;
-          })
-        : {};
-    const section =
-      request.section === "history" ||
-      request.section === "settings" ||
-      request.section === "about" ||
-      request.section === "home"
-        ? request.section
-        : "home";
-    const onboardingStep =
-      typeof request.onboardingStep === "number" &&
-      Number.isInteger(request.onboardingStep) &&
-      request.onboardingStep >= 0
-        ? request.onboardingStep
-        : undefined;
-    openHomeWindow({
-      section,
-      ...(onboardingStep !== undefined ? { onboardingStep } : {}),
+    withDirectIpcLogging("voice:open-home-section-request", input, () => {
+      const request =
+        typeof input === "object" && input !== null
+          ? (input as {
+              section?: unknown;
+              onboardingStep?: unknown;
+            })
+          : {};
+      const section =
+        request.section === "history" ||
+        request.section === "settings" ||
+        request.section === "about" ||
+        request.section === "home"
+          ? request.section
+          : "home";
+      const onboardingStep =
+        typeof request.onboardingStep === "number" &&
+        Number.isInteger(request.onboardingStep) &&
+        request.onboardingStep >= 0
+          ? request.onboardingStep
+          : undefined;
+      openHomeWindow({
+        section,
+        ...(onboardingStep !== undefined ? { onboardingStep } : {}),
+      });
+    });
+  });
+
+  ipcMain.on("voice:open-microphone-help-request", () => {
+    withDirectIpcLogging("voice:open-microphone-help-request", undefined, () => {
+      handleOpenMicrophoneHelpRequest({
+        overlayWindow,
+        overlayWindowFollower,
+        cancelPendingOverlayHide,
+        openHomeWindow,
+      });
     });
   });
 
   if (shouldOpenHomeOnLaunch(process.argv)) {
-    openHomeWindow();
+    runLoggedBootstrapAction(
+      console,
+      "open-home-on-launch",
+      { argv: summarizeArgvForLog(process.argv) },
+      () => openHomeWindow(),
+    );
   }
 
   // 監聽 renderer 上報的錄音狀態，更新托盤 tooltip（僅開啟/關閉兩態），並控制懸浮窗顯隱。
@@ -997,57 +1154,65 @@ export async function bootstrap(): Promise<void> {
           }
         | undefined,
     ) => {
-      const state = typeof update?.state === "string" ? update.state : "idle";
-      lastRecordingState = state;
-      lastRecordingMode =
-        state === "idle" || state === "success" ? undefined : update?.mode;
-      lastRecordingReason = state === "error" ? update?.reason : undefined;
-      audioDuckingService.handleRecordingState({
-        state,
-        mode: update?.mode,
-      });
-      if (state !== "idle" && state !== "shortcutHelp") {
-        shortcutHelpVisible = false;
-      }
-      const tooltip = formatTrayTooltip(state, configStore.get().ui.language);
-      const visibility = resolveOverlayVisibility(state, update?.reason);
-      console.log(
-        `[bootstrap] 收到錄音狀態 state=${state} mode=${update?.mode ?? "無"} → tooltip="${tooltip}" overlay=${visibility}`,
-      );
-      tray.setToolTip(tooltip);
-
-      const layout = resolveOverlayWindowLayout(state, update?.mode, {
-        ...(update?.reason !== undefined ? { reason: update.reason } : {}),
-        recordingLimitWarning: update?.recordingLimitWarning === true,
-        busyHintVisible: update?.busyHintVisible === true,
-      });
-      if (shouldEnableEscCancelForState(state)) {
-        escCancelController.enable();
-      } else {
-        escCancelController.disable();
-      }
-
-      if (visibility === "show") {
-        showOverlayWithLayout(layout);
-      } else if (visibility === "hide") {
-        scheduleOverlayHide(state);
-      } else {
-        cancelPendingOverlayHide();
-        if (overlayWindow.isVisible()) {
-          applyOverlayWindowLayout(overlayWindow, layout);
-          overlayWindowFollower.start(layout);
+      withDirectIpcLogging("voice:report-recording-state", update, () => {
+        const state = typeof update?.state === "string" ? update.state : "idle";
+        lastRecordingState = state;
+        lastRecordingMode =
+          state === "idle" || state === "success" ? undefined : update?.mode;
+        lastRecordingReason = state === "error" ? update?.reason : undefined;
+        audioDuckingService.handleRecordingState({
+          state,
+          mode: update?.mode,
+        });
+        if (state !== "idle" && state !== "shortcutHelp") {
+          shortcutHelpVisible = false;
         }
-      }
-      // visibility === "keep"：error 態，保持當前顯隱不變，讓使用者看到錯誤提示。
+        const tooltip = formatTrayTooltip(state, configStore.get().ui.language);
+        const visibility = resolveOverlayVisibility(state, update?.reason);
+        console.log(
+          `[bootstrap] 收到錄音狀態 state=${state} mode=${update?.mode ?? "無"} → tooltip="${tooltip}" overlay=${visibility}`,
+        );
+        tray.setToolTip(tooltip);
+
+        const layout = resolveOverlayWindowLayout(state, update?.mode, {
+          ...(update?.reason !== undefined ? { reason: update.reason } : {}),
+          recordingLimitWarning: update?.recordingLimitWarning === true,
+          busyHintVisible: update?.busyHintVisible === true,
+        });
+        if (shouldEnableEscCancelForState(state)) {
+          escCancelController.enable();
+        } else {
+          escCancelController.disable();
+        }
+
+        if (visibility === "show") {
+          showOverlayWithLayout(layout);
+        } else if (visibility === "hide") {
+          scheduleOverlayHide(state);
+        } else {
+          cancelPendingOverlayHide();
+          if (overlayWindow.isVisible()) {
+            applyOverlayWindowLayout(overlayWindow, layout);
+            overlayWindowFollower.start(layout);
+          }
+        }
+        // visibility === "keep"：error 態，保持當前顯隱不變，讓使用者看到錯誤提示。
+      });
     },
   );
 
   ipcMain.handle(
     "voice:set-shortcut-capture-active",
     (event, payload: { active?: boolean } | undefined) => {
-      setShortcutCaptureActive(
-        payload?.active === true,
-        BrowserWindow.fromWebContents(event.sender) ?? undefined,
+      return withDirectIpcLogging(
+        "voice:set-shortcut-capture-active",
+        payload,
+        () => {
+          setShortcutCaptureActive(
+            payload?.active === true,
+            BrowserWindow.fromWebContents(event.sender) ?? undefined,
+          );
+        },
       );
     },
   );
@@ -1098,7 +1263,7 @@ export function resolvePackagedVersionPhase(
   return "ALPHA";
 }
 
-function resolveVersionCheckEndpoint({
+export function resolveVersionCheckEndpoint({
   backendBaseUrl,
   versionCheckUrl
 }: {
@@ -1113,7 +1278,184 @@ function resolveVersionCheckEndpoint({
   if (!normalizedBackendBaseUrl) {
     return undefined;
   }
-  return new URL("/appVersion/check", normalizedBackendBaseUrl).toString();
+  const baseUrl = normalizedBackendBaseUrl.endsWith("/")
+    ? normalizedBackendBaseUrl
+    : `${normalizedBackendBaseUrl}/`;
+  return new URL("appVersion/check", baseUrl).toString();
+}
+
+export function firstConfiguredValue(
+  ...values: Array<string | undefined>
+): string | undefined {
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+export function redactUrlForLog(input: string): string {
+  return sanitizeUrlForLog(input);
+}
+
+export function summarizeArgvForLog(argv: readonly string[]): {
+  count: number;
+  flags: string[];
+} {
+  return {
+    count: argv.length,
+    flags: argv
+      .filter((arg) => arg.startsWith("--") || arg.startsWith("/"))
+      .map((arg) => arg.split("=", 1)[0] ?? ""),
+  };
+}
+
+export interface DirectIpcLogger {
+  log(message: string): void;
+  warn(message: string): void;
+}
+
+export function runLoggedTrayAction<T>(
+  logger: Pick<DirectIpcLogger, "log" | "warn">,
+  action: string,
+  input: unknown,
+  task: () => T,
+): T {
+  return runLoggedAction(logger, "[tray] action", action, input, task);
+}
+
+export function runLoggedBootstrapAction<T>(
+  logger: Pick<DirectIpcLogger, "log" | "warn">,
+  action: string,
+  input: unknown,
+  task: () => T,
+): T {
+  return runLoggedAction(logger, "[bootstrap-action]", action, input, task);
+}
+
+function runLoggedAction<T>(
+  logger: Pick<DirectIpcLogger, "log" | "warn">,
+  prefix: string,
+  action: string,
+  input: unknown,
+  task: () => T,
+): T {
+  logger.log(
+    `${prefix} ${formatLogFields({
+      action,
+      ...(input === undefined ? {} : { input }),
+    })}`,
+  );
+  try {
+    const result = task();
+    if (isPromiseLike(result)) {
+      return result.then(
+        (value) => {
+          logger.log(
+            `${prefix} ${formatLogFields({ action, status: "ok" })}`,
+          );
+          return value;
+        },
+        (error: unknown) => {
+          logger.warn(
+            `${prefix} ${formatLogFields({
+              action,
+              status: "error",
+              error: error instanceof Error ? error.message : String(error),
+            })}`,
+          );
+          throw error;
+        },
+      ) as T;
+    }
+    logger.log(`${prefix} ${formatLogFields({ action, status: "ok" })}`);
+    return result;
+  } catch (error) {
+    logger.warn(
+      `${prefix} ${formatLogFields({
+        action,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      })}`,
+    );
+    throw error;
+  }
+}
+
+export function logDirectIpcRequest(
+  logger: Pick<DirectIpcLogger, "log">,
+  channel: string,
+  input?: unknown,
+): void {
+  logger.log(
+    `[ipc-direct] request ${formatLogFields({
+      channel,
+      ...(input === undefined ? {} : { input }),
+    })}`,
+  );
+}
+
+export function logDirectIpcResponse(
+  logger: Pick<DirectIpcLogger, "log">,
+  channel: string,
+  status: "ok",
+): void {
+  logger.log(`[ipc-direct] response ${formatLogFields({ channel, status })}`);
+}
+
+export function logDirectIpcError(
+  logger: Pick<DirectIpcLogger, "warn">,
+  channel: string,
+  error: unknown,
+): void {
+  logger.warn(
+    `[ipc-direct] response ${formatLogFields({
+      channel,
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+    })}`,
+  );
+}
+
+function withDirectIpcLogging<T>(
+  channel: string,
+  input: unknown,
+  action: () => T,
+): T {
+  logDirectIpcRequest(console, channel, input);
+  try {
+    const result = action();
+    if (isPromiseLike(result)) {
+      return result.then(
+        (value) => {
+          logDirectIpcResponse(console, channel, "ok");
+          return value;
+        },
+        (error: unknown) => {
+          logDirectIpcError(console, channel, error);
+          throw error;
+        },
+      ) as T;
+    }
+    logDirectIpcResponse(console, channel, "ok");
+    return result;
+  } catch (error) {
+    logDirectIpcError(console, channel, error);
+    throw error;
+  }
+}
+
+function isPromiseLike<T>(
+  input: T | PromiseLike<Awaited<T>>,
+): input is PromiseLike<Awaited<T>> {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    "then" in input &&
+    typeof input.then === "function"
+  );
 }
 
 function shouldOpenUninstallWindow(argv: readonly string[]): boolean {
@@ -1154,66 +1496,80 @@ function registerUninstallOnlyIpc(
   uninstallService: UninstallService,
   options: { onFinish?: () => void } = {},
 ): void {
-  ipcMain.handle("voice:perform-uninstall", () =>
-    uninstallService.performUninstall(),
+  ipcMain.handle("voice:perform-uninstall", (_event, input) =>
+    withDirectIpcLogging("voice:perform-uninstall", input, () =>
+      uninstallService.performUninstall(),
+    ),
   );
-  ipcMain.handle("voice:cancel-uninstall", () => {
-    app.exit(1);
-    return undefined;
+  ipcMain.handle("voice:cancel-uninstall", (_event, input) => {
+    return withDirectIpcLogging("voice:cancel-uninstall", input, () => {
+      app.exit(1);
+      return undefined;
+    });
   });
-  ipcMain.handle("voice:finish-uninstall", () => {
-    if (options.onFinish) {
-      options.onFinish();
-    } else {
-      app.quit();
-    }
-    return undefined;
+  ipcMain.handle("voice:finish-uninstall", (_event, input) => {
+    return withDirectIpcLogging("voice:finish-uninstall", input, () => {
+      if (options.onFinish) {
+        options.onFinish();
+      } else {
+        app.quit();
+      }
+      return undefined;
+    });
   });
 }
 
 function registerInstallerOnlyIpc(installerService: InstallerService): void {
-  ipcMain.handle("voice:installer-get-defaults", () =>
-    installerService.getDefaults(),
+  ipcMain.handle("voice:installer-get-defaults", (_event, input) =>
+    withDirectIpcLogging("voice:installer-get-defaults", input, () =>
+      installerService.getDefaults(),
+    ),
   );
   ipcMain.handle("voice:installer-select-directory", async (_event, input) => {
-    const defaultPath =
-      typeof input === "object" &&
-      input !== null &&
-      "defaultPath" in input &&
-      typeof input.defaultPath === "string"
-        ? input.defaultPath
-        : installerService.getDefaults().installDir;
-    const result = await dialog.showOpenDialog({
-      title: "选择安装位置",
-      defaultPath,
-      properties: ["openDirectory", "createDirectory"],
+    return withDirectIpcLogging("voice:installer-select-directory", input, async () => {
+      const defaultPath =
+        typeof input === "object" &&
+        input !== null &&
+        "defaultPath" in input &&
+        typeof input.defaultPath === "string"
+          ? input.defaultPath
+          : installerService.getDefaults().installDir;
+      const result = await dialog.showOpenDialog({
+        title: "选择安装位置",
+        defaultPath,
+        properties: ["openDirectory", "createDirectory"],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true as const };
+      }
+
+      return {
+        canceled: false as const,
+        installDir: installerService.normalizeInstallDir(result.filePaths[0] ?? defaultPath),
+      };
     });
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return { canceled: true as const };
-    }
-
-    return {
-      canceled: false as const,
-      installDir: installerService.normalizeInstallDir(result.filePaths[0] ?? defaultPath),
-    };
   });
   ipcMain.handle("voice:installer-install", (_event, input) => {
-    return installerService.install(parseInstallerShellInstallInput(input));
+    return withDirectIpcLogging("voice:installer-install", input, () =>
+      installerService.install(parseInstallerShellInstallInput(input)),
+    );
   });
   ipcMain.handle("voice:installer-launch", (event, input) => {
-    const installDir =
-      typeof input === "object" &&
-      input !== null &&
-      "installDir" in input &&
-      typeof input.installDir === "string"
-        ? input.installDir
-        : installerService.getDefaults().installDir;
-    handoffInstallerLaunch({
-      installerWindow: BrowserWindow.fromWebContents(event.sender),
-      installDir,
+    return withDirectIpcLogging("voice:installer-launch", input, () => {
+      const installDir =
+        typeof input === "object" &&
+        input !== null &&
+        "installDir" in input &&
+        typeof input.installDir === "string"
+          ? input.installDir
+          : installerService.getDefaults().installDir;
+      handoffInstallerLaunch({
+        installerWindow: BrowserWindow.fromWebContents(event.sender),
+        installDir,
+      });
+      return undefined;
     });
-    return undefined;
   });
 }
 
@@ -1231,6 +1587,7 @@ function parseInstallerShellInstallInput(
     installDir: candidate.installDir,
     createDesktopShortcut: candidate.createDesktopShortcut !== false,
     launchAtLogin: candidate.launchAtLogin !== false,
+    updated: candidate.updated === true,
   };
 }
 

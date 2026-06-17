@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
 import type { AppSettings } from "@voice/shared";
+import { resolveRuntimeAppIconPath } from "./appIcon";
 import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 
 export interface CreateHomeWindowOptions {
@@ -29,6 +30,7 @@ export function createHomeWindow(
     minWidth: 920,
     minHeight: 640,
     show: false,
+    icon: resolveRuntimeAppIconPath(),
     backgroundColor: "#f1f0ed",
     frame: false,
     autoHideMenuBar: true,

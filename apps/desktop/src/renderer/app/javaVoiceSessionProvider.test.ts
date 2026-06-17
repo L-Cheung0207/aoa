@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TranscriptionStartInput } from "@voice/ai";
 import type { AudioFrame } from "@voice/shared";
 import { createJavaVoiceSessionProvider } from "./javaVoiceSessionProvider";
@@ -85,6 +85,10 @@ function sentTypes(socket: FakeWebSocket): string[] {
 }
 
 describe("java voice session provider", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("waits for session_started before resolving start and sending audio", async () => {
     FakeWebSocket.instances = [];
     const provider = createJavaVoiceSessionProvider({
@@ -115,5 +119,46 @@ describe("java voice session provider", () => {
     expect(startResolved).toBe(true);
     provider.sendAudio(audioFrame);
     expect(sentTypes(socket!)).toEqual(["session_start", "audio_frame"]);
+  });
+
+  it("logs session_start metadata without leaking selected text or app context", async () => {
+    FakeWebSocket.instances = [];
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message: unknown) => {
+      logs.push(String(message));
+    });
+    const provider = createJavaVoiceSessionProvider({
+      WebSocketConstructor: FakeWebSocket as unknown as typeof WebSocket,
+      url: "ws://test",
+    });
+
+    const startPromise = provider.start({
+      ...startInput,
+      mode: "processSelection",
+      selectedText: "do not log selected text",
+      appContext: {
+        platform: "windows",
+        appName: "Private App",
+        windowTitle: "Sensitive Window",
+      },
+      postprocessMode: "clean",
+      targetLanguage: "en-US",
+    });
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    socket?.message({ type: "session_started", sessionId: "server-session" });
+    await startPromise;
+
+    const joinedLogs = logs.join("\n");
+    expect(joinedLogs).toContain(
+      "[java-voice] session_start summary sessionId="
+    );
+    expect(joinedLogs).toContain("selectedTextLength=24");
+    expect(joinedLogs).toContain("hasAppContext=true");
+    expect(joinedLogs).not.toContain("do not log selected text");
+    expect(joinedLogs).not.toContain("Private App");
+    expect(joinedLogs).not.toContain("Sensitive Window");
   });
 });

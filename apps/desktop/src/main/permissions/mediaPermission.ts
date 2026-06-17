@@ -10,18 +10,50 @@ interface MediaPermissionDetails {
   mediaTypes?: unknown;
 }
 
+interface MediaPermissionLogger {
+  log(message: string): void;
+}
+
+interface InstallMediaPermissionHandlersOptions {
+  logger?: MediaPermissionLogger | undefined;
+}
+
 export function installMediaPermissionHandlers(
   targetSession: ElectronMediaSession,
+  options: InstallMediaPermissionHandlersOptions = {},
 ): void {
+  const logger = options.logger ?? console;
+
   targetSession.setPermissionRequestHandler(
     (_webContents, permission, callback, details) => {
-      callback(shouldGrantAudioMediaPermission(String(permission), details));
+      const normalizedPermission = String(permission);
+      const granted = shouldGrantAudioMediaPermission(
+        normalizedPermission,
+        details,
+      );
+      logger.log(
+        `[permission] media request permission=${normalizedPermission} mediaTypes=${formatMediaTypes(
+          getRequestedMediaTypes(details),
+        )} granted=${granted}`,
+      );
+      callback(granted);
     },
   );
 
   targetSession.setPermissionCheckHandler(
-    (_webContents, permission, _requestingOrigin, details) =>
-      shouldGrantAudioMediaPermission(String(permission), details),
+    (_webContents, permission, _requestingOrigin, details) => {
+      const normalizedPermission = String(permission);
+      const granted = shouldGrantAudioMediaPermission(
+        normalizedPermission,
+        details,
+      );
+      logger.log(
+        `[permission] media check permission=${normalizedPermission} mediaTypes=${formatMediaTypes(
+          getRequestedMediaTypes(details),
+        )} granted=${granted}`,
+      );
+      return granted;
+    },
   );
 }
 
@@ -48,4 +80,8 @@ function getRequestedMediaTypes(details: unknown): string[] {
 
   const mediaType = mediaDetails?.mediaType;
   return typeof mediaType === "string" ? [mediaType.toLowerCase()] : [];
+}
+
+function formatMediaTypes(mediaTypes: readonly string[]): string {
+  return mediaTypes.length > 0 ? mediaTypes.join(",") : "none";
 }

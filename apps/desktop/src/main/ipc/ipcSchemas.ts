@@ -1,4 +1,7 @@
 import type {
+  AppContext,
+  DictionaryTermContext,
+  PostprocessRequest,
   PostprocessMode,
   PostprocessStyle,
   TranscriptionSessionRequest,
@@ -264,6 +267,25 @@ function isLlmModelConfig(input: unknown): input is LlmModelConfig {
     isOptionalString(input, "proxy") &&
     isOptionalString(input, "proxyUsername") &&
     isOptionalString(input, "proxyPassword")
+  );
+}
+
+function isAppContext(input: unknown): input is AppContext {
+  return (
+    isRecord(input) &&
+    input.platform === "windows" &&
+    typeof input.appName === "string" &&
+    typeof input.windowTitle === "string"
+  );
+}
+
+function isDictionaryTermContext(input: unknown): input is DictionaryTermContext {
+  return (
+    isRecord(input) &&
+    typeof input.id === "string" &&
+    typeof input.source === "string" &&
+    typeof input.replacement === "string" &&
+    isOptionalString(input, "description")
   );
 }
 
@@ -575,6 +597,72 @@ export function parseCreateTranscriptionSessionInput(
     language: input.language as BackendLanguage,
     audioFormat: "pcm16",
     sampleRate: 16000,
+  };
+}
+
+export function parsePostprocessInput(input: unknown): PostprocessRequest {
+  if (!isRecord(input)) {
+    throw new Error("Postprocess input must be an object");
+  }
+  if (
+    typeof input.installationId !== "string" ||
+    input.installationId.length === 0
+  ) {
+    throw new Error("Postprocess input requires installationId");
+  }
+  if (typeof input.rawText !== "string") {
+    throw new Error("Postprocess input requires rawText");
+  }
+  if (typeof input.selectedText !== "string") {
+    throw new Error("Postprocess input requires selectedText");
+  }
+  if (!isAppContext(input.appContext)) {
+    throw new Error("Postprocess input requires appContext");
+  }
+  if (
+    typeof input.mode !== "string" ||
+    !POSTPROCESS_MODES.includes(input.mode as PostprocessMode)
+  ) {
+    throw new Error("Postprocess input requires a valid mode");
+  }
+  if (
+    typeof input.language !== "string" ||
+    !BACKEND_LANGUAGES.includes(input.language as BackendLanguage)
+  ) {
+    throw new Error("Postprocess input requires a valid language");
+  }
+  if (
+    typeof input.style !== "string" ||
+    !POSTPROCESS_STYLES.includes(input.style as PostprocessStyle)
+  ) {
+    throw new Error("Postprocess input requires a valid style");
+  }
+  if (
+    input.targetLanguage !== undefined &&
+    (typeof input.targetLanguage !== "string" ||
+      !TARGET_LANGUAGES.includes(input.targetLanguage as "zh-CN" | "en-US"))
+  ) {
+    throw new Error("Postprocess input requires a valid targetLanguage");
+  }
+  if (
+    !Array.isArray(input.dictionaryTerms) ||
+    !input.dictionaryTerms.every(isDictionaryTermContext)
+  ) {
+    throw new Error("Postprocess input requires dictionaryTerms");
+  }
+
+  return {
+    installationId: input.installationId,
+    rawText: input.rawText,
+    selectedText: input.selectedText,
+    appContext: input.appContext,
+    mode: input.mode as PostprocessMode,
+    language: input.language as BackendLanguage,
+    style: input.style as PostprocessStyle,
+    ...(input.targetLanguage === undefined
+      ? {}
+      : { targetLanguage: input.targetLanguage as "zh-CN" | "en-US" }),
+    dictionaryTerms: input.dictionaryTerms
   };
 }
 

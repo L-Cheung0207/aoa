@@ -1,0 +1,40 @@
+<h2>安装完成后登录：边界确认</h2>
+<p class="subtitle">两种都能复用向导视觉，但进程边界不同。点击更符合预期的一种。</p>
+
+<div class="cards">
+  <div class="card" data-choice="installed-app-wizard" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0">
+        <div class="mockup-header">A：安装器完成后启动已安装 app</div>
+        <div class="mockup-body">
+          <div class="placeholder">安装器：安装文件、写配置、创建快捷方式</div>
+          <div class="placeholder">点击“立即体验”</div>
+          <div class="placeholder">已安装 app：打开登录向导</div>
+          <div class="placeholder">登录成功：设置 → 体验 → 就绪 → 首页</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>推荐：登录在已安装 app 内</h3>
+      <p>认证、token、安全存储都由正式 app 管理。安装器不接触账号凭证。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="installer-process-login" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0">
+        <div class="mockup-header">B：安装器进程内直接登录</div>
+        <div class="mockup-body">
+          <div class="placeholder">安装器：安装完成</div>
+          <div class="placeholder">安装器窗口切到登录页</div>
+          <div class="placeholder">登录成功后把 session 交给已安装 app</div>
+          <div class="placeholder">启动首页</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>不推荐：安装器内登录</h3>
+      <p>要跨进程搬运 session/token，安全边界和失败恢复更复杂。</p>
+    </div>
+  </div>
+</div>

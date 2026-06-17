@@ -158,6 +158,16 @@ describe("single-layer NSIS installer script", () => {
     expect(script).toContain('CreateShortCut "$newDesktopLink"');
   });
 
+  it("does not write first-run install options during silent updates", () => {
+    const script = readInstallerScript();
+
+    expect(script).toContain("IfSilent 0 voice_write_install_options_continue");
+    expect(script).toContain('${GetParameters} $0');
+    expect(script).toContain('${GetOptions} "$0" "--updated" $1');
+    expect(script).toContain("IfErrors voice_write_install_options_continue");
+    expect(script).toContain("Goto voice_write_install_options_done");
+  });
+
   it("does not create a startup-folder shortcut in addition to Electron login items", () => {
     const script = readInstallerScript();
 

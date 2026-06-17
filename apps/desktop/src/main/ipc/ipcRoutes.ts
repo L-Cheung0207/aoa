@@ -2,6 +2,8 @@ import type {
   AppContext,
   BackendClient,
   ClientBootstrapSnapshot,
+  PostprocessRequest,
+  PostprocessResult,
   ServiceStatusSnapshot,
   TranscriptionSession
 } from "@voice/backend-client";
@@ -21,6 +23,7 @@ import {
   type ConnectivityTestResult,
   testWebSocket
 } from "../connectivity/connectivityService";
+import { formatLogFields } from "../log/logSanitizer";
 import {
   parseApplyHistoryRetentionInput,
   parseAudioFrameInput,
@@ -28,6 +31,7 @@ import {
   parseCreateHistoryRecordInput,
   parseCreateTranscriptionSessionInput,
   parseDeleteHistoryRecordInput,
+  parsePostprocessInput,
   parseUpdateHistoryRecordInput,
   parseTranscriptionStartInput,
   parseInsertTextInput,
@@ -47,6 +51,9 @@ export interface IpcRouteDependencies {
   insertService: InsertService;
   selectionService: Pick<SelectionService, "getSelectedText">;
   backendClient: BackendClient;
+  postprocessService?: {
+    postprocess(request: PostprocessRequest): Promise<PostprocessResult>;
+  };
   transcriptionService: MainTranscriptionService;
   uninstallService: UninstallService;
   updateService: Pick<UpdateService, "checkForUpdates" | "restartToUpdate">;
@@ -59,6 +66,7 @@ export interface IpcRouteDependencies {
   onSettingsUpdated?(settings: ReturnType<ConfigStore["get"]>): void;
   onHistoryRecordCreated?(record: Awaited<ReturnType<HistoryStore["create"]>>): void;
   onHistoryRecordDeleted?(id: string): void;
+  logger?: IpcRouteLogger | undefined;
 }
 
 export interface BootstrapClientResponse extends ClientBootstrapSnapshot {
@@ -76,6 +84,7 @@ export interface IpcRouteHandlers {
   bootstrapClient(): Promise<BootstrapClientResponse>;
   getServiceStatus(): Promise<ServiceStatusSnapshot>;
   createTranscriptionSession(input: unknown): Promise<TranscriptionSession>;
+  postprocess(input: unknown): Promise<PostprocessResult>;
   getSelectedText(): Promise<string>;
   getActiveWindow(): Promise<AppContext>;
   testWebSocket(input: unknown): Promise<ConnectivityTestResult>;
@@ -102,6 +111,7 @@ export interface IpcRouteHandlers {
 export function createIpcRouteHandlers(
   dependencies: IpcRouteDependencies
 ): IpcRouteHandlers {
+  const logger = dependencies.logger ?? console;
   return {
     getAppInfo: () => dependencies.appInfo,
     getAppConfig: async () => dependencies.getAppConfig?.(),
@@ -205,6 +215,10 @@ export function createIpcRouteHandlers(
       dependencies.backendClient.createTranscriptionSession(
         parseCreateTranscriptionSessionInput(input)
       ),
+    postprocess: (input) =>
+      (dependencies.postprocessService ?? dependencies.backendClient).postprocess(
+        parsePostprocessInput(input)
+      ),
     getSelectedText: () =>
       dependencies.selectionService.getSelectedText(
         dependencies.getInsertTargetWindowHandle?.()
@@ -240,8 +254,18 @@ export function createIpcRouteHandlers(
       dependencies.updateService.restartToUpdate();
     },
     createHistoryRecord: async (input) => {
-      const record = await dependencies.historyStore.create(
-        parseCreateHistoryRecordInput(input)
+      const parsedInput = parseCreateHistoryRecordInput(input);
+      const record = await dependencies.historyStore.create(parsedInput);
+      logger.log(
+        `[history] create ${formatLogFields({
+          id: record.id,
+          mode: record.mode,
+          status: record.status,
+          durationMs: record.durationMs,
+          transcriptLength: record.transcript?.length ?? 0,
+          finalTextLength: record.finalText?.length ?? 0,
+          hasAudio: parsedInput.audio !== undefined
+        })}`
       );
       dependencies.onHistoryRecordCreated?.(record);
       await pruneExpiredHistoryRecords(dependencies);
@@ -250,6 +274,15 @@ export function createIpcRouteHandlers(
     updateHistoryRecord: async (input) => {
       const { id, ...recordInput } = parseUpdateHistoryRecordInput(input);
       const record = await dependencies.historyStore.update(id, recordInput);
+      logger.log(
+        `[history] update ${formatLogFields({
+          id: record.id,
+          status: record.status ?? "unknown",
+          durationMs: record.durationMs,
+          transcriptLength: record.transcript?.length ?? 0,
+          finalTextLength: record.finalText?.length ?? 0
+        })}`
+      );
       dependencies.onHistoryRecordCreated?.(record);
       await pruneExpiredHistoryRecords(dependencies);
       return record;
@@ -265,6 +298,7 @@ export function createIpcRouteHandlers(
     deleteHistoryRecord: async (input) => {
       const { id } = parseDeleteHistoryRecordInput(input);
       const deleted = await dependencies.historyStore.delete(id);
+      logger.log(`[history] delete ${formatLogFields({ id, deleted })}`);
       if (deleted) {
         dependencies.onHistoryRecordDeleted?.(id);
       }
@@ -281,6 +315,12 @@ export function createIpcRouteHandlers(
         retention,
         now === undefined ? new Date() : new Date(now)
       );
+      logger.log(
+        `[history] retention ${formatLogFields({
+          retention,
+          deleted: deletedIds.length
+        })}`
+      );
       notifyHistoryRecordsDeleted(dependencies, deletedIds);
       return { settings, deletedIds };
     }
@@ -291,85 +331,142 @@ export interface IpcMainAdapter {
   handle(channel: string, listener: (_event: unknown, input?: unknown) => unknown): void;
 }
 
+export interface IpcRouteLogger {
+  log(message: string): void;
+  warn(message: string): void;
+}
+
+export interface RegisterIpcRoutesOptions {
+  logger?: IpcRouteLogger | undefined;
+  now?: (() => number) | undefined;
+}
+
 export function registerIpcRoutes(
   ipcMain: IpcMainAdapter,
-  dependencies: IpcRouteDependencies
+  dependencies: IpcRouteDependencies,
+  options: RegisterIpcRoutesOptions = {}
 ): void {
-  const handlers = createIpcRouteHandlers(dependencies);
+  const logger = options.logger ?? console;
+  const handlers = createIpcRouteHandlers({ ...dependencies, logger });
+  const now = options.now ?? Date.now;
+  let nextRequestId = 0;
 
-  ipcMain.handle("voice:get-app-info", () => handlers.getAppInfo());
-  ipcMain.handle("voice:get-app-config", () => handlers.getAppConfig());
-  ipcMain.handle("voice:get-settings", () => handlers.getSettings());
-  ipcMain.handle("voice:update-settings", (_event, input: unknown) => {
+  const handle = (
+    channel: string,
+    listener: (_event: unknown, input?: unknown) => unknown
+  ): void => {
+    ipcMain.handle(channel, async (event: unknown, input?: unknown) => {
+      const requestId = `ipc-${++nextRequestId}`;
+      const startedAt = now();
+      logger.log(
+        `[ipc] request ${formatLogFields({
+          channel,
+          requestId,
+          ...(input === undefined ? {} : { input })
+        })}`
+      );
+      try {
+        const result = await listener(event, input);
+        logger.log(
+          `[ipc] response ${formatLogFields({
+            channel,
+            requestId,
+            status: "ok",
+            durationMs: now() - startedAt
+          })}`
+        );
+        return result;
+      } catch (error) {
+        logger.warn(
+          `[ipc] response ${formatLogFields({
+            channel,
+            requestId,
+            status: "error",
+            durationMs: now() - startedAt,
+            error: getErrorMessage(error)
+          })}`
+        );
+        throw error;
+      }
+    });
+  };
+
+  handle("voice:get-app-info", () => handlers.getAppInfo());
+  handle("voice:get-app-config", () => handlers.getAppConfig());
+  handle("voice:get-settings", () => handlers.getSettings());
+  handle("voice:update-settings", (_event, input: unknown) => {
     return handlers.updateSettings(input);
   });
-  ipcMain.handle("voice:copy-text", (_event, input: unknown) => {
+  handle("voice:copy-text", (_event, input: unknown) => {
     handlers.copyText(input);
     return undefined;
   });
-  ipcMain.handle("voice:insert-text", (_event, input: unknown) => {
+  handle("voice:insert-text", (_event, input: unknown) => {
     return handlers.insertText(input);
   });
-  ipcMain.handle("voice:replace-selected-text", (_event, input: unknown) => {
+  handle("voice:replace-selected-text", (_event, input: unknown) => {
     return handlers.replaceSelectedText(input);
   });
 
-  ipcMain.handle("voice:bootstrap-client", () => handlers.bootstrapClient());
-  ipcMain.handle("voice:get-service-status", () => handlers.getServiceStatus());
-  ipcMain.handle("voice:refresh-anonymous-client", () => handlers.getServiceStatus());
-  ipcMain.handle("voice:create-transcription-session", (_event, input: unknown) => {
+  handle("voice:bootstrap-client", () => handlers.bootstrapClient());
+  handle("voice:get-service-status", () => handlers.getServiceStatus());
+  handle("voice:refresh-anonymous-client", () => handlers.getServiceStatus());
+  handle("voice:create-transcription-session", (_event, input: unknown) => {
     return handlers.createTranscriptionSession(input);
   });
-  ipcMain.handle("voice:get-selected-text", () => handlers.getSelectedText());
-  ipcMain.handle("voice:get-active-window", () => handlers.getActiveWindow());
-  ipcMain.handle("voice:test-websocket", (_event, input: unknown) => {
+  handle("voice:postprocess", (_event, input: unknown) => {
+    return handlers.postprocess(input);
+  });
+  handle("voice:get-selected-text", () => handlers.getSelectedText());
+  handle("voice:get-active-window", () => handlers.getActiveWindow());
+  handle("voice:test-websocket", (_event, input: unknown) => {
     return handlers.testWebSocket(input);
   });
 
   // preload 已声明以下 API，主流程改为 renderer 直接驱动 controller，
   // 这里保留空 handler 避免 invoke 报 "No handler"。
-  ipcMain.handle("voice:start-recording", () => undefined);
-  ipcMain.handle("voice:stop-recording", () => undefined);
-  ipcMain.handle("voice:cancel-recording", () => undefined);
+  handle("voice:start-recording", () => undefined);
+  handle("voice:stop-recording", () => undefined);
+  handle("voice:cancel-recording", () => undefined);
 
   // ASR 实时转写 —— renderer 调用主进程服务（主进程走 node ws + https-proxy-agent）。
-  ipcMain.handle("voice:start-transcription", (_event, input: unknown) => {
+  handle("voice:start-transcription", (_event, input: unknown) => {
     return handlers.startTranscription(input);
   });
-  ipcMain.handle("voice:send-transcription-audio", (_event, input: unknown) => {
+  handle("voice:send-transcription-audio", (_event, input: unknown) => {
     handlers.sendTranscriptionAudio(input);
     return undefined;
   });
-  ipcMain.handle("voice:stop-transcription", () => handlers.stopTranscription());
-  ipcMain.handle("voice:cancel-transcription", () => handlers.cancelTranscription());
-  ipcMain.handle("voice:perform-uninstall", () => handlers.performUninstall());
-  ipcMain.handle("voice:cancel-uninstall", () => {
+  handle("voice:stop-transcription", () => handlers.stopTranscription());
+  handle("voice:cancel-transcription", () => handlers.cancelTranscription());
+  handle("voice:perform-uninstall", () => handlers.performUninstall());
+  handle("voice:cancel-uninstall", () => {
     handlers.cancelUninstall();
     return undefined;
   });
-  ipcMain.handle("voice:finish-uninstall", () => {
+  handle("voice:finish-uninstall", () => {
     handlers.finishUninstall();
     return undefined;
   });
-  ipcMain.handle("voice:check-for-updates", () => handlers.checkForUpdates());
-  ipcMain.handle("voice:restart-to-update", () => {
+  handle("voice:check-for-updates", () => handlers.checkForUpdates());
+  handle("voice:restart-to-update", () => {
     handlers.restartToUpdate();
     return undefined;
   });
-  ipcMain.handle("voice:create-history-record", (_event, input: unknown) => {
+  handle("voice:create-history-record", (_event, input: unknown) => {
     return handlers.createHistoryRecord(input);
   });
-  ipcMain.handle("voice:update-history-record", (_event, input: unknown) => {
+  handle("voice:update-history-record", (_event, input: unknown) => {
     return handlers.updateHistoryRecord(input);
   });
-  ipcMain.handle("voice:list-history-records", () => handlers.listHistoryRecords());
-  ipcMain.handle("voice:read-history-audio", (_event, input: unknown) => {
+  handle("voice:list-history-records", () => handlers.listHistoryRecords());
+  handle("voice:read-history-audio", (_event, input: unknown) => {
     return handlers.readHistoryAudio(input);
   });
-  ipcMain.handle("voice:delete-history-record", (_event, input: unknown) => {
+  handle("voice:delete-history-record", (_event, input: unknown) => {
     return handlers.deleteHistoryRecord(input);
   });
-  ipcMain.handle("voice:apply-history-retention", (_event, input: unknown) => {
+  handle("voice:apply-history-retention", (_event, input: unknown) => {
     return handlers.applyHistoryRetention(input);
   });
 }
@@ -390,6 +487,10 @@ function createReplacementFailure(
 
 function normalizeSelectionText(text: string): string {
   return text.replace(/\r\n/g, "\n");
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function pruneExpiredHistoryRecords(

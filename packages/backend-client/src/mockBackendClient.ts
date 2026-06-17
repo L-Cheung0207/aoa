@@ -5,6 +5,8 @@ import type {
   ServiceStatusSnapshot,
   TranscriptionSession,
   TranscriptionSessionRequest,
+  PostprocessRequest,
+  PostprocessResult,
 } from "./types";
 
 const featureFlags = {
@@ -50,6 +52,19 @@ export function createMockBackendClient(): BackendClient {
         token: "mock-short-lived-token",
         expiresInSeconds: 120,
         provider: "mock",
+      };
+    },
+
+    async postprocess(request: PostprocessRequest): Promise<PostprocessResult> {
+      return {
+        action: request.selectedText ? "replace_selection" : "insert",
+        finalText:
+          request.mode === "translate"
+            ? "Meeting tomorrow at 3 PM."
+            : "明天下午三点开会。",
+        confidence: 0.92,
+        usedDictionaryTermIds: request.dictionaryTerms.map((term) => term.id),
+        warnings: [],
       };
     },
   };
