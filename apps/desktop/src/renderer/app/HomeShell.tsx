@@ -5,13 +5,14 @@ import { HomePage } from "../features/home/HomePage";
 import { MicrophoneHelpDialog } from "../features/home/MicrophoneHelpDialog";
 import { OnboardingGuide } from "../features/home/components/OnboardingGuide";
 import { buildHomeUsageStats } from "../features/home/homeUsageStats";
+import privacyPolicyMarkdown from "../features/home/legal-documents/privacy-policy.md?raw";
+import userAgreementMarkdown from "../features/home/legal-documents/user-agreement.md?raw";
 import microphoneUnavailableHelpMarkdown from "../features/home/microphone-unavailable-help.md?raw";
 import { normalizeConnectionSettings } from "../features/settings/connectionSettings";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { MarkdownContent } from "../shared/ui/MarkdownContent";
 import { ThemedIcon } from "../shared/ui/ThemedIcon";
-import {
-  UpdateDialog
-} from "../features/update/UpdateDialog";
+import { UpdateDialog } from "../features/update/UpdateDialog";
 import type { UpdateReadyPayload } from "../../preload/voiceApi";
 
 interface HomeShellProps {
@@ -23,6 +24,7 @@ interface HomeShellProps {
 
 type HomeSection = "home" | "history" | "settings" | "about";
 type HomeShellLanguage = AppSettings["ui"]["language"];
+type LegalDocumentKind = "agreement" | "privacy";
 
 const DEFAULT_VERSION_LABEL = "v0.0.0";
 const DEFAULT_DEVICE_NAME = "";
@@ -55,8 +57,7 @@ type HomeShellText = {
   userAgreement: string;
   privacyPolicy: string;
   contactPendingToast: string;
-  agreementPendingToast: string;
-  privacyPendingToast: string;
+  closeLegalDocument: string;
   windowControls: string;
   minimize: string;
   maximize: string;
@@ -90,11 +91,10 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     currentVersionPrefix: "当前版本 ",
     checkUpdates: "检查更新",
     contact: "联系我们",
-    userAgreement: "用户协议",
+    userAgreement: "用户服务协议",
     privacyPolicy: "隐私政策",
     contactPendingToast: "联系我们：功能开发中",
-    agreementPendingToast: "用户协议：功能开发中",
-    privacyPendingToast: "隐私政策：功能开发中",
+    closeLegalDocument: "关闭",
     windowControls: "窗口控制",
     minimize: "最小化",
     maximize: "最大化",
@@ -121,16 +121,14 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     aboutPage: "關於頁面",
     aboutActions: "關於頁面操作",
     welcome: "歡迎使用 Voice Assistant Service",
-    description:
-      "欢迎来到 告别打字的时代。欢迎使用 Voice Assistant。",
+    description: "欢迎来到 告别打字的时代。欢迎使用 Voice Assistant。",
     currentVersionPrefix: "當前版本 ",
     checkUpdates: "檢查更新",
     contact: "聯絡我們",
-    userAgreement: "使用者協議",
+    userAgreement: "用户服务协议",
     privacyPolicy: "隱私政策",
     contactPendingToast: "聯絡我們：功能開發中",
-    agreementPendingToast: "使用者協議：功能開發中",
-    privacyPendingToast: "隱私政策：功能開發中",
+    closeLegalDocument: "關閉",
     windowControls: "視窗控制",
     minimize: "最小化",
     maximize: "最大化",
@@ -165,8 +163,7 @@ const HOME_SHELL_TEXT: Record<HomeShellLanguage, HomeShellText> = {
     userAgreement: "User Agreement",
     privacyPolicy: "Privacy Policy",
     contactPendingToast: "Contact us: coming soon",
-    agreementPendingToast: "User Agreement: coming soon",
-    privacyPendingToast: "Privacy Policy: coming soon",
+    closeLegalDocument: "Close",
     windowControls: "Window controls",
     minimize: "Minimize",
     maximize: "Maximize",
@@ -205,6 +202,9 @@ export function HomeShell({
   );
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [microphoneHelpOpen, setMicrophoneHelpOpen] = useState(false);
+  const [legalDocument, setLegalDocument] = useState<
+    LegalDocumentKind | undefined
+  >(undefined);
   const [updateReady, setUpdateReady] = useState<
     UpdateReadyPayload | undefined
   >(undefined);
@@ -513,9 +513,9 @@ export function HomeShell({
             text={shellText}
             versionLabel={versionLabel}
             onCheckUpdates={openUpdateDialog}
-            onContact={() => { }}
-            onOpenAgreement={() => { }}
-            onOpenPrivacy={() => { }}
+            onContact={() => {}}
+            onOpenAgreement={() => setLegalDocument("agreement")}
+            onOpenPrivacy={() => setLegalDocument("privacy")}
           />
         ) : null}
         {activeSection === "home" ? (
@@ -573,6 +573,22 @@ export function HomeShell({
         <MicrophoneHelpDialog
           markdown={microphoneUnavailableHelpMarkdown}
           onClose={() => setMicrophoneHelpOpen(false)}
+        />
+      ) : null}
+      {legalDocument ? (
+        <LegalDocumentDialog
+          title={
+            legalDocument === "agreement"
+              ? shellText.userAgreement
+              : shellText.privacyPolicy
+          }
+          closeLabel={shellText.closeLegalDocument}
+          markdown={
+            legalDocument === "agreement"
+              ? userAgreementMarkdown
+              : privacyPolicyMarkdown
+          }
+          onClose={() => setLegalDocument(undefined)}
         />
       ) : null}
     </main>
@@ -634,28 +650,24 @@ function AboutPage({
           aria-label={text.aboutActions}
         >
           <AboutActionRow
-            icon="refresh"
+            icon="aboutCheckUpdates"
             label={text.checkUpdates}
             onClick={onCheckUpdates}
           />
           <AboutActionRow
-            icon="mail"
+            icon="aboutContactEmail"
             label={text.contact}
             onClick={() => runWithToast(text.contactPendingToast, onContact)}
           />
           <AboutActionRow
-            icon="file"
+            icon="aboutUserAgreement"
             label={text.userAgreement}
-            onClick={() =>
-              runWithToast(text.agreementPendingToast, onOpenAgreement)
-            }
+            onClick={onOpenAgreement}
           />
           <AboutActionRow
-            icon="shield"
+            icon="aboutPrivacyPolicy"
             label={text.privacyPolicy}
-            onClick={() =>
-              runWithToast(text.privacyPendingToast, onOpenPrivacy)
-            }
+            onClick={onOpenPrivacy}
           />
         </div>
       </div>
@@ -674,7 +686,11 @@ function AboutActionRow({
   label,
   onClick,
 }: {
-  icon: "refresh" | "mail" | "file" | "shield";
+  icon:
+    | "aboutCheckUpdates"
+    | "aboutContactEmail"
+    | "aboutUserAgreement"
+    | "aboutPrivacyPolicy";
   label: string;
   onClick(): void;
 }): React.JSX.Element {
@@ -686,13 +702,51 @@ function AboutActionRow({
       onClick={onClick}
     >
       <span className="about-row__icon" aria-hidden="true">
-        {icon === "refresh" ? <RefreshIcon /> : null}
-        {icon === "mail" ? <MailIcon /> : null}
-        {icon === "file" ? <FileIcon /> : null}
-        {icon === "shield" ? <ShieldIcon /> : null}
+        <AboutActionIcon name={icon} />
       </span>
       <span className="about-row__label">{label}</span>
     </button>
+  );
+}
+
+function LegalDocumentDialog({
+  title,
+  closeLabel,
+  markdown,
+  onClose,
+}: {
+  title: string;
+  closeLabel: string;
+  markdown: string;
+  onClose(): void;
+}): React.JSX.Element {
+  return (
+    <div
+      className="legal-document-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="legal-document-dialog-title"
+    >
+      <section className="legal-document-dialog__window">
+        <header className="legal-document-dialog__header">
+          <div>
+            <h1 id="legal-document-dialog-title">{title}</h1>
+          </div>
+          <button
+            type="button"
+            className="legal-document-dialog__close"
+            aria-label={closeLabel}
+            onClick={onClose}
+          >
+            <ThemedIcon name="close" />
+          </button>
+        </header>
+        <MarkdownContent
+          className="legal-document-dialog__content"
+          markdown={markdown}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -756,10 +810,7 @@ function formatVersionLabel(appVersion: string): string {
 
 function HomeIcon({ active }: { active: boolean }): React.JSX.Element {
   return (
-    <ThemedIcon
-      name={active ? "navHomeActive" : "navHomeMuted"}
-      mode="image"
-    />
+    <ThemedIcon name={active ? "navHomeActive" : "navHomeMuted"} mode="image" />
   );
 }
 
@@ -802,18 +853,14 @@ function BrandIcon(): React.JSX.Element {
   return <ThemedIcon name="brand" mode="image" />;
 }
 
-function RefreshIcon(): React.JSX.Element {
-  return <ThemedIcon name="refresh" />;
-}
-
-function MailIcon(): React.JSX.Element {
-  return <ThemedIcon name="mail" />;
-}
-
-function FileIcon(): React.JSX.Element {
-  return <ThemedIcon name="file" />;
-}
-
-function ShieldIcon(): React.JSX.Element {
-  return <ThemedIcon name="privacy" />;
+function AboutActionIcon({
+  name,
+}: {
+  name:
+    | "aboutCheckUpdates"
+    | "aboutContactEmail"
+    | "aboutUserAgreement"
+    | "aboutPrivacyPolicy";
+}): React.JSX.Element {
+  return <ThemedIcon name={name} mode="image" />;
 }

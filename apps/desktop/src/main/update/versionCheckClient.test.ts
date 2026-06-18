@@ -32,7 +32,7 @@ describe("version check client", () => {
     ).resolves.toEqual({ hasUpdate: false });
     expect(fetch).toHaveBeenCalledWith(
       "https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3&phase=ALPHA",
-      { method: "GET" }
+      expect.objectContaining({ method: "GET" })
     );
     expect(logger.log).toHaveBeenCalledWith(
       "[update] version check request url=https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3&phase=ALPHA"
@@ -63,7 +63,7 @@ describe("version check client", () => {
     ).resolves.toEqual({ hasUpdate: false });
     expect(fetch).toHaveBeenCalledWith(
       "https://api.example.com/appVersion/check?platform=WINDOWS&currentVersion=1.2.3&phase=BETA",
-      { method: "GET" }
+      expect.objectContaining({ method: "GET" })
     );
   });
 
@@ -138,7 +138,7 @@ describe("version check client", () => {
 
     expect(fetch).toHaveBeenCalledWith(
       "https://api.example.com/appVersion/check?token=secret&platform=WINDOWS&currentVersion=1.2.3&phase=ALPHA",
-      { method: "GET" }
+      expect.objectContaining({ method: "GET" })
     );
     expect(logger.log).toHaveBeenCalledWith(
       "[update] version check request url=https://api.example.com/appVersion/check?token=***&platform=WINDOWS&currentVersion=1.2.3&phase=ALPHA"
@@ -243,12 +243,7 @@ describe("version check client", () => {
     const logger = createLogger();
     const client = createHttpVersionCheckClient({
       endpoint: "https://api.example.com/appVersion/check",
-      fetch: vi.fn(async () => ({
-        ok: false,
-        status: 500,
-        statusText: "Internal Server Error",
-        json: async () => ({ message: "boom" })
-      })),
+      fetch: vi.fn(async () => createJsonResponse({ message: "boom" }, 500)),
       logger
     });
 
@@ -268,18 +263,9 @@ function createLogger() {
   };
 }
 
-function createJsonResponse(body: unknown): {
-  ok: true;
-  status: 200;
-  statusText: "OK";
-  json(): Promise<unknown>;
-} {
-  return {
-    ok: true,
-    status: 200,
-    statusText: "OK",
-    async json() {
-      return body;
-    }
-  };
+function createJsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
 }

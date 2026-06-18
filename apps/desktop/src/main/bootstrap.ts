@@ -115,6 +115,7 @@ import { createHomeWindow } from "./windows/createHomeWindow";
 import { createInstallerWindow } from "./windows/createInstallerWindow";
 import { createLoginSetupWindow } from "./windows/createLoginSetupWindow";
 import { createUninstallWindow } from "./windows/createUninstallWindow";
+import { resolveRuntimeAppIconPath } from "./windows/appIcon";
 import {
   blockHomeWindowAltSpaceMenu,
   ensureShortcutCaptureWindowGuards,
@@ -365,6 +366,10 @@ const SELECTION_COPY_DELAY_MS = 80;
 const INSTALL_TARGET_PRODUCT_NAME = "Voice Assistant";
 const WINDOWS_APP_USER_MODEL_ID = "com.ctm.voice-assistant";
 const OPEN_HOME_ON_LAUNCH_ARGS = new Set(["--open-home", "/open-home"]);
+const POST_INSTALL_LOGIN_ARGS = new Set([
+  "--post-install-login",
+  "/post-install-login",
+]);
 const SILENT_UPDATE_ARGS = new Set(["--silent-update", "/silent-update"]);
 
 export function configureAppIdentity(
@@ -376,8 +381,59 @@ export function configureAppIdentity(
   }
 }
 
+export function resolveDevelopmentRuntime({
+  isPackaged,
+  electronRendererUrl,
+}: {
+  isPackaged: boolean;
+  electronRendererUrl?: string | undefined;
+}): boolean {
+  return !isPackaged || Boolean(electronRendererUrl);
+}
+
+export function createDevelopmentAwareBackendClient({
+  backendClient,
+  isDevelopmentRuntime,
+  getAuthSessionSnapshot,
+}: {
+  backendClient: BackendClient;
+  isDevelopmentRuntime: boolean;
+  getAuthSessionSnapshot(): AuthSessionSnapshot;
+}): BackendClient {
+  return {
+    ...backendClient,
+    bootstrap: async (request) => {
+      const snapshot = getAuthSessionSnapshot();
+      if (
+        isDevelopmentRuntime &&
+        snapshot.status === "authenticated" &&
+        snapshot.featureFlags?.developmentAuthBypass === true
+      ) {
+        return {
+          clientId: `dev-${request.installationId}`,
+          serviceStatus: "ok",
+          featureFlags: {
+            realtimeTranscription: true,
+            history: true,
+          },
+          anonymousQuota: {
+            transcriptionSecondsRemaining: 3600,
+          },
+        };
+      }
+      return backendClient.bootstrap(request);
+    },
+  };
+}
+
 export function shouldOpenHomeOnLaunch(argv: readonly string[]): boolean {
   return argv.some((arg) => OPEN_HOME_ON_LAUNCH_ARGS.has(arg.toLowerCase()));
+}
+
+export function shouldOpenPostInstallLoginOnLaunch(
+  argv: readonly string[],
+): boolean {
+  return argv.some((arg) => POST_INSTALL_LOGIN_ARGS.has(arg.toLowerCase()));
 }
 
 export function parseSilentUpdateInstallDir(
@@ -448,6 +504,7 @@ export function handoffInstallerLaunch(input: {
 }
 
 const AUTH_IPC_CHANNELS = new Set([
+  "voice:get-app-info",
   "voice:auth:get-session",
   "voice:auth:send-email-code",
   "voice:auth:login-email-code",
@@ -506,6 +563,8 @@ export interface StartupGateOptions {
   stopAuthenticatedRuntime(): void;
   showLoginSetupWindow(snapshot: AuthSessionSnapshot): void;
   hideLoginSetupWindow?(): void;
+  forceLoginSetupOnAuthenticatedRestore?: boolean;
+  onLoginSetupReady?(complete: () => Promise<void>): void;
 }
 
 export async function runStartupGate(
@@ -514,6 +573,9 @@ export async function runStartupGate(
   let runtimeStarted = false;
   let desiredAuthenticated = false;
   let loginSetupVisible = false;
+  let loginSetupCanComplete = false;
+  let forceLoginSetupOnAuthenticatedRestore =
+    options.forceLoginSetupOnAuthenticatedRestore === true;
   let transition = Promise.resolve();
 
   const reconcileRuntime = async (): Promise<void> => {
@@ -543,13 +605,35 @@ export async function runStartupGate(
     return transition;
   };
 
+  const completeLoginSetup = (): Promise<void> => {
+    if (!loginSetupCanComplete) {
+      return Promise.resolve();
+    }
+    desiredAuthenticated = true;
+    return scheduleTransition();
+  };
+
+  options.onLoginSetupReady?.(completeLoginSetup);
+
   const handleSnapshot = (
     snapshot: AuthSessionSnapshot,
   ): Promise<void> | void => {
     if (snapshot.status === "authenticated") {
+      if (
+        (loginSetupVisible || forceLoginSetupOnAuthenticatedRestore) &&
+        !runtimeStarted
+      ) {
+        forceLoginSetupOnAuthenticatedRestore = false;
+        loginSetupCanComplete = true;
+        loginSetupVisible = true;
+        options.showLoginSetupWindow(snapshot);
+        return undefined;
+      }
+      loginSetupCanComplete = false;
       desiredAuthenticated = true;
       return scheduleTransition();
     }
+    loginSetupCanComplete = false;
     desiredAuthenticated = false;
     loginSetupVisible = true;
     options.showLoginSetupWindow(snapshot);
@@ -563,10 +647,14 @@ export async function runStartupGate(
 }
 
 export async function bootstrap(): Promise<void> {
+  const isDevelopmentRuntime = resolveDevelopmentRuntime({
+    isPackaged: app.isPackaged,
+    electronRendererUrl: process.env.ELECTRON_RENDERER_URL,
+  });
   configureAppIdentity();
-  configureLogSanitizer({ revealSensitive: !app.isPackaged });
+  configureLogSanitizer({ revealSensitive: isDevelopmentRuntime });
   registerWindowControlIpc(ipcMain);
-  if (!app.isPackaged) {
+  if (isDevelopmentRuntime) {
     const loadedEnvKeys = applyLocalEnvFiles([
       join(app.getAppPath(), "..", "..", ".env"),
       join(app.getAppPath(), ".env"),
@@ -637,7 +725,7 @@ export async function bootstrap(): Promise<void> {
     resourcesPath: process.resourcesPath,
   });
   console.log(
-    `[bootstrap] runtime packaged=${app.isPackaged} appPath=${app.getAppPath()} resourcesPath=${process.resourcesPath} appConfigPath=${appConfigPath}`,
+    `[bootstrap] runtime packaged=${app.isPackaged} development=${isDevelopmentRuntime} appPath=${app.getAppPath()} resourcesPath=${process.resourcesPath} appConfigPath=${appConfigPath}`,
   );
   const mainAppConfig = await readMainAppConfig(appConfigPath);
   const configStore = createConfigStore({
@@ -679,11 +767,16 @@ export async function bootstrap(): Promise<void> {
       appVersion: app.getVersion(),
       locale: configStore.get().ui.language,
     },
+    allowDevelopmentBypass: isDevelopmentRuntime,
     encryptLdapPassword,
   });
-  const backendClient = createHttpBackendClient({
-    baseUrl: resolveAuthBaseUrl(),
-    getAccessToken: () => authService.getAccessTokenForRequest(),
+  const backendClient = createDevelopmentAwareBackendClient({
+    backendClient: createHttpBackendClient({
+      baseUrl: resolveAuthBaseUrl(),
+      getAccessToken: () => authService.getAccessTokenForRequest(),
+    }),
+    isDevelopmentRuntime,
+    getAuthSessionSnapshot: () => authService.getSessionSnapshot(),
   });
   const nativeBridge = createNativeBridge({
     loadHelper: () => ({
@@ -840,6 +933,7 @@ export async function bootstrap(): Promise<void> {
     appInfo: {
       deviceName: os.hostname(),
       appVersion: app.getVersion(),
+      isPackaged: !isDevelopmentRuntime,
     },
     getAppConfig: () => readAppConfig(appConfigPath),
     getInsertTargetWindowHandle: () => insertTargetWindowHandle,
@@ -859,6 +953,13 @@ export async function bootstrap(): Promise<void> {
     },
   });
   console.log("[bootstrap] IPC 路由已註冊");
+  let completeLoginSetup: (() => Promise<void>) | undefined;
+  createAuthenticatedIpcMainAdapter(ipcMain, authService).handle(
+    "voice:auth:complete-login-setup",
+    async () => {
+      await completeLoginSetup?.();
+    },
+  );
 
   const broadcastAuthSessionChanged = (snapshot: AuthSessionSnapshot): void => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -873,6 +974,8 @@ export async function bootstrap(): Promise<void> {
   let latestLoginSetupSnapshot: AuthSessionSnapshot = {
     status: "unauthenticated",
   };
+  const openPostInstallLoginOnLaunch =
+    shouldOpenPostInstallLoginOnLaunch(process.argv);
   const showLoginSetupWindowWithLatestSnapshot = (): void => {
     if (!loginSetupWindow || loginSetupWindow.isDestroyed()) {
       return;
@@ -891,7 +994,9 @@ export async function bootstrap(): Promise<void> {
       return;
     }
 
-    loginSetupWindow = createLoginSetupWindow();
+    loginSetupWindow = createLoginSetupWindow({
+      route: openPostInstallLoginOnLaunch ? "postInstallLogin" : "loginSetup",
+    });
     loginSetupWindow.once(
       "ready-to-show",
       showLoginSetupWindowWithLatestSnapshot,
@@ -1279,9 +1384,7 @@ export async function bootstrap(): Promise<void> {
 
     // 托盤圖示：開發態從 app.getAppPath()/resources 讀取；打包後從 process.resourcesPath 讀取，
     // 需要在 electron-builder 的 extraResources 中把 resources/app-icon.ico 投放到 resources 目錄。
-    const trayIconPath = app.isPackaged
-      ? join(process.resourcesPath, "app-icon.ico")
-      : join(app.getAppPath(), "resources", "app-icon.ico");
+    const trayIconPath = resolveRuntimeAppIconPath();
     const tray = createTray({
       onOpenHome: () =>
         runLoggedTrayAction(
@@ -1679,6 +1782,10 @@ export async function bootstrap(): Promise<void> {
     },
     showLoginSetupWindow: openLoginSetupWindow,
     hideLoginSetupWindow,
+    forceLoginSetupOnAuthenticatedRestore: openPostInstallLoginOnLaunch,
+    onLoginSetupReady: (complete) => {
+      completeLoginSetup = complete;
+    },
   });
 }
 

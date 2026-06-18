@@ -42,13 +42,15 @@
     },
     "electronDist": "../../node_modules/electron/dist",
     "electronVersion": "35.7.5",
+    "afterPack": "scripts/after-pack.mjs",
     "files": [
       "out/**/*",
       "package.json",
       "!node_modules/@voice/ai/**",
       "!node_modules/@voice/shared/**",
       "!node_modules/@voice/backend-client/**",
-      "!node_modules/@voice/db/**"
+      "!node_modules/@voice/db/**",
+      "!**/target/**"
     ],
     "extraResources": [
       {
@@ -67,7 +69,7 @@
     "asar": true,
     "npmRebuild": false,
     "win": {
-      "signAndEditExecutable": false,
+      "signAndEditExecutable": true,
       "target": [
         {
           "target": "nsis",

@@ -3,7 +3,9 @@ import { BrowserWindow } from "electron";
 import { resolveRuntimeAppIconPath } from "./appIcon";
 import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 
-export function createLoginSetupWindow(): BrowserWindow {
+export function createLoginSetupWindow(
+  options: { route?: "loginSetup" | "postInstallLogin" } = {},
+): BrowserWindow {
   const window = new BrowserWindow({
     width: 947,
     height: 670,
@@ -24,11 +26,14 @@ export function createLoginSetupWindow(): BrowserWindow {
 
   blockHomeWindowAltSpaceMenu(window);
 
+  const hash =
+    options.route === "postInstallLogin" ? "post-install-login" : "login-setup";
+
   if (process.env.ELECTRON_RENDERER_URL) {
-    window.loadURL(`${process.env.ELECTRON_RENDERER_URL}#/login-setup`);
+    window.loadURL(`${process.env.ELECTRON_RENDERER_URL}#/${hash}`);
   } else {
     window.loadFile(join(__dirname, "../renderer/index.html"), {
-      hash: "login-setup",
+      hash,
     });
   }
 

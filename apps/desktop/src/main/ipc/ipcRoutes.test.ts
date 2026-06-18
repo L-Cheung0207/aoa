@@ -171,7 +171,7 @@ function createDeps(overrides: Partial<Parameters<typeof createIpcRouteHandlers>
       delete: async () => false
     },
     installationId: "install-abc",
-    appInfo: { deviceName: "dev-host", appVersion: "0.1.0" },
+    appInfo: { deviceName: "dev-host", appVersion: "0.1.0", isPackaged: false },
     ...overrides
   };
 }
@@ -180,13 +180,14 @@ describe("ipc route handlers", () => {
   it("returns app info from the current Electron runtime", () => {
     const handlers = createIpcRouteHandlers(
       createDeps({
-        appInfo: { deviceName: "my-host", appVersion: "1.2.3" }
+        appInfo: { deviceName: "my-host", appVersion: "1.2.3", isPackaged: false }
       })
     );
 
     expect(handlers.getAppInfo()).toEqual({
       deviceName: "my-host",
-      appVersion: "1.2.3"
+      appVersion: "1.2.3",
+      isPackaged: false
     });
   });
 
@@ -272,7 +273,7 @@ describe("ipc route handlers", () => {
       createDeps({
         backendClient: client,
         installationId: "install-xyz",
-        appInfo: { deviceName: "my-host", appVersion: "1.2.3" }
+        appInfo: { deviceName: "my-host", appVersion: "1.2.3", isPackaged: true }
       })
     );
 

@@ -98,6 +98,7 @@ export interface OpenHomeSectionInput {
 export interface AppInfo {
   deviceName: string;
   appVersion: string;
+  isPackaged: boolean;
 }
 
 export type AuthSessionStatus =
@@ -186,6 +187,7 @@ export interface VoiceAIAPI {
   sendEmailCode(input: SendEmailCodeInput): Promise<{ cooldownSeconds: number }>;
   loginWithEmailCode(input: EmailCodeLoginInput): Promise<AuthSessionSnapshot>;
   loginWithLdap(input: LdapLoginInput): Promise<AuthSessionSnapshot>;
+  completeLoginSetup(): Promise<void>;
   logout(): Promise<AuthSessionSnapshot>;
   refreshAnonymousClient(): Promise<ServiceStatusSnapshot>;
   bootstrapClient(): Promise<BootstrapClientResponse>;
@@ -284,6 +286,7 @@ export const voiceAI: VoiceAIAPI = {
   loginWithEmailCode: (input) =>
     ipcRenderer.invoke("voice:auth:login-email-code", input),
   loginWithLdap: (input) => ipcRenderer.invoke("voice:auth:login-ldap", input),
+  completeLoginSetup: () => ipcRenderer.invoke("voice:auth:complete-login-setup"),
   logout: () => ipcRenderer.invoke("voice:auth:logout"),
   refreshAnonymousClient: () => ipcRenderer.invoke("voice:refresh-anonymous-client"),
   bootstrapClient: () => ipcRenderer.invoke("voice:bootstrap-client"),

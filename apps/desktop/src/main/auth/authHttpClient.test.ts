@@ -54,6 +54,27 @@ describe("auth http client", () => {
     );
   });
 
+  it("normalizes wrapped email-code responses from the backend contract", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        code: 200,
+        message: "ok",
+        data: {
+          expire: 300,
+          interval: 60
+        }
+      })
+    );
+    const client = createAuthHttpClient({
+      baseUrl: "https://api.example.com",
+      fetch: fetchImpl
+    });
+
+    await expect(
+      client.sendEmailCode({ email: "user@example.com", device })
+    ).resolves.toEqual({ cooldownSeconds: 60 });
+  });
+
   it("uses a base URL that already points at /aoa_api", async () => {
     const fetchImpl = vi.fn(async () =>
       createJsonResponse({ ok: true, expiresInSeconds: 300, resendAfterSeconds: 60 })

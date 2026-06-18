@@ -142,6 +142,7 @@ function createService(
     client,
     store,
     device,
+    allowDevelopmentBypass: options.allowDevelopmentBypass,
     now: () => nowMs,
     encryptLdapPassword,
   });
@@ -342,6 +343,50 @@ describe("auth service", () => {
       status: "authenticated",
       user: tokenResponse.user,
       featureFlags: tokenResponse.featureFlags,
+    });
+  });
+
+  it("bypasses email code backend auth in development mode", async () => {
+    const { service, client, store } = createService({
+      allowDevelopmentBypass: true,
+    });
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    await expect(
+      service.loginWithEmailCode({
+        email: "",
+        code: "000000",
+        rememberMe: true,
+      }),
+    ).resolves.toEqual({
+      status: "authenticated",
+      user: {
+        id: "dev-user",
+        displayName: "Developer",
+        email: "dev@example.test",
+        authType: "email_code",
+      },
+      featureFlags: {
+        developmentAuthBypass: true,
+      },
+    });
+    await expect(service.getAccessTokenForRequest()).resolves.toBe(
+      "dev-access-token",
+    );
+    expect(client.loginWithEmailCode).not.toHaveBeenCalled();
+    expect(store.write).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledWith({
+      status: "authenticated",
+      user: {
+        id: "dev-user",
+        displayName: "Developer",
+        email: "dev@example.test",
+        authType: "email_code",
+      },
+      featureFlags: {
+        developmentAuthBypass: true,
+      },
     });
   });
 

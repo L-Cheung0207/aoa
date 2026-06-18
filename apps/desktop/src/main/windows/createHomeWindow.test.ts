@@ -73,4 +73,5 @@ describe("createHomeWindow", () => {
       "http://localhost:5173?theme=light#/home-settings",
     );
   });
+
 });

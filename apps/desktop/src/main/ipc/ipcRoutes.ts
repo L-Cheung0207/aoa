@@ -47,6 +47,7 @@ import {
 export interface IpcAppInfo {
   deviceName: string;
   appVersion: string;
+  isPackaged: boolean;
 }
 
 type AuthIpcService = Pick<

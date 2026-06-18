@@ -1,18 +1,48 @@
 import { useEffect, useMemo, useState } from "react";
+import type { AppSettings } from "@voice/shared";
 import type { AuthSessionSnapshot } from "../../../main/auth/authTypes";
+import { ThemedIcon } from "../../shared/ui/ThemedIcon";
+import {
+  buildMicrophoneAudioConstraints,
+  MicrophoneDevicePicker,
+  MicrophoneLevelMeter,
+} from "../../shared/ui/MicrophoneDevicePicker";
+import {
+  calculateActiveMeterBars,
+  calculateRms,
+  MICROPHONE_METER_ATTACK_SMOOTHING,
+  MICROPHONE_METER_RELEASE_SMOOTHING,
+  MICROPHONE_METER_UPDATE_INTERVAL_MS,
+} from "../../shared/ui/MicrophoneDevicePicker/meterStrategy";
 import "./login-setup.css";
 
 type LoginSetupStep = "login" | "settings" | "experience" | "ready";
+type SetupContentStep = "privacy" | "permissions" | "microphone" | "ready";
 type LoginMode = "email" | "ldap";
+type MessageTone = "info" | "error";
+type MicrophoneLevelStatus = "idle" | "listening" | "error" | "unavailable";
 
 const SETUP_STEPS: Array<{ id: LoginSetupStep; label: string }> = [
   { id: "login", label: "登录" },
   { id: "settings", label: "设置" },
-  { id: "experience", label: "体验" },
+  { id: "experience", label: "隐私" },
   { id: "ready", label: "就绪" },
 ];
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEVELOPMENT_LOGIN_EMAIL = "dev@example.test";
+const DEVELOPMENT_LOGIN_CODE = "000000";
+const LOGIN_SETUP_MICROPHONE_METER_BARS = 12;
+
+function resolveOuterStep(contentStep: SetupContentStep): LoginSetupStep {
+  if (contentStep === "privacy" || contentStep === "permissions") {
+    return "settings";
+  }
+  if (contentStep === "microphone") {
+    return "experience";
+  }
+  return "ready";
+}
 
 function WindowControls(): React.JSX.Element {
   return (
@@ -40,18 +70,7 @@ function WindowControls(): React.JSX.Element {
 function AssistantMark(): React.JSX.Element {
   return (
     <div className="login-setup__mark" aria-hidden="true">
-      <svg viewBox="-4 0 100 70" role="img">
-        <path
-          d="M20 8h44c15 0 27 11.4 27 25.5S79 59 64 59H45l-9 10-2-10H20C5 59 0 47.6 0 33.5S5 8 20 8Z"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="6"
-        />
-        <circle cx="29" cy="33.5" r="7" fill="currentColor" />
-        <circle cx="63" cy="33.5" r="7" fill="currentColor" />
-      </svg>
+      <ThemedIcon name="brand" mode="image" />
     </div>
   );
 }
@@ -71,28 +90,73 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function LoginSetupPage(): React.JSX.Element {
-  const [step, setStep] = useState<LoginSetupStep>("login");
+  const [contentStep, setContentStep] = useState<SetupContentStep>("privacy");
+  const [loginStepVisible, setLoginStepVisible] = useState(true);
   const [mode, setMode] = useState<LoginMode>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
+  const [sendingCode, setSendingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [completingSetup, setCompletingSetup] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
+  const [messageTone, setMessageTone] = useState<MessageTone>("info");
   const [cooldown, setCooldown] = useState(0);
   const [session, setSession] = useState<AuthSessionSnapshot | undefined>(
     undefined,
   );
+  const [isDevelopmentMode, setIsDevelopmentMode] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | undefined>(undefined);
+  const [microphonePickerOpenSignal, setMicrophonePickerOpenSignal] =
+    useState(0);
 
+  const step = loginStepVisible ? "login" : resolveOuterStep(contentStep);
   const activeStepIndex = useMemo(() => getStepIndex(step), [step]);
+  const selectedInputDeviceId = settings?.recording.inputDeviceId ?? "";
   const canSendCode =
-    EMAIL_PATTERN.test(email.trim()) && cooldown <= 0 && !submitting;
+    EMAIL_PATTERN.test(email.trim()) && cooldown <= 0 && !sendingCode && !submitting;
   const canSubmit =
     !submitting &&
-    (mode === "email"
-      ? EMAIL_PATTERN.test(email.trim()) && code.trim().length > 0
-      : account.trim().length > 0 && password.length > 0);
+    !sendingCode &&
+    !completingSetup &&
+    (isDevelopmentMode ||
+      (mode === "email"
+        ? EMAIL_PATTERN.test(email.trim()) && code.trim().length > 0
+        : account.trim().length > 0 && password.length > 0));
+  const statusMessage = message ? (
+    <p
+      className={
+        messageTone === "error"
+          ? "login-setup__message login-setup__message--error"
+          : "login-setup__message"
+      }
+      role="status"
+    >
+      {message}
+    </p>
+  ) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.voiceAI
+      .getAppInfo()
+      .then((info) => {
+        if (!cancelled) {
+          setIsDevelopmentMode(!info.isPackaged);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsDevelopmentMode(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,14 +169,18 @@ export function LoginSetupPage(): React.JSX.Element {
         setSession(snapshot);
         if (snapshot.status === "authenticated") {
           setPassword("");
-          setStep("settings");
+          setLoginStepVisible(false);
+          setContentStep("privacy");
+          setMessage(undefined);
         }
         if (snapshot.status === "offline") {
+          setMessageTone("error");
           setMessage(snapshot.message ?? "网络连接不可用，请稍后重试。");
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
+          setMessageTone("error");
           setMessage(getErrorMessage(error));
         }
       });
@@ -121,13 +189,15 @@ export function LoginSetupPage(): React.JSX.Element {
       setSession(snapshot);
       if (snapshot.status === "authenticated") {
         setPassword("");
-        setStep("settings");
-        setMessage(
-          snapshot.user?.displayName ? `欢迎，${snapshot.user.displayName}` : undefined,
-        );
+        setLoginStepVisible(false);
+        setContentStep("privacy");
+        setMessageTone("info");
+        setMessage(undefined);
       } else if (snapshot.status === "offline") {
+        setMessageTone("error");
         setMessage(snapshot.message ?? "网络连接不可用，请稍后重试。");
       } else if (snapshot.message) {
+        setMessageTone("info");
         setMessage(snapshot.message);
       }
     });
@@ -137,6 +207,31 @@ export function LoginSetupPage(): React.JSX.Element {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (session?.status !== "authenticated") {
+      return undefined;
+    }
+
+    let cancelled = false;
+    void window.voiceAI
+      .getSettings()
+      .then((nextSettings) => {
+        if (!cancelled) {
+          setSettings(nextSettings);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMessageTone("error");
+          setMessage(getErrorMessage(error));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.status]);
 
   useEffect(() => {
     if (cooldown <= 0) {
@@ -151,28 +246,33 @@ export function LoginSetupPage(): React.JSX.Element {
   const sendCode = (): void => {
     const trimmedEmail = email.trim();
     if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      setMessageTone("error");
       setMessage("请输入有效的邮箱地址。");
       return;
     }
     if (cooldown > 0) {
       return;
     }
-    setSubmitting(true);
+    setSendingCode(true);
+    setMessageTone("info");
     setMessage(undefined);
     void window.voiceAI
       .sendEmailCode({ email: trimmedEmail })
       .then((result) => {
         setCooldown(result.cooldownSeconds);
+        setMessageTone("info");
         setMessage("验证码已发送，请检查邮箱。");
       })
       .catch((error: unknown) => {
+        setMessageTone("error");
         setMessage(getErrorMessage(error));
       })
-      .finally(() => setSubmitting(false));
+      .finally(() => setSendingCode(false));
   };
 
   const submitLogin = (): void => {
     if (!canSubmit) {
+      setMessageTone("error");
       setMessage(
         mode === "email" ? "请输入邮箱和验证码。" : "请输入域账号和密码。",
       );
@@ -180,18 +280,28 @@ export function LoginSetupPage(): React.JSX.Element {
     }
 
     setSubmitting(true);
+    setMessageTone("info");
     setMessage(undefined);
     const loginMode = mode;
     const login =
       loginMode === "email"
         ? window.voiceAI.loginWithEmailCode({
-            email: email.trim(),
-            code: code.trim(),
+            email:
+              isDevelopmentMode && email.trim().length === 0
+                ? DEVELOPMENT_LOGIN_EMAIL
+                : email.trim(),
+            code:
+              isDevelopmentMode && code.trim().length === 0
+                ? DEVELOPMENT_LOGIN_CODE
+                : code.trim(),
             rememberMe,
           })
         : window.voiceAI.loginWithLdap({
-            account: account.trim(),
-            password,
+            account:
+              isDevelopmentMode && account.trim().length === 0
+                ? "dev-user"
+                : account.trim(),
+            password: isDevelopmentMode && password.length === 0 ? "dev" : password,
             rememberMe,
           });
 
@@ -200,17 +310,17 @@ export function LoginSetupPage(): React.JSX.Element {
         setSession(snapshot);
         if (snapshot.status === "authenticated") {
           setPassword("");
-          setStep("settings");
-          setMessage(
-            snapshot.user?.displayName
-              ? `欢迎，${snapshot.user.displayName}`
-              : "登录成功。",
-          );
+          setLoginStepVisible(false);
+          setContentStep("privacy");
+          setMessageTone("info");
+          setMessage(undefined);
           return;
         }
+        setMessageTone("error");
         setMessage(snapshot.message ?? "登录未完成，请检查账户信息。");
       })
       .catch((error: unknown) => {
+        setMessageTone("error");
         setMessage(getErrorMessage(error));
       })
       .finally(() => {
@@ -222,29 +332,95 @@ export function LoginSetupPage(): React.JSX.Element {
   };
 
   const continueSetup = (): void => {
+    setMessageTone("info");
     setMessage(undefined);
-    if (step === "settings") {
-      setStep("experience");
+    if (contentStep === "privacy") {
+      setContentStep("permissions");
       return;
     }
-    if (step === "experience") {
-      setStep("ready");
+    if (contentStep === "permissions") {
+      setContentStep("microphone");
       return;
     }
-    if (step === "ready") {
-      setMessage("等待主进程进入主应用。");
+    if (contentStep === "microphone") {
+      setContentStep("ready");
+      return;
+    }
+    if (contentStep === "ready") {
+      setMessageTone("info");
+      setMessage("正在进入主应用。");
+      setCompletingSetup(true);
+      void window.voiceAI
+        .completeLoginSetup()
+        .catch((error: unknown) => {
+          setMessageTone("error");
+          setMessage(getErrorMessage(error));
+        })
+        .finally(() => setCompletingSetup(false));
     }
   };
 
+  const goBackSetup = (): void => {
+    setMessageTone("info");
+    setMessage(undefined);
+
+    if (contentStep === "privacy") {
+      setLoginStepVisible(true);
+      return;
+    }
+    if (contentStep === "permissions") {
+      setContentStep("privacy");
+      return;
+    }
+    if (contentStep === "microphone") {
+      setContentStep("permissions");
+      return;
+    }
+    if (contentStep === "ready") {
+      setContentStep("microphone");
+    }
+  };
+
+  const updateMicrophoneDevice = (deviceId: string): void => {
+    setSettings((current) =>
+      current
+        ? {
+            ...current,
+            recording: {
+              ...current.recording,
+              inputDeviceId: deviceId,
+            },
+          }
+        : current,
+    );
+    void window.voiceAI
+      .updateSettings({
+        recording: {
+          inputDeviceId: deviceId,
+        },
+      })
+      .then(setSettings)
+      .catch((error: unknown) => {
+        setMessageTone("error");
+        setMessage(getErrorMessage(error));
+      });
+  };
+
   return (
-    <main className="login-setup">
+    <main
+      className={
+        loginStepVisible
+          ? "login-setup login-setup--login"
+          : "login-setup login-setup--wizard"
+      }
+    >
       <header className="login-setup__chrome">
-        <span className="login-setup__brand">Voice Assistant</span>
+        <span className="login-setup__brand">Voice Assistant 安装向导</span>
         <WindowControls />
       </header>
 
       <section className="login-setup__shell" aria-live="polite">
-        <AssistantMark />
+        {loginStepVisible ? null : <AssistantMark />}
         <div className="login-setup__heading">
           <p className="login-setup__eyebrow">Voice Assistant 登录向导</p>
           <h1>登录您的账户</h1>
@@ -253,11 +429,13 @@ export function LoginSetupPage(): React.JSX.Element {
         <ol className="login-setup__steps" aria-label="登录设置步骤">
           {SETUP_STEPS.map((item, index) => (
             <li
-              className={
-                index <= activeStepIndex
-                  ? "login-setup__step login-setup__step--active"
-                  : "login-setup__step"
-              }
+              className={[
+                "login-setup__step",
+                index < activeStepIndex ? "login-setup__step--complete" : "",
+                index === activeStepIndex ? "login-setup__step--current" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               key={item.id}
             >
               <span>{index + 1}</span>
@@ -269,51 +447,35 @@ export function LoginSetupPage(): React.JSX.Element {
         <div className="login-setup__panel">
           {step === "login" ? (
             <>
-              <div className="login-setup__mode-tabs" role="tablist">
-                <button
-                  className={
-                    mode === "email"
-                      ? "login-setup__mode-tab login-setup__mode-tab--active"
-                      : "login-setup__mode-tab"
-                  }
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "email"}
-                  onClick={() => {
-                    setPassword("");
-                    setMode("email");
-                    setMessage(undefined);
-                  }}
-                >
-                  邮箱验证码
-                </button>
-                <button
-                  className={
-                    mode === "ldap"
-                      ? "login-setup__mode-tab login-setup__mode-tab--active"
-                      : "login-setup__mode-tab"
-                  }
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "ldap"}
-                  onClick={() => {
-                    setMode("ldap");
-                    setMessage(undefined);
-                  }}
-                >
-                  LDAP/AD
-                </button>
-              </div>
+              <header className="login-setup__login-header">
+                <h2>登录您的账号</h2>
+                <div className="login-setup__mode-tabs">
+                  <button
+                    className="login-setup__mode-tab"
+                    type="button"
+                    onClick={() => {
+                      setMode(mode === "email" ? "ldap" : "email");
+                      setPassword("");
+                      setMessage(undefined);
+                    }}
+                  >
+                    {mode === "email" ? "使用AD域登录" : "使用邮箱验证码登录"}
+                  </button>
+                </div>
+              </header>
+              <p className="login-setup__login-intro">
+                使用邮箱 + 验证码快速登录，云端同步配置与历史。
+              </p>
 
               {mode === "email" ? (
                 <div className="login-setup__form">
                   <label className="login-setup__field">
-                    <span>邮箱地址</span>
+                    <span>电子邮箱</span>
                     <input
                       value={email}
                       type="email"
                       autoComplete="email"
-                      placeholder="name@example.com"
+                      placeholder="your@company.com"
                       onChange={(event) => setEmail(event.currentTarget.value)}
                     />
                   </label>
@@ -324,7 +486,7 @@ export function LoginSetupPage(): React.JSX.Element {
                         value={code}
                         inputMode="numeric"
                         autoComplete="one-time-code"
-                        placeholder="6 位验证码"
+                        placeholder="验证码"
                         onChange={(event) => setCode(event.currentTarget.value)}
                       />
                       <button
@@ -336,6 +498,7 @@ export function LoginSetupPage(): React.JSX.Element {
                         {cooldown > 0 ? `${cooldown}s` : "发送验证码"}
                       </button>
                     </div>
+                    <small>请在160秒内输入验证码。</small>
                   </label>
                 </div>
               ) : (
@@ -362,6 +525,8 @@ export function LoginSetupPage(): React.JSX.Element {
                 </div>
               )}
 
+              {statusMessage}
+
               <div className="login-setup__form-footer">
                 <label className="login-setup__check">
                   <input
@@ -379,79 +544,370 @@ export function LoginSetupPage(): React.JSX.Element {
                   disabled={!canSubmit}
                   onClick={submitLogin}
                 >
-                  {submitting
-                    ? "正在登录..."
-                    : mode === "email"
-                      ? "登录"
-                      : "使用 AD 域登录"}
+                  {submitting ? (
+                    "正在登录..."
+                  ) : (
+                    <>
+                      <span>登录</span>
+                      <span className="login-setup__primary-arrow" aria-hidden="true">
+                        →
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
             </>
           ) : null}
 
-          {step === "settings" ? (
-            <SetupStepPanel
-              title="基础设置"
-              description="登录已完成。后续版本会在这里集中确认语言、设备和连接偏好。"
-              actionLabel="下一步"
-              onAction={continueSetup}
+          {!loginStepVisible ? (
+            <SetupWizardPage
+              step={contentStep}
+              inputDeviceId={selectedInputDeviceId}
+              language={settings?.ui.language}
+              pickerOpenSignal={microphonePickerOpenSignal}
+              completingSetup={completingSetup}
+              onBack={goBackSetup}
+              onNext={continueSetup}
+              onSkipMicrophone={() => setContentStep("ready")}
+              onOpenMicrophonePicker={() =>
+                setMicrophonePickerOpenSignal((current) => current + 1)
+              }
+              onMicrophoneDeviceChange={updateMicrophoneDevice}
             />
           ) : null}
 
-          {step === "experience" ? (
-            <SetupStepPanel
-              title="体验准备"
-              description="主应用会在启动门禁流程中接管。这里仅保留轻量引导，不提前创建主窗口。"
-              actionLabel="下一步"
-              onAction={continueSetup}
-            />
-          ) : null}
-
-          {step === "ready" ? (
-            <SetupStepPanel
-              title="准备就绪"
-              description="账户已可用于 Voice Assistant。进入主应用后即可继续配置和使用。"
-              actionLabel="进入主应用"
-              onAction={continueSetup}
-            />
-          ) : null}
+          {loginStepVisible ? null : statusMessage}
         </div>
-
-        {message ? (
-          <p
-            className={
-              session?.status === "offline"
-                ? "login-setup__message login-setup__message--error"
-                : "login-setup__message"
-            }
-            role="status"
-          >
-            {message}
-          </p>
-        ) : null}
       </section>
     </main>
   );
 }
 
-function SetupStepPanel({
+function SetupWizardPage({
+  step,
+  inputDeviceId,
+  language,
+  pickerOpenSignal,
+  completingSetup,
+  onBack,
+  onNext,
+  onSkipMicrophone,
+  onOpenMicrophonePicker,
+  onMicrophoneDeviceChange,
+}: {
+  step: SetupContentStep;
+  inputDeviceId: string;
+  language: AppSettings["ui"]["language"] | undefined;
+  pickerOpenSignal: number;
+  completingSetup: boolean;
+  onBack(): void;
+  onNext(): void;
+  onSkipMicrophone(): void;
+  onOpenMicrophonePicker(): void;
+  onMicrophoneDeviceChange(deviceId: string): void;
+}): React.JSX.Element {
+  const primaryLabel =
+    step === "privacy"
+      ? "开始"
+      : step === "permissions"
+        ? "同意"
+        : step === "ready"
+          ? completingSetup
+            ? "正在进入..."
+            : "进入主应用"
+          : "下一步";
+
+  return (
+    <>
+      <div className="login-setup__wizard-content">
+        {step === "privacy" ? <PrivacyStep /> : null}
+        {step === "permissions" ? <PermissionsStep /> : null}
+        {step === "microphone" ? (
+          <MicrophoneSetupStep
+            inputDeviceId={inputDeviceId}
+            language={language}
+            pickerOpenSignal={pickerOpenSignal}
+            onOpenPicker={onOpenMicrophonePicker}
+            onDeviceChange={onMicrophoneDeviceChange}
+          />
+        ) : null}
+        {step === "ready" ? <ReadyStep /> : null}
+      </div>
+      <footer className="login-setup__wizard-footer">
+        <button
+          className="login-setup__back-link"
+          type="button"
+          disabled={completingSetup}
+          onClick={onBack}
+        >
+          <span aria-hidden="true">↩</span>
+          上一步
+        </button>
+        <div className="login-setup__footer-actions">
+          {step === "microphone" ? (
+            <button
+              className="login-setup__ghost"
+              type="button"
+              onClick={onSkipMicrophone}
+            >
+              跳过设置
+              <span aria-hidden="true">···›</span>
+            </button>
+          ) : null}
+          <button
+            className="login-setup__primary login-setup__primary--wide"
+            type="button"
+            disabled={completingSetup}
+            onClick={onNext}
+          >
+            {primaryLabel}
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </footer>
+    </>
+  );
+}
+
+function PrivacyStep(): React.JSX.Element {
+  return (
+    <section className="login-setup__copy-page">
+      <h2>感谢您的信任，我们尊重您的隐私</h2>
+      <div className="login-setup__copy-list">
+        <InfoBlock
+          title="零云数据保留"
+          description="您的语音输入是私密的，且没有数据保留。"
+        />
+        <InfoBlock
+          title="从不训练您的数据"
+          description="您的任何输入数据都不会被我们或第三方存储或用于模型训练。"
+        />
+        <InfoBlock
+          title="设备内历史记录存储"
+          description="所有历史记录都保留在您的设备上。"
+        />
+      </div>
+    </section>
+  );
+}
+
+function PermissionsStep(): React.JSX.Element {
+  return (
+    <section className="login-setup__copy-page">
+      <h2>使用 Voice Assistant 的全部功能，需要您同意我们使用以下权限。</h2>
+      <div className="login-setup__permission-consent">
+        <span aria-hidden="true">☑</span>
+        <strong>自动写入权限</strong>
+      </div>
+      <div className="login-setup__copy-list">
+        <InfoBlock
+          title="自动写入权限"
+          description="允许 AOA 把结果放进当前选中输入框。"
+        />
+        <InfoBlock
+          title="剪贴板/选中文本访问"
+          description="用于粘贴、改写、翻译选中的内容。"
+        />
+        <InfoBlock
+          title="全局快捷键"
+          description="允许在其他应用中唤起 AOA。"
+        />
+      </div>
+    </section>
+  );
+}
+
+function MicrophoneSetupStep({
+  inputDeviceId,
+  language,
+  pickerOpenSignal,
+  onOpenPicker,
+  onDeviceChange,
+}: {
+  inputDeviceId: string;
+  language: AppSettings["ui"]["language"] | undefined;
+  pickerOpenSignal: number;
+  onOpenPicker(): void;
+  onDeviceChange(deviceId: string): void;
+}): React.JSX.Element {
+  const micLevel = useLoginSetupMicrophoneLevel(inputDeviceId);
+
+  return (
+    <section className="login-setup__microphone-page">
+      <header className="login-setup__microphone-header">
+        <div>
+          <h2>测试您的麦克风</h2>
+          <p>选择麦克风并开始说话。</p>
+        </div>
+        <button
+          className="login-setup__device-link"
+          type="button"
+          onClick={onOpenPicker}
+        >
+          <span aria-hidden="true">♩</span>
+          换一个麦克风
+        </button>
+      </header>
+      <MicrophoneDevicePicker
+        language={language}
+        selectedDeviceId={inputDeviceId}
+        onDeviceChange={onDeviceChange}
+        openSignal={pickerOpenSignal}
+        selectId="login-setup-microphone-device"
+        hideTrigger
+      />
+      <div className="login-setup__microphone-meter" aria-live="polite">
+        <MicrophoneLevelMeter
+          activeBars={micLevel.activeBars}
+          active={micLevel.status === "listening"}
+          barCount={LOGIN_SETUP_MICROPHONE_METER_BARS}
+          label="麦克风输入音量"
+        />
+        <strong>当您说话时是否看到蓝色条型图在移动</strong>
+        {micLevel.message ? <p>{micLevel.message}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function ReadyStep(): React.JSX.Element {
+  return (
+    <section className="login-setup__ready-page">
+      <div className="login-setup__ready-icon" aria-hidden="true">
+        ✓
+      </div>
+      <h2>准备就绪</h2>
+      <p>账户、权限说明和麦克风设置已经完成。进入主应用后即可继续配置和使用。</p>
+    </section>
+  );
+}
+
+function InfoBlock({
   title,
   description,
-  actionLabel,
-  onAction,
 }: {
   title: string;
   description: string;
-  actionLabel: string;
-  onAction(): void;
 }): React.JSX.Element {
   return (
-    <div className="login-setup__placeholder">
-      <h2>{title}</h2>
+    <article className="login-setup__info-block">
+      <h3>{title}</h3>
       <p>{description}</p>
-      <button className="login-setup__primary" type="button" onClick={onAction}>
-        {actionLabel}
-      </button>
-    </div>
+    </article>
   );
+}
+
+function useLoginSetupMicrophoneLevel(inputDeviceId: string): {
+  activeBars: number;
+  status: MicrophoneLevelStatus;
+  message?: string;
+} {
+  const [activeBars, setActiveBars] = useState(0);
+  const [status, setStatus] = useState<MicrophoneLevelStatus>("idle");
+  const [message, setMessage] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (
+      typeof navigator === "undefined" ||
+      typeof window === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setActiveBars(0);
+      setStatus("unavailable");
+      setMessage("当前环境无法读取麦克风。");
+      return;
+    }
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextConstructor) {
+      setActiveBars(0);
+      setStatus("unavailable");
+      setMessage("当前环境无法检测音量。");
+      return;
+    }
+
+    let cancelled = false;
+    let stream: MediaStream | undefined;
+    let audioContext: AudioContext | undefined;
+    let animationFrame = 0;
+    let currentActiveBars = 0;
+    let lastMeterUpdateMs = 0;
+    let smoothedRms = 0;
+
+    const startMeter = async (): Promise<void> => {
+      try {
+        setStatus("idle");
+        setMessage(undefined);
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: buildMicrophoneAudioConstraints(inputDeviceId),
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        audioContext = new AudioContextConstructor();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const samples = new Uint8Array(analyser.fftSize);
+
+        const tick = (): void => {
+          analyser.getByteTimeDomainData(samples);
+          const rawRms = calculateRms(samples);
+          const smoothing =
+            rawRms > smoothedRms
+              ? MICROPHONE_METER_ATTACK_SMOOTHING
+              : MICROPHONE_METER_RELEASE_SMOOTHING;
+          smoothedRms += (rawRms - smoothedRms) * smoothing;
+
+          const now = window.performance.now();
+          if (now - lastMeterUpdateMs >= MICROPHONE_METER_UPDATE_INTERVAL_MS) {
+            lastMeterUpdateMs = now;
+            const nextActiveBars = calculateActiveMeterBars(
+              smoothedRms,
+              currentActiveBars,
+              LOGIN_SETUP_MICROPHONE_METER_BARS,
+            );
+            if (nextActiveBars !== currentActiveBars) {
+              currentActiveBars = nextActiveBars;
+              setActiveBars(nextActiveBars);
+            }
+          }
+          setStatus("listening");
+          animationFrame = window.requestAnimationFrame(tick);
+        };
+
+        tick();
+      } catch (error) {
+        if (!cancelled) {
+          setActiveBars(0);
+          setStatus("error");
+          setMessage(
+            `麦克风检测失败：${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    };
+
+    void startMeter();
+
+    return () => {
+      cancelled = true;
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      stream?.getTracks().forEach((track) => track.stop());
+      void audioContext?.close();
+    };
+  }, [inputDeviceId]);
+
+  return message === undefined
+    ? { activeBars, status }
+    : { activeBars, status, message };
 }

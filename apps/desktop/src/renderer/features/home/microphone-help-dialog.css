@@ -118,22 +118,22 @@
   overflow-wrap: anywhere;
 }
 
-.microphone-help-dialog__heading {
+.microphone-help-dialog__content .markdown-content__heading {
   margin: 24px 0 12px;
   color: #fff;
   letter-spacing: 0;
 }
 
-.microphone-help-dialog__heading--1 {
+.microphone-help-dialog__content .markdown-content__heading--1 {
   margin-top: 0;
   font-size: 20px;
 }
 
-.microphone-help-dialog__heading--2 {
+.microphone-help-dialog__content .markdown-content__heading--2 {
   font-size: 18px;
 }
 
-.microphone-help-dialog__heading--3 {
+.microphone-help-dialog__content .markdown-content__heading--3 {
   font-size: 16px;
 }
 
@@ -143,6 +143,27 @@
   gap: 7px;
   margin: 0 0 16px;
   padding-left: 22px;
+}
+
+.microphone-help-dialog__content table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.microphone-help-dialog__content th,
+.microphone-help-dialog__content td {
+  padding: 9px 10px;
+  color: rgba(226, 232, 240, 0.78);
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.microphone-help-dialog__content th {
+  color: rgba(248, 250, 252, 0.95);
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .microphone-help-dialog__content hr {
@@ -192,7 +213,9 @@
 }
 
 :root[data-theme="light"] .microphone-help-dialog__header h1,
-:root[data-theme="light"] .microphone-help-dialog__heading,
+:root[data-theme="light"]
+  .microphone-help-dialog__content
+  .markdown-content__heading,
 :root[data-theme="light"] .microphone-help-dialog__content strong {
   color: #0f172a;
 }
@@ -221,6 +244,17 @@
 
 :root[data-theme="light"] .microphone-help-dialog__content figcaption {
   color: rgba(51, 65, 85, 0.58);
+}
+
+:root[data-theme="light"] .microphone-help-dialog__content th,
+:root[data-theme="light"] .microphone-help-dialog__content td {
+  color: rgba(51, 65, 85, 0.8);
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+:root[data-theme="light"] .microphone-help-dialog__content th {
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.04);
 }
 
 @media (max-width: 640px) {

@@ -24,7 +24,7 @@ describe("desktop installer icon configuration", () => {
 
     expect(packageJson).toContain('"from": "resources/app-icon.ico"');
     expect(packageJson).toContain('"icon": "resources/app-icon.ico"');
-    expect(packageJson).toContain('"signAndEditExecutable": false');
+    expect(packageJson).toContain('"signAndEditExecutable": true');
     expect(packageJson).toContain('"installerLanguages"');
     expect(packageJson).toContain('"zh_TW"');
     expect(packageJson).toContain('"language": "1028"');
@@ -35,7 +35,7 @@ describe("desktop installer icon configuration", () => {
     expect(electronBuilderConfig).toContain("from: resources/app-icon.ico");
     expect(electronBuilderConfig).toContain("to: app-icon.ico");
     expect(electronBuilderConfig).toContain("icon: resources/app-icon.ico");
-    expect(electronBuilderConfig).toContain("signAndEditExecutable: false");
+    expect(electronBuilderConfig).toContain("signAndEditExecutable: true");
     expect(electronBuilderConfig).toContain("allowToChangeInstallationDirectory: true");
     expect(electronBuilderConfig).toContain("installerLanguages:");
     expect(electronBuilderConfig).toContain("- zh_TW");
@@ -48,9 +48,16 @@ describe("desktop installer icon configuration", () => {
     expect(electronBuilderConfig).not.toContain("resources/tray-icon.ico");
 
     expect(installerShellBuilderConfig).toContain("icon: resources/app-icon.ico");
-    expect(installerShellBuilderConfig).toContain("signAndEditExecutable: false");
+    expect(installerShellBuilderConfig).toContain("signAndEditExecutable: true");
 
     expect(bootstrap).not.toContain('"tray-icon.ico"');
+    expect(bootstrap).toContain("resolveRuntimeAppIconPath()");
+    expect(bootstrap).not.toContain(
+      'join(process.resourcesPath, "app-icon.ico")'
+    );
+    expect(bootstrap).not.toContain(
+      'join(app.getAppPath(), "resources", "app-icon.ico")'
+    );
     expect(appIcon).toContain('const APP_ICON_FILE_NAME = "app-icon.ico"');
     expect(bootstrap).not.toContain('"tray-icon.ico"');
   });

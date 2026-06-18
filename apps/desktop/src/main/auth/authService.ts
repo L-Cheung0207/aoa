@@ -18,6 +18,9 @@ import {
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 30_000;
 const SESSION_EXPIRED_MESSAGE = "Session expired";
 const NETWORK_UNAVAILABLE_MESSAGE = "Network unavailable";
+const DEVELOPMENT_ACCESS_TOKEN = "dev-access-token";
+const DEVELOPMENT_REFRESH_TOKEN = "dev-refresh-token";
+const DEVELOPMENT_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 type AuthSessionListener = (snapshot: AuthSessionSnapshot) => void;
 
@@ -47,6 +50,7 @@ export interface CreateAuthServiceOptions {
   client: AuthHttpClient;
   store: AuthSessionStore;
   device: AuthDeviceContext;
+  allowDevelopmentBypass?: boolean;
   now?: () => number;
   encryptLdapPassword?: typeof defaultEncryptLdapPassword;
 }
@@ -135,6 +139,34 @@ export function createAuthService(
       ...(response.featureFlags === undefined
         ? {}
         : { featureFlags: { ...response.featureFlags } }),
+    };
+  };
+
+  const createDevelopmentTokenResponse = (
+    input: EmailCodeLoginInput | LdapLoginInput,
+  ): AuthTokenResponse => {
+    const authType = "account" in input ? "ldap" : "email_code";
+    const fallbackEmail = "dev@example.test";
+    const trimmedEmail =
+      "email" in input && input.email.trim().length > 0
+        ? input.email.trim()
+        : fallbackEmail;
+    return {
+      user: {
+        id: "dev-user",
+        displayName: "Developer",
+        ...(authType === "email_code"
+          ? { email: trimmedEmail }
+          : { email: fallbackEmail }),
+        authType,
+      },
+      accessToken: DEVELOPMENT_ACCESS_TOKEN,
+      refreshToken: DEVELOPMENT_REFRESH_TOKEN,
+      expiresInSeconds: DEVELOPMENT_TOKEN_TTL_SECONDS,
+      refreshExpiresInSeconds: DEVELOPMENT_TOKEN_TTL_SECONDS,
+      featureFlags: {
+        developmentAuthBypass: true,
+      },
     };
   };
 
@@ -312,6 +344,12 @@ export function createAuthService(
 
     loginWithEmailCode: async (input) => {
       const loginEpoch = bumpAuthEpoch();
+      if (options.allowDevelopmentBypass) {
+        return commitRuntimeSession(
+          buildRuntimeSession(createDevelopmentTokenResponse(input), false),
+        );
+      }
+
       const response = await options.client.loginWithEmailCode({
         ...input,
         device: options.device,
@@ -321,6 +359,12 @@ export function createAuthService(
 
     loginWithLdap: async (input) => {
       const loginEpoch = bumpAuthEpoch();
+      if (options.allowDevelopmentBypass) {
+        return commitRuntimeSession(
+          buildRuntimeSession(createDevelopmentTokenResponse(input), false),
+        );
+      }
+
       const publicKey = await options.client.getLdapPublicKey();
       const encryptedPassword: EncryptedLdapPassword =
         await encryptLdapPassword({

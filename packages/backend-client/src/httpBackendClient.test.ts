@@ -71,6 +71,29 @@ describe("http backend client", () => {
     );
   });
 
+  it("unwraps backend data envelopes before projecting responses", async () => {
+    const fetchImpl = vi.fn(async () =>
+      createJsonResponse({
+        code: "10000000",
+        message: "success",
+        data: {
+          clientId: "client-1",
+          serviceStatus: "ok",
+          featureFlags: { realtimeTranscription: true, history: false },
+          anonymousQuota: { transcriptionSecondsRemaining: 300 },
+        },
+      }),
+    );
+    const client = createClient(fetchImpl);
+
+    await expect(client.bootstrap(bootstrapRequest)).resolves.toEqual({
+      clientId: "client-1",
+      serviceStatus: "ok",
+      featureFlags: { realtimeTranscription: true, history: false },
+      anonymousQuota: { transcriptionSecondsRemaining: 300 },
+    });
+  });
+
   it("normalizes base URLs that already include /aoa_api", async () => {
     const fetchImpl = vi.fn(async () =>
       createJsonResponse({

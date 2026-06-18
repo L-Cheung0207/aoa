@@ -1,3 +1,4 @@
+import { requestBackendJson, type BackendJsonError } from "@voice/shared";
 import type {
   AnonymousQuota,
   BackendClient,
@@ -104,48 +105,16 @@ async function requestJson<T>(
   },
 ): Promise<T> {
   const accessToken = await getAccessToken();
-  const response = await fetchBackend(fetchImpl, baseUrl, options.endpoint, {
+  return requestBackendJson(fetchImpl, buildBackendUrl(baseUrl, options.endpoint), {
     method: options.method,
     headers: {
-      accept: "application/json",
       authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
     },
-    body: JSON.stringify(options.body),
+    body: options.body,
+    normalize: options.normalize,
+    mapHttpError: createHttpError,
+    mapTransportError: mapBackendTransportError,
   });
-  const body = await readJsonBody(response);
-  if (!response.ok) {
-    throw createHttpError(response.status, body);
-  }
-  return options.normalize(body);
-}
-
-async function fetchBackend(
-  fetchImpl: typeof fetch,
-  baseUrl: string,
-  endpoint: string,
-  init: RequestInit,
-): Promise<Response> {
-  try {
-    return await fetchImpl(buildBackendUrl(baseUrl, endpoint), init);
-  } catch {
-    throw new BackendHttpError(0, "Network request failed");
-  }
-}
-
-async function readJsonBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) {
-    throw new BackendHttpError(response.status, "Backend returned empty JSON");
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new BackendHttpError(
-      response.status,
-      "Backend returned invalid JSON",
-    );
-  }
 }
 
 function createHttpError(status: number, body: unknown): BackendHttpError {
@@ -157,6 +126,10 @@ function createHttpError(status: number, body: unknown): BackendHttpError {
       ? body.message
       : "Backend request failed";
   return new BackendHttpError(status, message);
+}
+
+function mapBackendTransportError(error: BackendJsonError): BackendHttpError {
+  return new BackendHttpError(error.status, error.message);
 }
 
 function normalizeClientBootstrapSnapshot(

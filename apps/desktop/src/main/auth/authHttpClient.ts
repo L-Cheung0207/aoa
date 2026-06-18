@@ -1,3 +1,4 @@
+import { requestBackendJson, type BackendJsonError } from "@voice/shared";
 import {
   AuthHttpError,
   type AuthErrorCode,
@@ -144,14 +145,7 @@ async function requestJson<T>(
     allowEmptySuccess?: boolean | undefined;
   }
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    accept: "application/json"
-  };
-  const init: RequestInit = {
-    method: options.method,
-    headers
-  };
-
+  const headers: Record<string, string> = {};
   if (options.accessToken) {
     headers.authorization = `Bearer ${options.accessToken}`;
   }
@@ -159,57 +153,23 @@ async function requestJson<T>(
     headers["x-installation-id"] = options.device.installationId;
     headers["x-app-version"] = options.device.appVersion;
   }
-  if (options.body !== undefined) {
-    headers["content-type"] = "application/json";
-    init.body = JSON.stringify(options.body);
-  }
 
-  let response: Response;
-  try {
-    response = await fetchImpl(buildAuthUrl(baseUrl, endpoint), init);
-  } catch {
-    throw new AuthHttpError(0, "network_error", "Network request failed");
-  }
-
-  const body = await readJsonBody(response, options.allowEmptySuccess === true);
-  if (!response.ok) {
-    throw createHttpError(response.status, body);
-  }
-
-  return options.normalize(body);
-}
-
-async function readJsonBody(
-  response: Response,
-  allowEmpty = false
-): Promise<unknown> {
-  const text = await response.text();
-  if (!text) {
-    if (allowEmpty) {
-      return undefined;
-    }
-    throw new AuthHttpError(
-      response.status,
-      "backend_unavailable",
-      "Backend returned empty JSON"
-    );
-  }
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new AuthHttpError(
-      response.status,
-      "backend_unavailable",
-      "Backend returned invalid JSON"
-    );
-  }
+  return requestBackendJson(fetchImpl, buildAuthUrl(baseUrl, endpoint), {
+    method: options.method,
+    headers,
+    body: options.body,
+    normalize: options.normalize,
+    allowEmptySuccess: options.allowEmptySuccess,
+    mapHttpError: createHttpError,
+    mapTransportError: mapAuthTransportError
+  });
 }
 
 function normalizeSendEmailCodeResult(body: unknown): SendEmailCodeResult {
   const payload = readPayloadRecord(body);
   return {
     cooldownSeconds: readFirstRequiredNumber(
+      payload.interval,
       payload.resendAfterSeconds,
       payload.cooldownSeconds
     )
@@ -355,6 +315,13 @@ function readFeatureFlags(input: unknown): Record<string, boolean> | undefined {
 function createHttpError(status: number, body: unknown): AuthHttpError {
   const payload = readErrorPayload(body);
   return new AuthHttpError(status, payload.code, payload.message);
+}
+
+function mapAuthTransportError(error: BackendJsonError): AuthHttpError {
+  if (error.code === "network_error") {
+    return new AuthHttpError(0, "network_error", error.message);
+  }
+  return new AuthHttpError(error.status, "backend_unavailable", error.message);
 }
 
 function readErrorPayload(body: unknown): {

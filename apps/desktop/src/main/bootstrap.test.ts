@@ -22,9 +22,12 @@ import {
   resolveOverlayWindowLayout,
   shouldRunScheduledOverlayHide,
   shouldOpenHomeOnLaunch,
+  shouldOpenPostInstallLoginOnLaunch,
   firstConfiguredValue,
   createAuthenticatedIpcMainAdapter,
+  createDevelopmentAwareBackendClient,
   createLazyUpdateService,
+  resolveDevelopmentRuntime,
   runAuthenticatedDirectIpc,
   runStartupGate,
   resolveVersionCheckEndpoint,
@@ -56,6 +59,110 @@ describe("bootstrap backend client wiring", () => {
     expect(source).toContain("createHttpBackendClient");
     expect(source).toContain("authService.getAccessTokenForRequest()");
     expect(source).not.toContain("createMockBackendClient");
+  });
+});
+
+describe("bootstrap runtime mode", () => {
+  it("treats renderer dev server runs as development even when Electron reports packaged", () => {
+    expect(
+      resolveDevelopmentRuntime({
+        isPackaged: true,
+        electronRendererUrl: "http://localhost:5173",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps installed packaged runs out of development mode", () => {
+    expect(
+      resolveDevelopmentRuntime({
+        isPackaged: true,
+        electronRendererUrl: undefined,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("development-aware backend client", () => {
+  it("returns local bootstrap data for development auth bypass sessions", async () => {
+    const realBackendClient = {
+      bootstrap: vi.fn(async () => {
+        throw new Error("real backend should not be called");
+      }),
+      getServiceStatus: vi.fn(),
+      createTranscriptionSession: vi.fn(),
+      postprocess: vi.fn(),
+    };
+    const backendClient = createDevelopmentAwareBackendClient({
+      backendClient: realBackendClient,
+      isDevelopmentRuntime: true,
+      getAuthSessionSnapshot: () => ({
+        status: "authenticated",
+        featureFlags: {
+          developmentAuthBypass: true,
+        },
+      }),
+    });
+
+    await expect(
+      backendClient.bootstrap({
+        installationId: "install-dev",
+        deviceName: "dev-machine",
+        platform: "windows",
+        appVersion: "0.1.0",
+      }),
+    ).resolves.toEqual({
+      clientId: "dev-install-dev",
+      serviceStatus: "ok",
+      featureFlags: {
+        realtimeTranscription: true,
+        history: true,
+      },
+      anonymousQuota: {
+        transcriptionSecondsRemaining: 3600,
+      },
+    });
+    expect(realBackendClient.bootstrap).not.toHaveBeenCalled();
+  });
+
+  it("delegates bootstrap outside development auth bypass sessions", async () => {
+    const realSnapshot = {
+      clientId: "real-client",
+      serviceStatus: "ok" as const,
+      featureFlags: {
+        realtimeTranscription: false,
+        history: true,
+      },
+      anonymousQuota: {
+        transcriptionSecondsRemaining: 120,
+      },
+    };
+    const realBackendClient = {
+      bootstrap: vi.fn(async () => realSnapshot),
+      getServiceStatus: vi.fn(),
+      createTranscriptionSession: vi.fn(),
+      postprocess: vi.fn(),
+    };
+    const request = {
+      installationId: "install-real",
+      deviceName: "user-machine",
+      platform: "windows" as const,
+      appVersion: "0.1.0",
+    };
+
+    await expect(
+      createDevelopmentAwareBackendClient({
+        backendClient: realBackendClient,
+        isDevelopmentRuntime: false,
+        getAuthSessionSnapshot: () => ({
+          status: "authenticated",
+          featureFlags: {
+            developmentAuthBypass: true,
+          },
+        }),
+      }).bootstrap(request),
+    ).resolves.toBe(realSnapshot);
+
+    expect(realBackendClient.bootstrap).toHaveBeenCalledWith(request);
   });
 });
 
@@ -349,6 +456,18 @@ describe("installer launch handoff", () => {
     expect(shouldOpenHomeOnLaunch(["app.exe"])).toBe(false);
   });
 
+  it("detects explicit post-install login launch arguments", () => {
+    expect(
+      shouldOpenPostInstallLoginOnLaunch(["app.exe", "--post-install-login"]),
+    ).toBe(true);
+    expect(
+      shouldOpenPostInstallLoginOnLaunch(["app.exe", "/post-install-login"]),
+    ).toBe(true);
+    expect(shouldOpenPostInstallLoginOnLaunch(["app.exe", "--open-home"])).toBe(
+      false,
+    );
+  });
+
   it("starts the installed app with a home launch argument", () => {
     const child = { unref: vi.fn() };
     const spawnProcess = vi.fn(() => child);
@@ -473,6 +592,33 @@ describe("startup auth gate", () => {
     expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
   });
 
+  it("can force login setup before runtime after authenticated restore", async () => {
+    const { service } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+    let completeLoginSetup: (() => Promise<void>) | undefined;
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+      forceLoginSetupOnAuthenticatedRestore: true,
+      onLoginSetupReady: (complete) => {
+        completeLoginSetup = complete;
+      },
+    });
+
+    expect(showLoginSetupWindow).toHaveBeenCalledWith(authenticatedSnapshot);
+    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+
+    await completeLoginSetup?.();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+  });
+
   it("stops runtime and returns to login after unauthenticated broadcast", async () => {
     const { service, emit } = createGateAuthService(authenticatedSnapshot);
     const startAuthenticatedRuntime = vi.fn();
@@ -495,23 +641,59 @@ describe("startup auth gate", () => {
     });
   });
 
-  it("starts runtime once after login and ignores repeated authenticated broadcasts", async () => {
+  it("starts runtime once after setup completion and ignores repeated authenticated broadcasts", async () => {
     const { service, emit } = createGateAuthService({
       status: "unauthenticated",
     });
     const startAuthenticatedRuntime = vi.fn();
     const stopAuthenticatedRuntime = vi.fn();
     const showLoginSetupWindow = vi.fn();
+    let completeLoginSetup: (() => Promise<void>) | undefined;
 
     await runStartupGate({
       authService: service,
       startAuthenticatedRuntime,
       stopAuthenticatedRuntime,
       showLoginSetupWindow,
+      onLoginSetupReady: (complete) => {
+        completeLoginSetup = complete;
+      },
     });
     emit(authenticatedSnapshot);
     emit(authenticatedSnapshot);
     await Promise.resolve();
+    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+    await completeLoginSetup?.();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+  });
+
+  it("waits for setup completion before starting runtime after login", async () => {
+    const { service, emit } = createGateAuthService({
+      status: "unauthenticated",
+    });
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+    let completeLoginSetup: (() => Promise<void>) | undefined;
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+      onLoginSetupReady: (complete) => {
+        completeLoginSetup = complete;
+      },
+    });
+    emit(authenticatedSnapshot);
+    await Promise.resolve();
+
+    expect(showLoginSetupWindow).toHaveBeenCalledWith(authenticatedSnapshot);
+    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+
+    await completeLoginSetup?.();
 
     expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
@@ -552,7 +734,7 @@ describe("startup auth gate", () => {
     });
   });
 
-  it("closes login setup when auth returns while runtime start is pending", async () => {
+  it("waits for setup completion when auth returns while runtime start is pending", async () => {
     let resolveRuntimeStart: (() => void) | undefined;
     const { service, emit } = createGateAuthService(authenticatedSnapshot);
     const startAuthenticatedRuntime = vi.fn(
@@ -564,6 +746,7 @@ describe("startup auth gate", () => {
     const stopAuthenticatedRuntime = vi.fn();
     const showLoginSetupWindow = vi.fn();
     const hideLoginSetupWindow = vi.fn();
+    let completeLoginSetup: (() => Promise<void>) | undefined;
 
     const gatePromise = runStartupGate({
       authService: service,
@@ -571,6 +754,9 @@ describe("startup auth gate", () => {
       stopAuthenticatedRuntime,
       showLoginSetupWindow,
       hideLoginSetupWindow,
+      onLoginSetupReady: (complete) => {
+        completeLoginSetup = complete;
+      },
     });
     await Promise.resolve();
     await Promise.resolve();
@@ -586,7 +772,16 @@ describe("startup auth gate", () => {
     expect(showLoginSetupWindow).toHaveBeenCalledWith({
       status: "unauthenticated",
     });
-    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    const completePromise = completeLoginSetup?.();
+    await Promise.resolve();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
+    resolveRuntimeStart?.();
+    await completePromise;
+    await Promise.resolve();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
     expect(hideLoginSetupWindow).toHaveBeenCalledTimes(1);
   });
 });
@@ -684,6 +879,25 @@ describe("authenticated IPC gate", () => {
     await expect(invoke("voice:auth:logout")).resolves.toBe("auth-ok");
     expect(getAccessTokenForRequest).not.toHaveBeenCalled();
     expect(authHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not validate tokens for login setup app info IPC", async () => {
+    const { ipcMain, invoke } = createIpcMainAdapter();
+    const getAccessTokenForRequest = vi.fn(async () => {
+      throw new Error("expired");
+    });
+    const guarded = createAuthenticatedIpcMainAdapter(ipcMain, {
+      getAccessTokenForRequest,
+    });
+    const appInfoHandler = vi.fn(() => ({ isPackaged: false }));
+
+    guarded.handle("voice:get-app-info", appInfoHandler);
+
+    await expect(invoke("voice:get-app-info")).resolves.toEqual({
+      isPackaged: false,
+    });
+    expect(getAccessTokenForRequest).not.toHaveBeenCalled();
+    expect(appInfoHandler).toHaveBeenCalledTimes(1);
   });
 
   it("allows runtime IPC after token validation succeeds", async () => {

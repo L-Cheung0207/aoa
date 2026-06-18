@@ -6,27 +6,13 @@ const installerScriptPath = resolve(
   __dirname,
   "../../../installer-resources/installer.nsh",
 );
-const installerTermsPath = resolve(
-  __dirname,
-  "../../../installer-resources/terms.txt",
-);
 
 function readInstallerScript(): string {
   return readFileSync(installerScriptPath, "utf8");
 }
 
-function readAgreementTerms(): { raw: Buffer; text: string } {
-  const raw = readFileSync(installerTermsPath);
-  const hasUtf16LeBom = raw[0] === 0xff && raw[1] === 0xfe;
-  const text = hasUtf16LeBom
-    ? raw.subarray(2).toString("utf16le")
-    : raw.toString("utf8");
-
-  return { raw, text };
-}
-
 describe("single-layer NSIS installer script", () => {
-  it("uses standard NSIS pages instead of a custom first-screen installer", () => {
+  it("uses standard NSIS pages without a custom first-screen installer or agreement page", () => {
     const script = readInstallerScript();
 
     expect(script).toContain("nsDialogs.nsh");
@@ -34,20 +20,15 @@ describe("single-layer NSIS installer script", () => {
     expect(script).toContain('!define MUI_FONT "Microsoft YaHei UI"');
     expect(script).toContain('!define MUI_FONTSIZE "9"');
     expect(script).toContain('SetFont "Microsoft YaHei UI" 9');
-    expect(script).toContain('!define VOICE_LICENSE_TOP_TEXT "閱讀協議內容。"');
-    expect(script).toContain(
-      '!define VOICE_LICENSE_BOTTOM_TEXT "必須接受協議才能繼續安裝 Voice Assistant。"',
-    );
-    expect(script).toContain(
-      '!define MUI_LICENSEPAGE_TEXT_TOP "${VOICE_LICENSE_TOP_TEXT}"',
-    );
-    expect(script).toContain(
-      '!define MUI_LICENSEPAGE_TEXT_BOTTOM "${VOICE_LICENSE_BOTTOM_TEXT}"',
-    );
+    expect(script).not.toContain("VOICE_AGREEMENT_FILE");
+    expect(script).not.toContain("VOICE_LICENSE_TOP_TEXT");
+    expect(script).not.toContain("VOICE_LICENSE_BOTTOM_TEXT");
+    expect(script).not.toContain("MUI_LICENSEPAGE_TEXT_TOP");
+    expect(script).not.toContain("MUI_LICENSEPAGE_TEXT_BOTTOM");
+    expect(script).not.toContain("MUI_PAGE_LICENSE");
     expect(script).not.toContain("MUI_HEADER_TRANSPARENT_TEXT");
     expect(script).not.toContain("MUI_COMPONENTSPAGE_SMALLDESC");
-    expect(script).toContain("!macro licensePage");
-    expect(script).toContain("!insertmacro MUI_PAGE_LICENSE");
+    expect(script).not.toContain("!macro licensePage");
     expect(script).toContain("!macro customPageAfterChangeDir");
     expect(script).toContain(
       "Page custom VoiceInstallerOptionsPageCreate VoiceInstallerOptionsPageLeave",
@@ -62,21 +43,6 @@ describe("single-layer NSIS installer script", () => {
     expect(script).not.toContain("installer-bg.bmp");
     expect(script).not.toContain("button-one-install.bmp");
     expect(script).toContain("!macro customInstall");
-  });
-
-  it("bundles a UTF-16LE agreement file for the standard license page", () => {
-    const script = readInstallerScript();
-    const { raw, text } = readAgreementTerms();
-
-    expect(script).toContain('!define VOICE_AGREEMENT_FILE "terms.txt"');
-    expect(script).toContain(
-      '!insertmacro MUI_PAGE_LICENSE "${BUILD_RESOURCES_DIR}\\${VOICE_AGREEMENT_FILE}"',
-    );
-    expect(raw.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xfe]));
-    expect(text).toContain("Voice Assistant Service");
-    expect(text).toContain("用戶使用協議");
-    expect(text).toContain("安裝程式");
-    expect(text).toContain("terms.txt");
   });
 
   it("keeps install options on a compact page after the standard directory page", () => {
@@ -101,17 +67,64 @@ describe("single-layer NSIS installer script", () => {
     expect(script).not.toContain("nsDialogs::SelectFolderDialog");
   });
 
-  it("centers the standard install progress bar on the install page", () => {
+  it("centers the standard install progress bar and keeps percent text visible", () => {
     const script = readInstallerScript();
 
     expect(script).toContain(
       "!define MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceInstallProgressPageShow",
     );
+    expect(script).toContain(
+      "!define MUI_PAGE_CUSTOMFUNCTION_LEAVE VoiceInstallProgressPageLeave",
+    );
+    expect(script).toContain("Var VoiceInstallProgressBar");
+    expect(script).toContain("Var VoiceInstallProgressPercentLabel");
+    expect(script).toContain("Var VoiceInstallProgressText");
+    expect(script).toContain("!macro customExtractWithProgress FILE");
+    expect(script).toContain("Nsis7z::ExtractWithCallback \"${FILE}\" $R9");
+    expect(script).toContain("Function VoiceUpdateInstallProgressPercentFromArchive");
+    expect(script).toContain("Pop $R8");
+    expect(script).toContain("Pop $R9");
+    expect(script).toContain("System::Int64Op $R8 * 100");
+    expect(script).toContain("System::Int64Op $R7 / $R9");
     expect(script).toContain("Function VoiceInstallProgressPageShow");
+    expect(script).toContain("StrCpy $VoiceInstallProgressBar 0");
+    expect(script).toContain("StrCpy $VoiceInstallProgressPercentLabel 0");
+    expect(script).toContain("StrCpy $VoiceInstallProgressText 0");
     expect(script).toContain("GetDlgItem $1 $0 1004");
+    expect(script).toContain("GetDlgItem $VoiceInstallProgressText $0 1006");
     expect(script).toContain("USER32::GetClientRect");
     expect(script).toContain("USER32::SetWindowPos");
-    expect(script).toContain("i0x15");
+    expect(script).toContain("IntOp $7 $7 - 62");
+    expect(script).toContain("i0x14");
+    expect(script).not.toContain("i0x15");
+    expect(script).toContain('USER32::CreateWindowExW(i0,w "STATIC",w "0%"');
+    expect(script).toContain("Function VoiceUpdateInstallProgressPercent");
+    expect(script).toMatch(
+      /Function VoiceInstallProgressPageShow[\s\S]*Call VoiceUpdateInstallProgressPercent[\s\S]*FunctionEnd/,
+    );
+    expect(script).toContain(
+      "${NSD_CreateTimer} VoiceUpdateInstallProgressPercent 250",
+    );
+    expect(script).toContain(
+      "${NSD_ProgressBar_GetPos} $VoiceInstallProgressBar $0",
+    );
+    expect(script).toContain(
+      "SendMessage $VoiceInstallProgressBar ${PBM_GETRANGE} 0 0 $1",
+    );
+    expect(script).not.toContain("IntOp $1 $1 >> 16");
+    expect(script).not.toContain("IntOp $1 $1 & 0xFFFF");
+    expect(script).toContain(
+      '${NSD_SetText} $VoiceInstallProgressPercentLabel "$1"',
+    );
+    expect(script).toContain('${NSD_SetText} $VoiceInstallProgressText "$1"');
+    expect(script).toContain("Function VoiceInstallProgressPageLeave");
+    expect(script).toContain(
+      "${NSD_KillTimer} VoiceUpdateInstallProgressPercent",
+    );
+    expect(script).toContain(
+      '${NSD_SetText} $VoiceInstallProgressPercentLabel "100%"',
+    );
+    expect(script).toContain('${NSD_SetText} $VoiceInstallProgressText "100%"');
   });
 
   it("runs preflight checks before the install page starts", () => {
@@ -142,7 +155,7 @@ describe("single-layer NSIS installer script", () => {
     );
     expect(script).toContain("Function VoiceStartAppAfterFinish");
     expect(script).toContain(
-      'ExecShell "open" "$INSTDIR\\${PRODUCT_FILENAME}.exe"',
+      'ExecShell "open" "$INSTDIR\\${PRODUCT_FILENAME}.exe" "--post-install-login"',
     );
     expect(script).not.toContain("${StdUtils.ExecShellAsUser}");
   });
@@ -162,7 +175,7 @@ describe("single-layer NSIS installer script", () => {
     const script = readInstallerScript();
 
     expect(script).toContain("IfSilent 0 voice_write_install_options_continue");
-    expect(script).toContain('${GetParameters} $0');
+    expect(script).toContain("${GetParameters} $0");
     expect(script).toContain('${GetOptions} "$0" "--updated" $1');
     expect(script).toContain("IfErrors voice_write_install_options_continue");
     expect(script).toContain("Goto voice_write_install_options_done");

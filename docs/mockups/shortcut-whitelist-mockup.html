@@ -1,0 +1,185 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>快捷键白名单效果图</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --shell: #ffffff;
+      --panel: rgba(255,255,255,.96);
+      --text: #111827;
+      --muted: rgba(15,23,42,.62);
+      --line: rgba(15,23,42,.08);
+      --line-strong: rgba(15,23,42,.14);
+      --blue: #2563eb;
+      --blue-soft: rgba(37,99,235,.1);
+      --green: #16a34a;
+      --green-soft: rgba(22,163,74,.1);
+      --amber: #d97706;
+      --amber-soft: rgba(217,119,6,.1);
+      --red: #dc2626;
+      --red-soft: rgba(220,38,38,.1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(180deg, #eef2f7 0%, #f8fafc 100%);
+      color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      letter-spacing: 0;
+    }
+    .frame {
+      width: 1120px;
+      height: 760px;
+      padding: 28px 30px;
+      background: var(--bg);
+      border: 1px solid rgba(15,23,42,.08);
+      overflow: hidden;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+    .title h1 { margin: 0 0 6px; font-size: 26px; line-height: 1.12; font-weight: 750; }
+    .title p { margin: 0; color: var(--muted); font-size: 13px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;
+      border: 1px solid var(--line); border-radius: 999px; background: #fff; color: rgba(15,23,42,.72); font-size: 12px; font-weight: 650;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .settings {
+      height: 650px;
+      background: var(--shell);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(15,23,42,.06);
+    }
+    .section-header {
+      display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 18px;
+      border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 700;
+    }
+    .keyboard-icon {
+      width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+      background: var(--blue-soft); color: var(--blue); font-size: 14px; font-weight: 800;
+    }
+    .row {
+      display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: center;
+      min-height: 68px; padding: 10px 18px; border-bottom: 1px solid rgba(15,23,42,.055);
+    }
+    .row strong { display: block; margin-bottom: 5px; font-size: 14px; line-height: 1.25; }
+    .row small { display: block; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .recorder {
+      width: 300px; height: 38px; display: inline-flex; align-items: center; padding: 0 12px;
+      background: #fff; border: 1px solid rgba(15,23,42,.16); border-radius: 8px; font-size: 13px; color: rgba(15,23,42,.9);
+      box-shadow: 0 1px 0 rgba(15,23,42,.04);
+    }
+    .whitelist-row {
+      display: grid; grid-template-columns: minmax(0,1fr) 330px; gap: 24px; padding: 16px 18px 18px;
+      border-bottom: 1px solid rgba(15,23,42,.055); align-items: start;
+    }
+    .whitelist-intro strong { display:block; font-size:14px; margin: 0 0 5px; }
+    .whitelist-intro small { display:block; color: var(--muted); font-size:12px; line-height:1.5; max-width: 440px; }
+    .rules { display: grid; gap: 10px; margin-top: 14px; max-width: 690px; }
+    .rule-item {
+      display: grid; grid-template-columns: 28px minmax(0,1fr) auto; gap: 10px; align-items: center;
+      padding: 10px 12px; background: #fbfcff; border: 1px solid var(--line); border-radius: 8px;
+    }
+    .rule-icon { width: 28px; height: 28px; display:grid; place-items:center; border-radius: 7px; font-size: 13px; font-weight: 800; }
+    .rule-icon.primary { background: var(--blue-soft); color: var(--blue); }
+    .rule-icon.ok { background: var(--green-soft); color: var(--green); }
+    .rule-icon.warn { background: var(--amber-soft); color: var(--amber); }
+    .rule-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+    .rule-desc { font-size: 12px; color: var(--muted); line-height: 1.35; }
+    kbd {
+      display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 24px; padding: 0 8px; margin: 0 2px;
+      border: 1px solid rgba(15,23,42,.16); border-bottom-color: rgba(15,23,42,.24); border-radius: 6px; background: #fff; color: rgba(15,23,42,.84);
+      font-size: 12px; font-weight: 700; font-family: inherit; box-shadow: inset 0 -1px 0 rgba(15,23,42,.05);
+    }
+    .side-panel { border: 1px solid var(--line); border-radius: 8px; background: #fbfcff; overflow: hidden; width: 330px; }
+    .side-head { padding: 13px 14px; border-bottom: 1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap: 10px; }
+    .side-head strong { font-size: 13px; }
+    .badge { height: 22px; padding: 0 8px; display:inline-flex; align-items:center; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 11px; font-weight: 800; }
+    .choice-list { display: grid; gap: 0; }
+    .choice { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items:center; padding: 12px 14px; border-bottom: 1px solid rgba(15,23,42,.055); }
+    .choice:last-child { border-bottom: 0; }
+    .choice span { font-size: 12px; color: rgba(15,23,42,.76); font-weight: 650; }
+    .allowed { color: var(--green); font-size: 12px; font-weight: 800; }
+    .blocked { color: var(--red); font-size: 12px; font-weight: 800; }
+    .footer-note { display:flex; align-items:center; gap:8px; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--red-soft); color: rgba(127,29,29,.86); font-size: 12px; line-height: 1.4; }
+    .red-dot { width:8px; height:8px; border-radius:50%; background: var(--red); flex: 0 0 auto; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="topbar">
+      <div class="title">
+        <h1>设置</h1>
+        <p>语音输入、翻译和智能改写的全局快捷键配置</p>
+      </div>
+      <span class="pill"><span class="dot"></span>白名单策略已启用</span>
+    </div>
+    <main class="settings">
+      <section>
+        <h2 class="section-header"><span class="keyboard-icon">⌘</span><span>快捷键</span></h2>
+        <div class="row">
+          <div><strong>语音输入</strong><small>轻触开始录音，再次按下结束并插入文本。</small></div>
+          <div class="recorder">Right Alt</div>
+        </div>
+        <div class="row">
+          <div><strong>翻译</strong><small>使用当前选中文本进行快速翻译。</small></div>
+          <div class="recorder">Right Alt + Right Shift</div>
+        </div>
+        <div class="row">
+          <div><strong>智能改写</strong><small>对选中文本执行润色、总结或改写。</small></div>
+          <div class="recorder">Right Alt + Space</div>
+        </div>
+        <div class="whitelist-row">
+          <div>
+            <div class="whitelist-intro">
+              <strong>快捷键白名单</strong>
+              <small>录入时优先展示可用组合，阻止系统保留键和容易误触的编辑快捷键，避免保存后注册失败。</small>
+            </div>
+            <div class="rules">
+              <div class="rule-item">
+                <div class="rule-icon primary">1</div>
+                <div><div class="rule-title">默认推荐组合</div><div class="rule-desc"><kbd>Right Alt</kbd> <kbd>Right Alt</kbd>+<kbd>Space</kbd> <kbd>Right Alt</kbd>+<kbd>Right Shift</kbd></div></div>
+                <span class="allowed">允许</span>
+              </div>
+              <div class="rule-item">
+                <div class="rule-icon ok">2</div>
+                <div><div class="rule-title">Right Alt 扩展组合</div><div class="rule-desc">允许字母、数字、F 键等常规输入：例如 <kbd>Right Alt</kbd>+<kbd>K</kbd></div></div>
+                <span class="allowed">允许</span>
+              </div>
+              <div class="rule-item">
+                <div class="rule-icon warn">3</div>
+                <div><div class="rule-title">系统保留键拦截</div><div class="rule-desc">包含 <kbd>Win</kbd>+<kbd>L</kbd>、<kbd>Alt</kbd>+<kbd>Tab</kbd>、<kbd>Ctrl</kbd>+<kbd>C</kbd> 等组合时拒绝</div></div>
+                <span class="blocked">拒绝</span>
+              </div>
+            </div>
+          </div>
+          <aside>
+            <div class="side-panel">
+              <div class="side-head"><strong>录入预检</strong><span class="badge">实时校验</span></div>
+              <div class="choice-list">
+                <div class="choice"><span>Right Alt + K</span><span class="allowed">可保存</span></div>
+                <div class="choice"><span>Right Alt + F5</span><span class="allowed">可保存</span></div>
+                <div class="choice"><span>Right Alt + Win + L</span><span class="blocked">已保留</span></div>
+                <div class="choice"><span>Right Alt + Alt + Tab</span><span class="blocked">已保留</span></div>
+              </div>
+            </div>
+            <div class="footer-note"><span class="red-dot"></span><span>非法组合仍留在输入现场，不关闭录入态，便于用户继续按下新组合。</span></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

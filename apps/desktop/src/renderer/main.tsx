@@ -6,6 +6,7 @@ import { resolveRoute } from "./app/routes";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { InstallerPage } from "./features/installer/InstallerPage";
 import { LoginSetupPage } from "./features/login/LoginSetupPage";
+import { PostInstallLoginTransition } from "./features/login/PostInstallLoginTransition";
 import { UninstallPage } from "./features/uninstall/UninstallPage";
 import "./styles/app.css";
 
@@ -64,6 +65,8 @@ createRoot(document.getElementById("root") as HTMLElement).render(
       <InstallerPage />
     ) : route === "uninstall" ? (
       <UninstallPage />
+    ) : route === "postInstallLogin" ? (
+      <PostInstallLoginTransition />
     ) : route === "loginSetup" ? (
       <LoginSetupPage />
     ) : (

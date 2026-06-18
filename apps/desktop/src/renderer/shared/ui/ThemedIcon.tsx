@@ -23,6 +23,10 @@ export type ThemedIconName =
   | "mail"
   | "file"
   | "privacy"
+  | "aboutCheckUpdates"
+  | "aboutContactEmail"
+  | "aboutUserAgreement"
+  | "aboutPrivacyPolicy"
   | "keyboard"
   | "language"
   | "microphone"
@@ -60,33 +64,94 @@ const ICON_FILES: Record<ThemedIconName, Record<IconTheme, string>> = {
   info: { light: "info-circle.svg", dark: "nav-about-active.svg" },
   navHomeActive: { light: "nav-home-active.svg", dark: "nav-home-active.svg" },
   navHomeMuted: { light: "nav-home-muted.svg", dark: "nav-home-muted.svg" },
-  navHistoryActive: { light: "nav-history-active.svg", dark: "nav-history-active.svg" },
-  navHistoryMuted: { light: "nav-history-muted.svg", dark: "nav-history-muted.svg" },
-  navSettingsActive: { light: "nav-settings-active.svg", dark: "nav-settings-active.svg" },
-  navSettingsMuted: { light: "nav-settings-muted.svg", dark: "nav-settings-muted.svg" },
-  navAboutActive: { light: "nav-about-active.svg", dark: "nav-about-active.svg" },
+  navHistoryActive: {
+    light: "nav-history-active.svg",
+    dark: "nav-history-active.svg",
+  },
+  navHistoryMuted: {
+    light: "nav-history-muted.svg",
+    dark: "nav-history-muted.svg",
+  },
+  navSettingsActive: {
+    light: "nav-settings-active.svg",
+    dark: "nav-settings-active.svg",
+  },
+  navSettingsMuted: {
+    light: "nav-settings-muted.svg",
+    dark: "nav-settings-muted.svg",
+  },
+  navAboutActive: {
+    light: "nav-about-active.svg",
+    dark: "nav-about-active.svg",
+  },
   navAboutMuted: { light: "nav-about-muted.svg", dark: "nav-about-muted.svg" },
   user: { light: "user-outline.svg", dark: "user-outline.svg" },
   power: { light: "power.svg", dark: "power.svg" },
   refresh: { light: "refresh.svg", dark: "refresh.svg" },
   mail: { light: "mail.svg", dark: "mail.svg" },
   file: { light: "document-file.svg", dark: "document-file.svg" },
-  privacy: { light: "settings-hex.svg", dark: "nav-settings-active.svg" },
+  privacy: { light: "check-circle.svg", dark: "check-circle.svg" },
+  aboutCheckUpdates: {
+    light: "about-check-updates.svg",
+    dark: "about-check-updates.svg",
+  },
+  aboutContactEmail: {
+    light: "about-contact-email.svg",
+    dark: "about-contact-email.svg",
+  },
+  aboutUserAgreement: {
+    light: "about-user-agreement.svg",
+    dark: "about-user-agreement.svg",
+  },
+  aboutPrivacyPolicy: {
+    light: "about-privacy-policy.svg",
+    dark: "about-privacy-policy.svg",
+  },
   keyboard: { light: "settings-shortcuts.svg", dark: "settings-shortcuts.svg" },
   language: { light: "settings-language.svg", dark: "settings-language.svg" },
   microphone: { light: "settings-audio.svg", dark: "settings-audio.svg" },
-  appearance: { light: "settings-appearance.svg", dark: "settings-appearance.svg" },
-  appBehavior: { light: "settings-app-behavior.svg", dark: "settings-app-behavior.svg" },
-  connection: { light: "settings-connection.svg", dark: "settings-connection.svg" },
+  appearance: {
+    light: "settings-appearance.svg",
+    dark: "settings-appearance.svg",
+  },
+  appBehavior: {
+    light: "settings-app-behavior.svg",
+    dark: "settings-app-behavior.svg",
+  },
+  connection: {
+    light: "settings-connection.svg",
+    dark: "settings-connection.svg",
+  },
   metricDuration: { light: "metric-duration.svg", dark: "metric-duration.svg" },
-  metricCharacters: { light: "metric-characters.svg", dark: "metric-characters.svg" },
+  metricCharacters: {
+    light: "metric-characters.svg",
+    dark: "metric-characters.svg",
+  },
   metricRewrite: { light: "metric-rewrite.svg", dark: "metric-rewrite.svg" },
-  metricTranslation: { light: "metric-translation.svg", dark: "metric-translation.svg" },
-  watermarkDuration: { light: "watermark-duration.svg", dark: "watermark-duration.svg" },
-  watermarkCharacters: { light: "watermark-characters.svg", dark: "watermark-characters.svg" },
-  watermarkRewrite: { light: "watermark-rewrite.svg", dark: "watermark-rewrite.svg" },
-  watermarkTranslation: { light: "watermark-translation.svg", dark: "watermark-translation.svg" },
-  announcement: { light: "announcement-speaker.svg", dark: "announcement-speaker.svg" },
+  metricTranslation: {
+    light: "metric-translation.svg",
+    dark: "metric-translation.svg",
+  },
+  watermarkDuration: {
+    light: "watermark-duration.svg",
+    dark: "watermark-duration.svg",
+  },
+  watermarkCharacters: {
+    light: "watermark-characters.svg",
+    dark: "watermark-characters.svg",
+  },
+  watermarkRewrite: {
+    light: "watermark-rewrite.svg",
+    dark: "watermark-rewrite.svg",
+  },
+  watermarkTranslation: {
+    light: "watermark-translation.svg",
+    dark: "watermark-translation.svg",
+  },
+  announcement: {
+    light: "announcement-speaker.svg",
+    dark: "announcement-speaker.svg",
+  },
   close: { light: "close-x.svg", dark: "close-x.svg" },
   check: { light: "check-circle.svg", dark: "check-circle.svg" },
   warning: { light: "warning-bell.svg", dark: "warning-bell.svg" },
@@ -99,11 +164,9 @@ export function ThemedIcon({
   label,
 }: ThemedIconProps): React.JSX.Element {
   const files = ICON_FILES[name];
-  const classes = [
-    "themed-icon",
-    `themed-icon--${mode}`,
-    className,
-  ].filter(Boolean).join(" ");
+  const classes = ["themed-icon", `themed-icon--${mode}`, className]
+    .filter(Boolean)
+    .join(" ");
   const accessibility = label
     ? { role: "img" as const, "aria-label": label }
     : { "aria-hidden": true as const };

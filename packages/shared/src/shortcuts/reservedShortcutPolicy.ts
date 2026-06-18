@@ -126,7 +126,31 @@ export function validateShortcut(
     };
   }
 
+  if (PRODUCT_ALLOWED_SHORTCUTS.has(normalized)) {
+    return { ok: true };
+  }
+
   if (isRightAltReservedShortcut(parts)) {
+    return {
+      ok: false,
+      reason: "reserved",
+      message: "此快捷键已保留供系统使用"
+    };
+  }
+
+  if (platform === "win32" && isWindowsReservedShortcut(normalized)) {
+    return {
+      ok: false,
+      reason: "reserved",
+      message: "此快捷键已保留供系统使用"
+    };
+  }
+
+  if (
+    platform === "win32" &&
+    parts.includes("RIGHTALT") &&
+    includesWindowsSystemReservedShortcut(parts)
+  ) {
     return {
       ok: false,
       reason: "reserved",
@@ -136,18 +160,6 @@ export function validateShortcut(
 
   if (parts.includes("RIGHTALT")) {
     return { ok: true };
-  }
-
-  if (PRODUCT_ALLOWED_SHORTCUTS.has(normalized)) {
-    return { ok: true };
-  }
-
-  if (platform === "win32" && isWindowsReservedShortcut(normalized)) {
-    return {
-      ok: false,
-      reason: "reserved",
-      message: "此快捷键已保留供系统使用"
-    };
   }
 
   if (hasConsecutiveLetters(parts)) {
@@ -203,6 +215,16 @@ export function normalizeShortcut(shortcut: string): string {
 
 function isWindowsReservedShortcut(normalized: string): boolean {
   return SYSTEM_RESERVED_SHORTCUTS.has(normalized) || COMMON_RESERVED_SHORTCUTS.has(normalized);
+}
+
+function includesWindowsSystemReservedShortcut(parts: string[]): boolean {
+  for (const shortcut of SYSTEM_RESERVED_SHORTCUTS) {
+    const reservedParts = shortcutParts(shortcut);
+    if (reservedParts.every((part) => parts.includes(part))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function shortcutParts(normalized: string): string[] {

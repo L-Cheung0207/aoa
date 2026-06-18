@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./http/backendJson": "./src/http/backendJson.ts",
     "./shortcuts/reservedShortcutPolicy": "./src/shortcuts/reservedShortcutPolicy.ts",
     "./types/audio": "./src/types/audio.ts",
     "./types/history": "./src/types/history.ts",

@@ -241,6 +241,23 @@ describe("shortcutCapture", () => {
     expect(onInvalid).toHaveBeenCalledWith("此快捷键已保留供系统使用");
   });
 
+  it("rejects Right Alt combinations containing Windows system shortcuts", () => {
+    const onInvalid = vi.fn();
+    const onCapture = vi.fn();
+    const handlers = createShortcutCaptureHandlers({
+      onCapture,
+      onCancel: vi.fn(),
+      onInvalid
+    });
+
+    handlers.handleKeyDown(keyEvent("AltRight"));
+    handlers.handleKeyDown(keyEvent("MetaLeft"));
+    handlers.handleKeyDown(keyEvent("KeyL"));
+
+    expect(onCapture).not.toHaveBeenCalled();
+    expect(onInvalid).toHaveBeenCalledWith("此快捷键已保留供系统使用");
+  });
+
   it("rejects Typeless-blacklisted shortcuts during capture", () => {
     const onInvalid = vi.fn();
     const onCapture = vi.fn();

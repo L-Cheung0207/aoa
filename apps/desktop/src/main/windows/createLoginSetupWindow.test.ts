@@ -85,4 +85,26 @@ describe("createLoginSetupWindow", () => {
       "http://localhost:5173#/login-setup",
     );
   });
+
+  it("loads the post-install login transition route in production", async () => {
+    const { createLoginSetupWindow } = await import("./createLoginSetupWindow");
+
+    createLoginSetupWindow({ route: "postInstallLogin" });
+
+    expect(electronMock.instances[0]?.loadFile).toHaveBeenCalledWith(
+      expect.stringContaining("index.html"),
+      { hash: "post-install-login" },
+    );
+  });
+
+  it("loads the post-install login transition route in development", async () => {
+    vi.stubEnv("ELECTRON_RENDERER_URL", "http://localhost:5173");
+    const { createLoginSetupWindow } = await import("./createLoginSetupWindow");
+
+    createLoginSetupWindow({ route: "postInstallLogin" });
+
+    expect(electronMock.instances[0]?.loadURL).toHaveBeenCalledWith(
+      "http://localhost:5173#/post-install-login",
+    );
+  });
 });

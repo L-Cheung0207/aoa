@@ -42,3 +42,14 @@ export {
   normalizeShortcut,
   validateShortcut,
 } from "./shortcuts/reservedShortcutPolicy";
+export type {
+  BackendJsonErrorCode,
+  BackendJsonFetch,
+  BackendJsonMethod,
+  RequestBackendJsonOptions,
+} from "./http/backendJson";
+export {
+  BackendJsonError,
+  requestBackendJson,
+  unwrapBackendData,
+} from "./http/backendJson";

@@ -31,6 +31,16 @@ describe("reserved shortcut policy", () => {
       reason: "reserved",
       message: "此快捷键已保留供系统使用"
     });
+    expect(validateShortcut("RightAlt+Super+L")).toMatchObject({
+      ok: false,
+      reason: "reserved",
+      message: "此快捷键已保留供系统使用"
+    });
+    expect(validateShortcut("RightAlt+Alt+Tab")).toMatchObject({
+      ok: false,
+      reason: "reserved",
+      message: "此快捷键已保留供系统使用"
+    });
   });
 
   it("rejects common system and editing shortcuts", () => {

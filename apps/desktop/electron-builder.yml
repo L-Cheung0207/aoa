@@ -10,6 +10,7 @@ directories:
 electronDist: ../../node_modules/electron/dist
 asar: true
 npmRebuild: false
+afterPack: scripts/after-pack.mjs
 
 publish:
   provider: generic
@@ -22,6 +23,7 @@ files:
   - "!node_modules/@voice/shared/**"
   - "!node_modules/@voice/backend-client/**"
   - "!node_modules/@voice/db/**"
+  - "!**/target/**"
 
 extraResources:
   - from: resources/app-icon.ico
@@ -32,7 +34,7 @@ extraResources:
     to: voice_native_helper.node
 
 win:
-  signAndEditExecutable: false
+  signAndEditExecutable: true
   target:
     - target: nsis
       arch:

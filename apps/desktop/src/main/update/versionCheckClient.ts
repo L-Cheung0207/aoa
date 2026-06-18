@@ -1,3 +1,4 @@
+import { requestBackendJson, unwrapBackendData } from "@voice/shared";
 import { formatLogFields, sanitizeUrlForLog } from "../log/logSanitizer";
 
 export type VersionPlatform = "WINDOWS" | "MAC" | "LINUX";
@@ -42,17 +43,8 @@ export interface VersionCheckLogger {
 
 type FetchLike = (
   input: string,
-  init: { method: "GET" }
-) => Promise<{
-  ok: boolean;
-  status: number;
-  statusText: string;
-  json(): Promise<unknown>;
-}>;
-
-interface BackendEnvelope {
-  data?: unknown;
-}
+  init: RequestInit
+) => Promise<Response>;
 
 export function createHttpVersionCheckClient(
   options: HttpVersionCheckClientOptions
@@ -77,13 +69,15 @@ export function createHttpVersionCheckClient(
           url: sanitizeUrlForLog(url.toString())
         })}`
       );
-      const response = await fetchImpl(url.toString(), { method: "GET" });
-      if (!response.ok) {
-        logger.warn(`[update] version check failed status=${response.status}`);
-        throw new Error(`VERSION_CHECK_HTTP_${response.status}`);
-      }
-      const responseBody = await response.json();
-      const result = normalizeVersionCheckResponse(responseBody, endpoint);
+      const result = await requestBackendJson(fetchImpl, url.toString(), {
+        method: "GET",
+        normalize: (responseBody) =>
+          normalizeVersionCheckResponse(responseBody, endpoint),
+        mapHttpError: (status) => {
+          logger.warn(`[update] version check failed status=${status}`);
+          return new Error(`VERSION_CHECK_HTTP_${status}`);
+        }
+      });
       logger.log(
         `[update] version check response payload ${formatVersionCheckResponsePayload(result)}`
       );
@@ -127,7 +121,7 @@ export function normalizeVersionCheckResponse(
   input: unknown,
   endpoint?: string | undefined
 ): VersionCheckResult {
-  const data = unwrapData(input);
+  const data = unwrapBackendData(input);
   if (!isRecord(data)) {
     throw new Error("VERSION_CHECK_INVALID_PAYLOAD");
   }
@@ -184,13 +178,6 @@ function resolveDownloadUrl(
 
 function joinUrlPath(prefix: string, path: string): string {
   return `${prefix.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-}
-
-function unwrapData(input: unknown): unknown {
-  if (isRecord(input) && "data" in input) {
-    return (input as BackendEnvelope).data;
-  }
-  return input;
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

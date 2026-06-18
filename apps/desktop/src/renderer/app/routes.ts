@@ -4,9 +4,14 @@ export type AppRoute =
   | "installer"
   | "uninstall"
   | "loginSetup"
+  | "postInstallLogin"
   | "overlay";
 
 export function resolveRoute(hash = window.location.hash || ""): AppRoute {
+  if (hash.includes("post-install-login")) {
+    return "postInstallLogin";
+  }
+
   if (hash.includes("login-setup")) {
     return "loginSetup";
   }

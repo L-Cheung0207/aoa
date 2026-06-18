@@ -1,0 +1,34 @@
+.post-install-login {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: #f3f2ee;
+}
+
+.post-install-login__mark {
+  width: 112px;
+  height: 84px;
+  animation: post-install-login-pulse 900ms ease both;
+}
+
+.post-install-login__mark .themed-icon {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes post-install-login-pulse {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+
+  45% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
