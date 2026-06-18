@@ -26,9 +26,6 @@ Var VoiceCreateDesktopShortcut
 Var VoiceLaunchAtLogin
 Var VoiceDesktopShortcutCheckbox
 Var VoiceLaunchAtLoginCheckbox
-Var VoiceInstallProgressBar
-Var VoiceInstallProgressPercentLabel
-Var VoiceInstallProgressText
 !endif
 
 !macro customCheckAppRunning
@@ -94,8 +91,6 @@ voice_check_done:
 
 !macro customPageAfterChangeDir
   Page custom VoiceInstallerOptionsPageCreate VoiceInstallerOptionsPageLeave
-  !define MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceInstallProgressPageShow
-  !define MUI_PAGE_CUSTOMFUNCTION_LEAVE VoiceInstallProgressPageLeave
 !macroend
 
 !macro customFinishPage
@@ -112,11 +107,6 @@ voice_check_done:
     WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
   ${EndIf}
   Call VoiceWriteInstallOptions
-!macroend
-
-!macro customExtractWithProgress FILE
-  GetFunctionAddress $R9 VoiceUpdateInstallProgressPercentFromArchive
-  Nsis7z::ExtractWithCallback "${FILE}" $R9
 !macroend
 !endif
 
@@ -147,138 +137,6 @@ FunctionEnd
 
 Function VoiceStartAppAfterFinish
   ExecShell "open" "$INSTDIR\${PRODUCT_FILENAME}.exe" "--post-install-login"
-FunctionEnd
-
-Function VoiceInstallProgressPageShow
-  Push $0
-  Push $1
-  Push $2
-  Push $3
-  Push $4
-  Push $5
-  Push $6
-  Push $7
-  Push $8
-  Push $9
-
-  StrCpy $VoiceInstallProgressBar 0
-  StrCpy $VoiceInstallProgressPercentLabel 0
-  StrCpy $VoiceInstallProgressText 0
-  FindWindow $0 "#32770" "" $HWNDPARENT
-  GetDlgItem $1 $0 1004
-  GetDlgItem $VoiceInstallProgressText $0 1006
-  ${If} $1 == 0
-    Goto voice_install_progress_done
-  ${EndIf}
-
-  System::Store "S"
-  System::Call 'USER32::GetClientRect(p$0,@r2)'
-  System::Call '*$2(i.r3,i.r4,i.r5,i.r9)'
-  System::Call 'USER32::GetWindowRect(p$1,@r2)'
-  System::Call 'USER32::MapWindowPoints(p0,p$0,pr2,i2)'
-  System::Call '*$2(i.r3,i.r4,i.r5,i.r6)'
-  IntOp $7 $5 - $3
-  IntOp $6 $6 - $4
-  IntOp $8 $9 - $6
-  IntOp $8 $8 / 2
-  IntOp $7 $7 - 62
-  System::Call 'USER32::SetWindowPos(p$1,p0,i$3,i$8,i$7,i$6,i0x14)'
-  StrCpy $VoiceInstallProgressBar $1
-  IntOp $4 $3 + $7
-  IntOp $4 $4 + 10
-  System::Call 'USER32::CreateWindowExW(i0,w "STATIC",w "0%",i0x50000000,i$4,i$8,i52,i18,p$0,i0,i0,i0)p.r5'
-  StrCpy $VoiceInstallProgressPercentLabel $5
-  ${NSD_CreateTimer} VoiceUpdateInstallProgressPercent 250
-  Call VoiceUpdateInstallProgressPercent
-  System::Store "L"
-
-voice_install_progress_done:
-  Pop $9
-  Pop $8
-  Pop $7
-  Pop $6
-  Pop $5
-  Pop $4
-  Pop $3
-  Pop $2
-  Pop $1
-  Pop $0
-FunctionEnd
-
-Function VoiceUpdateInstallProgressPercent
-  Push $0
-  Push $1
-  Push $2
-
-  ${If} $VoiceInstallProgressBar == 0
-    Goto voice_install_progress_percent_done
-  ${EndIf}
-
-  ${NSD_ProgressBar_GetPos} $VoiceInstallProgressBar $0
-  SendMessage $VoiceInstallProgressBar ${PBM_GETRANGE} 0 0 $1
-  StrCpy $2 $1
-  ${If} $2 <= 0
-    StrCpy $2 100
-  ${EndIf}
-  IntOp $0 $0 * 100
-  IntOp $0 $0 / $2
-  ${If} $0 < 0
-    StrCpy $0 0
-  ${EndIf}
-  ${If} $0 > 100
-    StrCpy $0 100
-  ${EndIf}
-  StrCpy $1 "$0%"
-  ${If} $VoiceInstallProgressPercentLabel != 0
-    ${NSD_SetText} $VoiceInstallProgressPercentLabel "$1"
-  ${EndIf}
-  ${If} $VoiceInstallProgressText != 0
-    ${NSD_SetText} $VoiceInstallProgressText "$1"
-  ${EndIf}
-
-voice_install_progress_percent_done:
-  Pop $2
-  Pop $1
-  Pop $0
-FunctionEnd
-
-Function VoiceUpdateInstallProgressPercentFromArchive
-  Pop $R8
-  Pop $R9
-
-  ${If} $R9 <= 0
-    Goto voice_archive_progress_done
-  ${EndIf}
-
-  System::Int64Op $R8 * 100
-  Pop $R7
-  System::Int64Op $R7 / $R9
-  Pop $R6
-  ${If} $R6 < 0
-    StrCpy $R6 0
-  ${EndIf}
-  ${If} $R6 > 100
-    StrCpy $R6 100
-  ${EndIf}
-  StrCpy $R7 "$R6%"
-  ${If} $VoiceInstallProgressPercentLabel != 0
-    ${NSD_SetText} $VoiceInstallProgressPercentLabel "$R7"
-  ${EndIf}
-  ${If} $VoiceInstallProgressText != 0
-    ${NSD_SetText} $VoiceInstallProgressText "$R7"
-  ${EndIf}
-
-voice_archive_progress_done:
-FunctionEnd
-
-Function VoiceInstallProgressPageLeave
-  ${NSD_KillTimer} VoiceUpdateInstallProgressPercent
-  ${If} $VoiceInstallProgressPercentLabel != 0
-    ${NSD_SetText} $VoiceInstallProgressPercentLabel "100%"
-  ${EndIf}
-  ${If} $VoiceInstallProgressText != 0
-    ${NSD_SetText} $VoiceInstallProgressText "100%"
-  ${EndIf}
 FunctionEnd
 
 Function VoiceInstallerOptionsPageCreate

@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
-  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -35,41 +34,6 @@ function createBuildEnv(options = {}) {
   return options.phase ? { AOA_VERSION_PHASE: options.phase } : undefined;
 }
 
-export function patchElectronBuilderNsisProgressTemplate(
-  templatePath = join(
-    fileURLToPath(new URL("../../..", import.meta.url)),
-    "node_modules",
-    "app-builder-lib",
-    "templates",
-    "nsis",
-    "include",
-    "extractAppPackage.nsh"
-  )
-) {
-  if (!existsSync(templatePath)) {
-    return false;
-  }
-  const original = readFileSync(templatePath, "utf8");
-  if (original.includes("customExtractWithProgress")) {
-    return false;
-  }
-  const needle = '  Nsis7z::Extract "${FILE}"';
-  const replacement = [
-    "  !ifmacrodef customExtractWithProgress",
-    '    !insertmacro customExtractWithProgress "${FILE}"',
-    "  !else",
-    needle,
-    "  !endif",
-  ].join("\n");
-  if (!original.includes(needle)) {
-    throw new Error(
-      `Cannot patch NSIS progress template: ${templatePath} no longer contains ${needle}`
-    );
-  }
-  writeFileSync(templatePath, original.replace(needle, replacement));
-  return true;
-}
-
 export function createDistWinCommands(scriptUrl = import.meta.url, options = {}) {
   const packageRoot = fileURLToPath(new URL("..", scriptUrl));
   const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
@@ -87,11 +51,6 @@ export function createDistWinCommands(scriptUrl = import.meta.url, options = {})
       args: ["run", "build"],
       cwd: packageRoot,
       env
-    },
-    {
-      command: "node",
-      args: ["scripts/dist-win.mjs", "--patch-nsis-progress-template"],
-      cwd: packageRoot
     },
     {
       command: "electron-builder",
@@ -232,10 +191,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const options = parseDistWinOptions(process.argv.slice(2));
   if (process.argv.includes("--prepare-installer-shell-payload")) {
     prepareInstallerShellPayload();
-    process.exit(0);
-  }
-  if (process.argv.includes("--patch-nsis-progress-template")) {
-    patchElectronBuilderNsisProgressTemplate();
     process.exit(0);
   }
   if (process.argv.includes("--installer-shell")) {

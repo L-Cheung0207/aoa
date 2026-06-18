@@ -15,7 +15,6 @@ import {
   createDistWinCommands,
   createInstallerShellCommands,
   parseDistWinOptions,
-  patchElectronBuilderNsisProgressTemplate,
   removeLegacyInstallerShellArtifacts,
   resolveInstallerPayloadSetupPath,
   validateInstallerPayloadSetup,
@@ -42,67 +41,12 @@ describe("desktop Windows distribution script", () => {
         env: undefined,
       },
       {
-        command: "node",
-        args: ["scripts/dist-win.mjs", "--patch-nsis-progress-template"],
-        cwd: packageRoot,
-      },
-      {
         command: "electron-builder",
         args: ["--win", "nsis", "--config", "electron-builder.yml"],
         cwd: packageRoot,
         env: undefined,
       },
     ]);
-  });
-
-  it("patches the electron-builder NSIS archive extraction template before packaging", () => {
-    const scriptUrl = new URL("./dist-win.mjs", import.meta.url);
-    const packageRoot = fileURLToPath(new URL("..", scriptUrl));
-    const commands = createDistWinCommands(scriptUrl);
-
-    expect(commands[2]).toEqual({
-      command: "node",
-      args: ["scripts/dist-win.mjs", "--patch-nsis-progress-template"],
-      cwd: packageRoot,
-    });
-    expect(commands[3]).toEqual({
-      command: "electron-builder",
-      args: ["--win", "nsis", "--config", "electron-builder.yml"],
-      cwd: packageRoot,
-    });
-  });
-
-  it("patches Nsis7z extraction to call the installer progress callback", () => {
-    const tempRoot = mkdtempSync(join(tmpdir(), "aoa-nsis-template-"));
-    const templatePath = join(tempRoot, "extractAppPackage.nsh");
-    const original = [
-      "!macro extractUsing7za FILE",
-      "  Push $OUTDIR",
-      "  CreateDirectory \"$PLUGINSDIR\\7z-out\"",
-      "  ClearErrors",
-      "  SetOutPath \"$PLUGINSDIR\\7z-out\"",
-      "  Nsis7z::Extract \"${FILE}\"",
-      "  Pop $R0",
-      "  SetOutPath $R0",
-      "!macroend",
-      "",
-    ].join("\n");
-
-    try {
-      writeFileSync(templatePath, original);
-
-      const patched = patchElectronBuilderNsisProgressTemplate(templatePath);
-
-      expect(patched).toBe(true);
-      const script = readFileSync(templatePath, "utf8");
-      expect(script).toContain('!ifmacrodef customExtractWithProgress');
-      expect(script).toContain('!insertmacro customExtractWithProgress "${FILE}"');
-      expect(script).toContain('!else');
-      expect(script).toContain('Nsis7z::Extract "${FILE}"');
-      expect(script).toContain('!endif');
-    } finally {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
   });
 
   it("excludes native helper build cache from packaged app files", () => {
@@ -166,7 +110,6 @@ describe("desktop Windows distribution script", () => {
     expect(commands.map((command) => command.env)).toEqual([
       { AOA_VERSION_PHASE: "RELEASE" },
       { AOA_VERSION_PHASE: "RELEASE" },
-      undefined,
       { AOA_VERSION_PHASE: "RELEASE" },
     ]);
   });
@@ -176,7 +119,6 @@ describe("desktop Windows distribution script", () => {
     const commands = createDistWinCommands(scriptUrl);
 
     expect(commands.map((command) => command.env)).toEqual([
-      undefined,
       undefined,
       undefined,
       undefined,
@@ -214,11 +156,6 @@ describe("desktop Windows distribution script", () => {
         args: ["run", "build"],
         cwd: packageRoot,
         env: undefined,
-      },
-      {
-        command: "node",
-        args: ["scripts/dist-win.mjs", "--patch-nsis-progress-template"],
-        cwd: packageRoot,
       },
       {
         command: "electron-builder",

@@ -67,64 +67,17 @@ describe("single-layer NSIS installer script", () => {
     expect(script).not.toContain("nsDialogs::SelectFolderDialog");
   });
 
-  it("centers the standard install progress bar and keeps percent text visible", () => {
+  it("uses the standard NSIS install progress page without custom percent text", () => {
     const script = readInstallerScript();
 
-    expect(script).toContain(
-      "!define MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceInstallProgressPageShow",
-    );
-    expect(script).toContain(
-      "!define MUI_PAGE_CUSTOMFUNCTION_LEAVE VoiceInstallProgressPageLeave",
-    );
-    expect(script).toContain("Var VoiceInstallProgressBar");
-    expect(script).toContain("Var VoiceInstallProgressPercentLabel");
-    expect(script).toContain("Var VoiceInstallProgressText");
-    expect(script).toContain("!macro customExtractWithProgress FILE");
-    expect(script).toContain("Nsis7z::ExtractWithCallback \"${FILE}\" $R9");
-    expect(script).toContain("Function VoiceUpdateInstallProgressPercentFromArchive");
-    expect(script).toContain("Pop $R8");
-    expect(script).toContain("Pop $R9");
-    expect(script).toContain("System::Int64Op $R8 * 100");
-    expect(script).toContain("System::Int64Op $R7 / $R9");
-    expect(script).toContain("Function VoiceInstallProgressPageShow");
-    expect(script).toContain("StrCpy $VoiceInstallProgressBar 0");
-    expect(script).toContain("StrCpy $VoiceInstallProgressPercentLabel 0");
-    expect(script).toContain("StrCpy $VoiceInstallProgressText 0");
-    expect(script).toContain("GetDlgItem $1 $0 1004");
-    expect(script).toContain("GetDlgItem $VoiceInstallProgressText $0 1006");
-    expect(script).toContain("USER32::GetClientRect");
-    expect(script).toContain("USER32::SetWindowPos");
-    expect(script).toContain("IntOp $7 $7 - 62");
-    expect(script).toContain("i0x14");
-    expect(script).not.toContain("i0x15");
-    expect(script).toContain('USER32::CreateWindowExW(i0,w "STATIC",w "0%"');
-    expect(script).toContain("Function VoiceUpdateInstallProgressPercent");
-    expect(script).toMatch(
-      /Function VoiceInstallProgressPageShow[\s\S]*Call VoiceUpdateInstallProgressPercent[\s\S]*FunctionEnd/,
-    );
-    expect(script).toContain(
-      "${NSD_CreateTimer} VoiceUpdateInstallProgressPercent 250",
-    );
-    expect(script).toContain(
-      "${NSD_ProgressBar_GetPos} $VoiceInstallProgressBar $0",
-    );
-    expect(script).toContain(
-      "SendMessage $VoiceInstallProgressBar ${PBM_GETRANGE} 0 0 $1",
-    );
-    expect(script).not.toContain("IntOp $1 $1 >> 16");
-    expect(script).not.toContain("IntOp $1 $1 & 0xFFFF");
-    expect(script).toContain(
-      '${NSD_SetText} $VoiceInstallProgressPercentLabel "$1"',
-    );
-    expect(script).toContain('${NSD_SetText} $VoiceInstallProgressText "$1"');
-    expect(script).toContain("Function VoiceInstallProgressPageLeave");
-    expect(script).toContain(
-      "${NSD_KillTimer} VoiceUpdateInstallProgressPercent",
-    );
-    expect(script).toContain(
-      '${NSD_SetText} $VoiceInstallProgressPercentLabel "100%"',
-    );
-    expect(script).toContain('${NSD_SetText} $VoiceInstallProgressText "100%"');
+    expect(script).not.toContain("MUI_PAGE_CUSTOMFUNCTION_SHOW VoiceInstallProgressPageShow");
+    expect(script).not.toContain("MUI_PAGE_CUSTOMFUNCTION_LEAVE VoiceInstallProgressPageLeave");
+    expect(script).not.toContain("VoiceInstallProgress");
+    expect(script).not.toContain("customExtractWithProgress");
+    expect(script).not.toContain("ExtractWithCallback");
+    expect(script).not.toContain("PBM_GETRANGE");
+    expect(script).not.toContain("NSD_CreateTimer");
+    expect(script).not.toContain('CreateWindowExW(i0,w "STATIC",w "0%"');
   });
 
   it("runs preflight checks before the install page starts", () => {
