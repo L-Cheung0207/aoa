@@ -55,6 +55,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEVELOPMENT_LOGIN_EMAIL = "dev@example.test";
 const DEVELOPMENT_LOGIN_CODE = "000000";
 const LOGIN_SETUP_MICROPHONE_METER_BARS = 12;
+const LOGIN_SETUP_SHORTCUT_CLEAR_DELAY_MS = 160;
 const SETUP_CONTENT_FLOW: SetupContentStep[] = [
   "privacy",
   "permissions",
@@ -150,7 +151,7 @@ function getStepIndex(step: LoginSetupStep): number {
 
 function getSetupPrimaryLabel(
   step: SetupContentStep,
-  completingSetup: boolean,
+  _completingSetup: boolean,
 ): string {
   if (step === "privacy") {
     return "下一步";
@@ -218,6 +219,11 @@ function matchesSetupAccelerator(accelerator: string, shortcut: string): boolean
   return (
     normalizeSetupAccelerator(accelerator) === normalizeSetupAccelerator(shortcut)
   );
+}
+
+function isSetupSingleModifierShortcut(shortcut: string): boolean {
+  const normalized = normalizeSetupAccelerator(shortcut);
+  return normalized === "rightalt" || normalized === "metaright";
 }
 
 function matchesShortcutEvent(event: KeyboardEvent, shortcut: string): boolean {
@@ -419,6 +425,7 @@ export function LoginSetupPage(): React.JSX.Element {
     undefined,
   );
   const setupTryRecordingModeRef = useRef<RecordingMode | undefined>(undefined);
+  const ignoreNextTryShortcutReleaseRef = useRef(false);
 
   const step = loginStepVisible ? "login" : resolveOuterStep(contentStep);
   const activeStepIndex = useMemo(() => getStepIndex(step), [step]);
@@ -458,6 +465,14 @@ export function LoginSetupPage(): React.JSX.Element {
     </p>
   ) : null;
   const isReadyStep = !loginStepVisible && contentStep === "ready";
+  const setupShortcutSandboxActive =
+    !loginStepVisible &&
+    (contentStep === "voiceShortcut" ||
+      contentStep === "dictationTry" ||
+      contentStep === "translateShortcut" ||
+      contentStep === "translationTry" ||
+      contentStep === "rewriteShortcut" ||
+      contentStep === "rewriteTry");
 
   useEffect(() => {
     let cancelled = false;
@@ -603,65 +618,16 @@ export function LoginSetupPage(): React.JSX.Element {
   }, [contentStep]);
 
   useEffect(() => {
-    if (
-      loginStepVisible ||
-      (contentStep !== "voiceShortcut" &&
-        contentStep !== "dictationTry" &&
-        contentStep !== "translateShortcut" &&
-        contentStep !== "translationTry" &&
-        contentStep !== "rewriteShortcut" &&
-        contentStep !== "rewriteTry")
-    ) {
+    if (!setupShortcutSandboxActive) {
       return undefined;
     }
 
-    const shortcut =
-      contentStep === "translateShortcut" || contentStep === "translationTry"
-        ? setupTranslateShortcut
-        : contentStep === "rewriteShortcut" || contentStep === "rewriteTry"
-          ? setupRewriteShortcut
-          : setupVoiceInputShortcut;
-    const activeTryMode =
-      contentStep === "translationTry"
-        ? "translate"
-        : contentStep === "rewriteTry"
-          ? "processSelection"
-          : undefined;
-    const canStopActiveTryRecording =
-      activeTryMode !== undefined &&
-      (recordingMode === activeTryMode ||
-        setupTryRecordingModeRef.current === activeTryMode) &&
-      recordingState !== "idle" &&
-      recordingState !== "success" &&
-      recordingState !== "error" &&
-      recordingState !== "canceled";
-    const markPressed = (): void => {
-      if (contentStep === "voiceShortcut") {
-        setVoiceShortcutPressed(true);
-      } else if (contentStep === "translateShortcut") {
-        setTranslateShortcutPressed(true);
-      } else if (contentStep === "rewriteShortcut") {
-        setRewriteShortcutPressed(true);
-      }
-    };
-    const clearPressed = (): void => {
-      if (contentStep === "voiceShortcut") {
-        setVoiceShortcutPressed(false);
-      } else if (contentStep === "translateShortcut") {
-        setTranslateShortcutPressed(false);
-      } else if (contentStep === "rewriteShortcut") {
-        setRewriteShortcutPressed(false);
-      }
-    };
     let disposed = false;
-    let suspended = false;
-    let lastTriggerAtMs = 0;
-    let rightAltDown = false;
-
+    let activated = false;
     void window.voiceAI
       .setLoginSetupShortcutCaptureActive(true)
       .then(() => {
-        suspended = true;
+        activated = true;
         if (disposed) {
           void window.voiceAI.setLoginSetupShortcutCaptureActive(false);
         }
@@ -673,6 +639,180 @@ export function LoginSetupPage(): React.JSX.Element {
         );
       });
 
+    return () => {
+      disposed = true;
+      if (activated) {
+        void window.voiceAI.setLoginSetupShortcutCaptureActive(false);
+      }
+    };
+  }, [setupShortcutSandboxActive]);
+
+  useEffect(() => {
+    if (
+      loginStepVisible ||
+      (contentStep !== "voiceShortcut" &&
+        contentStep !== "translateShortcut" &&
+        contentStep !== "rewriteShortcut")
+    ) {
+      return undefined;
+    }
+
+    const shortcut =
+      contentStep === "translateShortcut"
+        ? setupTranslateShortcut
+        : contentStep === "rewriteShortcut"
+          ? setupRewriteShortcut
+          : setupVoiceInputShortcut;
+    const markPressed = (): void => {
+      if (contentStep === "voiceShortcut") {
+        setVoiceShortcutPressed(true);
+      } else if (contentStep === "translateShortcut") {
+        setTranslateShortcutPressed(true);
+      } else {
+        setRewriteShortcutPressed(true);
+      }
+    };
+    const clearPressed = (): void => {
+      if (contentStep === "voiceShortcut") {
+        setVoiceShortcutPressed(false);
+      } else if (contentStep === "translateShortcut") {
+        setTranslateShortcutPressed(false);
+      } else {
+        setRewriteShortcutPressed(false);
+      }
+    };
+    let rightAltDown = false;
+    let clearPressedTimer: number | undefined;
+
+    const scheduleClearPressed = (): void => {
+      if (clearPressedTimer !== undefined) {
+        window.clearTimeout(clearPressedTimer);
+      }
+      clearPressedTimer = window.setTimeout(() => {
+        clearPressedTimer = undefined;
+        clearPressed();
+      }, LOGIN_SETUP_SHORTCUT_CLEAR_DELAY_MS);
+    };
+    const cancelScheduledClearPressed = (): void => {
+      if (clearPressedTimer !== undefined) {
+        window.clearTimeout(clearPressedTimer);
+        clearPressedTimer = undefined;
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat) {
+        return;
+      }
+      if (isSetupPhysicalRightAltEvent(event)) {
+        rightAltDown = true;
+      } else if (!isSetupRightAltHeld(event)) {
+        rightAltDown = false;
+      }
+      if (isSetupShortcutEvent(event, shortcut, rightAltDown)) {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelScheduledClearPressed();
+        markPressed();
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent): void => {
+      if (isSetupPhysicalRightAltEvent(event)) {
+        rightAltDown = false;
+      }
+      scheduleClearPressed();
+    };
+    const handleBlur = (): void => {
+      rightAltDown = false;
+      cancelScheduledClearPressed();
+      clearPressed();
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", handleBlur);
+    const unsubscribeSetupShortcutCaptureAccelerator =
+      window.voiceAI.onLoginSetupShortcutCaptureAccelerator(({ accelerator, state }) => {
+        if (matchesSetupAccelerator(accelerator, shortcut)) {
+          if (state === "up") {
+            scheduleClearPressed();
+          } else {
+            cancelScheduledClearPressed();
+            markPressed();
+          }
+        }
+      });
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", handleBlur);
+      unsubscribeSetupShortcutCaptureAccelerator();
+      cancelScheduledClearPressed();
+    };
+  }, [
+    contentStep,
+    loginStepVisible,
+    setupRewriteShortcut,
+    setupTranslateShortcut,
+    setupVoiceInputShortcut,
+  ]);
+
+  useEffect(() => {
+    if (
+      loginStepVisible ||
+      (contentStep !== "dictationTry" &&
+        contentStep !== "translationTry" &&
+        contentStep !== "rewriteTry")
+    ) {
+      return undefined;
+    }
+
+    const shortcut =
+      contentStep === "translationTry"
+        ? setupTranslateShortcut
+        : contentStep === "rewriteTry"
+          ? setupRewriteShortcut
+          : setupVoiceInputShortcut;
+    const activeTryMode: RecordingMode =
+      contentStep === "translationTry"
+        ? "translate"
+        : contentStep === "rewriteTry"
+          ? "processSelection"
+          : "direct";
+    const canStopActiveTryRecording =
+      (recordingMode === activeTryMode ||
+        setupTryRecordingModeRef.current === activeTryMode) &&
+      recordingState === "listening";
+    const shouldBlockTryShortcutWhileBusy =
+      recordingState === "processing" || recordingState === "inserting";
+    const markPressed = (): void => {
+      if (contentStep === "dictationTry") {
+        setVoiceShortcutPressed(true);
+      } else if (contentStep === "translationTry") {
+        setTranslateShortcutPressed(true);
+      } else {
+        setRewriteShortcutPressed(true);
+      }
+    };
+    const clearPressed = (): void => {
+      setVoiceShortcutPressed(false);
+      setTranslateShortcutPressed(false);
+      setRewriteShortcutPressed(false);
+    };
+    let rightAltDown = false;
+    let clearPressedTimer: number | undefined;
+    let lastTriggerAtMs = 0;
+
+    const scheduleClearPressed = (): void => {
+      if (clearPressedTimer !== undefined) {
+        window.clearTimeout(clearPressedTimer);
+      }
+      clearPressedTimer = window.setTimeout(() => {
+        clearPressedTimer = undefined;
+        clearPressed();
+      }, LOGIN_SETUP_SHORTCUT_CLEAR_DELAY_MS);
+    };
+
     const triggerCurrentStep = (): void => {
       const now = window.performance.now();
       if (now - lastTriggerAtMs < 500) {
@@ -680,24 +820,37 @@ export function LoginSetupPage(): React.JSX.Element {
       }
       lastTriggerAtMs = now;
       if (contentStep === "dictationTry") {
-        window.voiceAI.triggerRecording({ mode: "direct" });
+        setupTryRecordingModeRef.current = "direct";
+        window.voiceAI.triggerRecording({
+          mode: "direct",
+          loginSetupTrial: true,
+        });
       } else if (contentStep === "translationTry") {
         setupTryRecordingModeRef.current = "translate";
-        window.voiceAI.triggerRecording({ mode: "translate" });
+        window.voiceAI.triggerRecording({
+          mode: "translate",
+          loginSetupTrial: true,
+        });
       } else if (contentStep === "rewriteTry") {
         setupTryRecordingModeRef.current = "processSelection";
         window.voiceAI.triggerRecording({
           mode: "processSelection",
           previewSelectedText: rewriteSelectedText,
+          loginSetupTrial: true,
         });
       }
     };
 
     const stopActiveTryRecording = (): void => {
-      if (activeTryMode === undefined) {
-        return;
+      window.voiceAI.triggerRecording({
+        mode: activeTryMode,
+        loginSetupTrial: true,
+      });
+    };
+    const ignoreNextSingleModifierRelease = (): void => {
+      if (isSetupSingleModifierShortcut(shortcut)) {
+        ignoreNextTryShortcutReleaseRef.current = true;
       }
-      window.voiceAI.triggerRecording({ mode: activeTryMode });
     };
 
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -710,11 +863,22 @@ export function LoginSetupPage(): React.JSX.Element {
         rightAltDown = false;
       }
       if (
+        shouldBlockTryShortcutWhileBusy &&
+        (isSetupShortcutEvent(event, setupVoiceInputShortcut, rightAltDown) ||
+          isSetupShortcutEvent(event, shortcut, rightAltDown))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        ignoreNextSingleModifierRelease();
+        return;
+      }
+      if (
         canStopActiveTryRecording &&
         isSetupShortcutEvent(event, setupVoiceInputShortcut, rightAltDown)
       ) {
         event.preventDefault();
         event.stopPropagation();
+        ignoreNextSingleModifierRelease();
         stopActiveTryRecording();
         return;
       }
@@ -722,6 +886,7 @@ export function LoginSetupPage(): React.JSX.Element {
         event.preventDefault();
         event.stopPropagation();
         markPressed();
+        ignoreNextSingleModifierRelease();
         triggerCurrentStep();
       }
     };
@@ -733,13 +898,45 @@ export function LoginSetupPage(): React.JSX.Element {
     };
     const handleBlur = (): void => {
       rightAltDown = false;
+      ignoreNextTryShortcutReleaseRef.current = false;
       clearPressed();
     };
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("keyup", handleKeyUp, true);
     window.addEventListener("blur", handleBlur);
     const unsubscribeSetupShortcutCaptureAccelerator =
-      window.voiceAI.onLoginSetupShortcutCaptureAccelerator(({ accelerator }) => {
+      window.voiceAI.onLoginSetupShortcutCaptureAccelerator(({ accelerator, state }) => {
+        const isKeyUp = state === "up";
+        if (
+          shouldBlockTryShortcutWhileBusy &&
+          (matchesSetupAccelerator(accelerator, setupVoiceInputShortcut) ||
+            matchesSetupAccelerator(accelerator, shortcut))
+        ) {
+          if (
+            isSetupSingleModifierShortcut(shortcut) &&
+            matchesSetupAccelerator(accelerator, shortcut)
+          ) {
+            ignoreNextTryShortcutReleaseRef.current = false;
+            scheduleClearPressed();
+          }
+          return;
+        }
+        if (isKeyUp) {
+          if (matchesSetupAccelerator(accelerator, shortcut)) {
+            ignoreNextTryShortcutReleaseRef.current = false;
+            clearPressed();
+          }
+          return;
+        }
+        if (
+          isSetupSingleModifierShortcut(shortcut) &&
+          matchesSetupAccelerator(accelerator, shortcut) &&
+          ignoreNextTryShortcutReleaseRef.current
+        ) {
+          ignoreNextTryShortcutReleaseRef.current = false;
+          scheduleClearPressed();
+          return;
+        }
         if (
           canStopActiveTryRecording &&
           matchesSetupAccelerator(accelerator, setupVoiceInputShortcut)
@@ -750,18 +947,21 @@ export function LoginSetupPage(): React.JSX.Element {
         if (matchesSetupAccelerator(accelerator, shortcut)) {
           markPressed();
           triggerCurrentStep();
+          if (isSetupSingleModifierShortcut(shortcut)) {
+            scheduleClearPressed();
+          }
         }
       });
 
     return () => {
-      disposed = true;
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", handleBlur);
       unsubscribeSetupShortcutCaptureAccelerator();
-      if (suspended) {
-        void window.voiceAI.setLoginSetupShortcutCaptureActive(false);
+      if (clearPressedTimer !== undefined) {
+        window.clearTimeout(clearPressedTimer);
       }
+      ignoreNextTryShortcutReleaseRef.current = false;
     };
   }, [
     contentStep,
@@ -1568,6 +1768,7 @@ function DictationTryStep({
   setupVoiceInputShortcut: string;
 }): React.JSX.Element {
   const shortcutLabel = formatSetupShortcutLabel(setupVoiceInputShortcut);
+  const textareaRef = useSetupTryTextareaFocus();
   return (
     <section className="login-setup__experience-page login-setup__dictation-page">
       <header className="login-setup__experience-header">
@@ -1593,7 +1794,10 @@ function DictationTryStep({
         </div>
         <label className="login-setup__dictation-document">
           <DocumentHeader title="文本文檔" />
-          <textarea placeholder={`按下${shortcutLabel}鍵一次，開始說話...`} />
+          <textarea
+            ref={textareaRef}
+            placeholder={`按下${shortcutLabel}鍵一次，開始說話...`}
+          />
         </label>
       </div>
     </section>
@@ -1609,6 +1813,7 @@ function TranslationTryStep({
 }): React.JSX.Element {
   const shortcutLabel = formatSetupShortcutLabel(setupTranslateShortcut);
   const stopShortcutLabel = formatSetupShortcutLabel(setupVoiceInputShortcut);
+  const textareaRef = useSetupTryTextareaFocus();
   return (
     <section className="login-setup__experience-page login-setup__dictation-page">
       <header className="login-setup__experience-header">
@@ -1634,7 +1839,10 @@ function TranslationTryStep({
         </div>
         <label className="login-setup__dictation-document">
           <DocumentHeader title="文本文檔" />
-          <textarea placeholder={`按下${shortcutLabel}鍵一次，開始說話...`} />
+          <textarea
+            ref={textareaRef}
+            placeholder={`按下${shortcutLabel}鍵一次，開始說話...`}
+          />
         </label>
       </div>
     </section>
@@ -1691,6 +1899,16 @@ function RewriteTryStep({
       </div>
     </section>
   );
+}
+
+function useSetupTryTextareaFocus(): React.RefObject<HTMLTextAreaElement | null> {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  return textareaRef;
 }
 
 function DocumentHeader({ title }: { title: string }): React.JSX.Element {

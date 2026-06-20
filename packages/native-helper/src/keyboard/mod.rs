@@ -1,9 +1,9 @@
 use crate::{ensure_supported_platform, NativeHelperError, NativeHelperResult};
 
-#[cfg(windows)]
-pub mod hook_windows;
 #[cfg(target_os = "macos")]
 pub mod hook_macos;
+#[cfg(windows)]
+pub mod hook_windows;
 
 pub const RIGHT_ALT_KEY_CODE: u32 = 0xA5;
 pub const SPACE_KEY_CODE: u32 = 0x20;
@@ -219,10 +219,11 @@ impl RightAltHotkeyRecognizer {
             .iter()
             .find(|binding| {
                 shortcut_contains_key(&binding.keys, key_code)
-                    && binding
-                        .keys
-                        .iter()
-                        .all(|key| key.variants.iter().any(|variant| self.is_key_pressed(*variant)))
+                    && binding.keys.iter().all(|key| {
+                        key.variants
+                            .iter()
+                            .any(|variant| self.is_key_pressed(*variant))
+                    })
             })
             .cloned()
     }
@@ -242,8 +243,11 @@ impl RightAltHotkeyRecognizer {
     }
 
     fn any_shortcut_key_pressed(&self, keys: &[ShortcutKey]) -> bool {
-        keys.iter()
-            .any(|key| key.variants.iter().any(|variant| self.is_key_pressed(*variant)))
+        keys.iter().any(|key| {
+            key.variants
+                .iter()
+                .any(|variant| self.is_key_pressed(*variant))
+        })
     }
 }
 
@@ -638,7 +642,10 @@ mod tests {
         let mut recognizer = RightAltHotkeyRecognizer::new();
 
         recognizer.handle_event(KeyEvent::down(RIGHT_ALT_KEY_CODE));
-        assert_eq!(recognizer.handle_event(KeyEvent::down(SPACE_KEY_CODE)), None);
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::down(SPACE_KEY_CODE)),
+            None
+        );
         assert_eq!(
             recognizer.emit_shortcut_help_if_waiting(),
             Some(HotkeyAction::ShortcutHelp)
@@ -841,11 +848,20 @@ mod tests {
             .configure_shortcuts("A", "Ctrl+Space", "Shift+T")
             .expect("custom shortcuts parse");
 
-        assert_eq!(recognizer.handle_event(KeyEvent::down(RIGHT_ALT_KEY_CODE)), None);
-        assert_eq!(recognizer.handle_event(KeyEvent::up(RIGHT_ALT_KEY_CODE)), None);
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::down(RIGHT_ALT_KEY_CODE)),
+            None
+        );
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::up(RIGHT_ALT_KEY_CODE)),
+            None
+        );
 
         assert_eq!(recognizer.handle_event(KeyEvent::down(0xA2)), None);
-        assert_eq!(recognizer.handle_event(KeyEvent::down(SPACE_KEY_CODE)), None);
+        assert_eq!(
+            recognizer.handle_event(KeyEvent::down(SPACE_KEY_CODE)),
+            None
+        );
         assert_eq!(
             recognizer.handle_event(KeyEvent::up(SPACE_KEY_CODE)),
             Some(HotkeyAction::ProcessSelection)

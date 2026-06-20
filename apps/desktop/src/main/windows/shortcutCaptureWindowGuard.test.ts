@@ -300,7 +300,192 @@ describe("shortcutCaptureWindowGuard", () => {
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(
       "voice:login-setup-shortcut-capture-accelerator",
-      { accelerator: "MetaRight" }
+      { accelerator: "MetaRight", state: "up" }
+    );
+  });
+
+  it("forwards Right Cmd down and up to the login setup shortcut capture channel", () => {
+    const preventDefault = vi.fn();
+    const send = vi.fn();
+    const webContentsListeners = new Map<
+      string,
+      (event: { preventDefault(): void }, input: unknown) => void
+    >();
+    const window = {
+      on: vi.fn(),
+      hookWindowMessage: vi.fn(),
+      webContents: {
+        send,
+        on: (
+          event: string,
+          listener: (event: { preventDefault(): void }, input: unknown) => void
+        ) => {
+          webContentsListeners.set(event, listener);
+        }
+      }
+    };
+
+    wireLoginSetupShortcutCaptureWindowGuard(
+      window as never,
+      () => true,
+      () => undefined
+    );
+    const beforeInput = webContentsListeners.get("before-input-event");
+    beforeInput?.(
+      { preventDefault: vi.fn() },
+      {
+        type: "keyDown",
+        key: "Meta",
+        code: "MetaRight",
+        meta: true,
+        location: 2,
+        modifiers: ["meta", "right"]
+      }
+    );
+    beforeInput?.(
+      { preventDefault },
+      {
+        type: "keyUp",
+        key: "Meta",
+        code: "MetaRight",
+        meta: false,
+        location: 2,
+        modifiers: ["right"]
+      }
+    );
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenNthCalledWith(
+      1,
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "MetaRight", state: "down" }
+    );
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "MetaRight", state: "up" }
+    );
+  });
+
+  it("forwards RightAlt down and up to the login setup shortcut capture channel", () => {
+    const preventDefault = vi.fn();
+    const send = vi.fn();
+    const webContentsListeners = new Map<
+      string,
+      (event: { preventDefault(): void }, input: unknown) => void
+    >();
+    const window = {
+      on: vi.fn(),
+      hookWindowMessage: vi.fn(),
+      webContents: {
+        send,
+        on: (
+          event: string,
+          listener: (event: { preventDefault(): void }, input: unknown) => void
+        ) => {
+          webContentsListeners.set(event, listener);
+        }
+      }
+    };
+
+    wireLoginSetupShortcutCaptureWindowGuard(
+      window as never,
+      () => true,
+      () => undefined
+    );
+    const beforeInput = webContentsListeners.get("before-input-event");
+    beforeInput?.(
+      { preventDefault: vi.fn() },
+      {
+        type: "keyDown",
+        key: "AltGraph",
+        code: "AltRight",
+        alt: true,
+        control: true,
+        location: 2,
+        modifiers: ["alt", "control", "right"]
+      }
+    );
+    beforeInput?.(
+      { preventDefault },
+      {
+        type: "keyUp",
+        key: "AltGraph",
+        code: "AltRight",
+        alt: false,
+        control: false,
+        location: 2,
+        modifiers: ["right"]
+      }
+    );
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenNthCalledWith(
+      1,
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "RightAlt", state: "down" }
+    );
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "RightAlt", state: "up" }
+    );
+  });
+
+  it("forwards Right Cmd tap when Electron omits the physical code", () => {
+    const preventDefault = vi.fn();
+    const send = vi.fn();
+    const webContentsListeners = new Map<
+      string,
+      (event: { preventDefault(): void }, input: unknown) => void
+    >();
+    const window = {
+      on: vi.fn(),
+      hookWindowMessage: vi.fn(),
+      webContents: {
+        send,
+        on: (
+          event: string,
+          listener: (event: { preventDefault(): void }, input: unknown) => void
+        ) => {
+          webContentsListeners.set(event, listener);
+        }
+      }
+    };
+
+    wireLoginSetupShortcutCaptureWindowGuard(
+      window as never,
+      () => true,
+      () => undefined
+    );
+    const beforeInput = webContentsListeners.get("before-input-event");
+    beforeInput?.(
+      { preventDefault: vi.fn() },
+      {
+        type: "keyDown",
+        key: "Meta",
+        code: "",
+        meta: true,
+        location: 2,
+        modifiers: ["meta", "right"]
+      }
+    );
+    beforeInput?.(
+      { preventDefault },
+      {
+        type: "keyUp",
+        key: "Meta",
+        code: "",
+        meta: false,
+        location: 2,
+        modifiers: ["right"]
+      }
+    );
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "MetaRight", state: "up" }
     );
   });
 
@@ -354,11 +539,34 @@ describe("shortcutCaptureWindowGuard", () => {
         modifiers: ["meta", "shift", "right"]
       }
     );
+    beforeInput?.(
+      { preventDefault },
+      {
+        type: "keyUp",
+        key: "Shift",
+        code: "ShiftRight",
+        meta: true,
+        shift: false,
+        location: 2,
+        modifiers: ["meta", "right"]
+      }
+    );
 
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenNthCalledWith(
+      1,
       "voice:login-setup-shortcut-capture-accelerator",
-      { accelerator: "MetaRight+RightShift" }
+      { accelerator: "MetaRight", state: "down" }
+    );
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "MetaRight+RightShift", state: "down" }
+    );
+    expect(send).toHaveBeenNthCalledWith(
+      3,
+      "voice:login-setup-shortcut-capture-accelerator",
+      { accelerator: "MetaRight+RightShift", state: "up" }
     );
   });
 
@@ -415,7 +623,7 @@ describe("shortcutCaptureWindowGuard", () => {
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(
       "voice:login-setup-shortcut-capture-accelerator",
-      { accelerator: "MetaRight+/" }
+      { accelerator: "MetaRight+/", state: "down" }
     );
   });
 

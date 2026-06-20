@@ -239,8 +239,8 @@ unsafe extern "system" fn low_level_proc(code: i32, wparam: WPARAM, lparam: LPAR
                     thread::sleep(Duration::from_millis(SHORTCUT_HELP_HOLD_MS));
                     let (action, tx) = match hook_state().lock() {
                         Ok(mut guard) => {
-                            let is_current_press =
-                                guard.recognizer.pending_generation() == Some(shortcut_help_generation);
+                            let is_current_press = guard.recognizer.pending_generation()
+                                == Some(shortcut_help_generation);
                             let action = if is_current_press {
                                 guard.recognizer.emit_shortcut_help_if_waiting()
                             } else {

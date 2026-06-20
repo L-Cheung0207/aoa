@@ -8,7 +8,6 @@ import {
   parseReplaceSelectedTextInput,
   parseSettingsPatchInput,
   parseStartRecordingInput,
-  parseTestLlmInput,
 } from "./ipcSchemas";
 
 describe("ipc schemas", () => {
@@ -259,16 +258,6 @@ describe("ipc schemas", () => {
     });
     expect(parsed.mode).toBe("clean");
     expect(parsed.targetLanguage).toBeUndefined();
-  });
-
-  it("accepts an AOSO API connectivity test input with only baseUrl", () => {
-    const parsed = parseTestLlmInput({ baseUrl: "http://172.30.21.67:9066" });
-
-    expect(parsed).toEqual({
-      baseUrl: "http://172.30.21.67:9066",
-      apiKey: "",
-      modelName: "AOSO API",
-    });
   });
 
   it("rejects postprocess input with unknown mode", () => {

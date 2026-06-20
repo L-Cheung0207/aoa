@@ -1,4 +1,4 @@
-import { dirname, normalize, resolve } from "node:path";
+import path from "node:path";
 
 export interface UninstallResult {
   ok: true;
@@ -54,15 +54,16 @@ export function createUninstallService(
         };
       }
 
-      const installDir = dirname(options.executablePath);
+      const pathApi = options.platform === "win32" ? path.win32 : path;
+      const installDir = pathApi.dirname(options.executablePath);
       assertSafeInstallDirectory(installDir);
       const cleanupPaths = uniquePaths([
         installDir,
         options.app.getPath("userData"),
         options.app.getPath("logs"),
-      ]);
+      ], pathApi);
       for (const cleanupPath of cleanupPaths) {
-        assertSafeCleanupDirectory(cleanupPath);
+        assertSafeCleanupDirectory(cleanupPath, "cleanup directory", pathApi);
       }
 
       return {
@@ -75,11 +76,11 @@ export function createUninstallService(
   };
 }
 
-function uniquePaths(paths: string[]): string[] {
+function uniquePaths(paths: string[], pathApi: Pick<typeof path, "normalize">): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const path of paths) {
-    const normalized = normalize(path);
+  for (const candidate of paths) {
+    const normalized = pathApi.normalize(candidate);
     const key = normalized.toLocaleLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
@@ -89,19 +90,21 @@ function uniquePaths(paths: string[]): string[] {
   return result;
 }
 
-function assertSafeInstallDirectory(path: string): void {
-  assertSafeCleanupDirectory(path, "install directory");
+function assertSafeInstallDirectory(candidate: string): void {
+  assertSafeCleanupDirectory(candidate, "install directory", path.win32);
 }
 
 function assertSafeCleanupDirectory(
-  path: string,
+  candidate: string,
   label = "cleanup directory",
+  pathApi: Pick<typeof path, "resolve" | "parse" | "normalize" | "dirname"> = path,
 ): void {
-  const resolved = resolve(path);
-  const parsedRoot = resolve(resolved, "..");
-  if (resolved === parsedRoot || resolved.split(/[\\/]+/).length < 3) {
+  const resolved = pathApi.resolve(candidate);
+  const root = pathApi.parse(resolved).root;
+  const parent = pathApi.dirname(resolved);
+  if (resolved === root || parent === root) {
     throw new Error(
-      `Refusing to uninstall from unsafe ${label}: ${path}`,
+      `Refusing to uninstall from unsafe ${label}: ${candidate}`,
     );
   }
 }

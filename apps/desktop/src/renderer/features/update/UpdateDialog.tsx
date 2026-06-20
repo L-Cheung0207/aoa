@@ -102,7 +102,7 @@ export function UpdateReadyDialog({
 
 export function UpdateDialog({
   currentVersion,
-  language,
+  language: _language,
   readyPayload,
   onClose,
   onRestartError

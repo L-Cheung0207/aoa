@@ -35,9 +35,9 @@ export function ConnectionSettingsFields({
         </span>
         <input
           type="text"
-          value={connection.apiUrl}
+          value={connection.wsUrl}
           placeholder="ws://172.27.209.114:8095/aoa_api/voice"
-          onChange={(event) => updateConnection({ apiUrl: event.target.value })}
+          onChange={(event) => updateConnection({ wsUrl: event.target.value })}
         />
       </label>
     );
@@ -54,9 +54,9 @@ export function ConnectionSettingsFields({
           id="developer-api-url"
           className="settings__input"
           type="text"
-          value={connection.apiUrl}
+          value={connection.wsUrl}
           placeholder="ws://172.27.209.114:8095/aoa_api/voice"
-          onChange={(event) => updateConnection({ apiUrl: event.target.value })}
+          onChange={(event) => updateConnection({ wsUrl: event.target.value })}
         />
       </div>
     </div>

@@ -8,6 +8,7 @@ import {
   createElectronViteDevArgs,
   prepareDevElectronExecutable,
   resolveCachedRceditPath,
+  resolveNativeHelperNodePath,
   shouldBuildNativeHelperForDev,
 } from "./dev-electron.mjs";
 
@@ -111,6 +112,7 @@ describe("desktop development Electron launcher", () => {
     const spawnSync = vi.fn(() => ({ status: 0 }));
     expect(
       buildNativeHelperForDev({
+        existsSync: () => true,
         platform: "darwin",
         spawnSync,
         workspaceRoot: "/repo",
@@ -125,6 +127,22 @@ describe("desktop development Electron launcher", () => {
         stdio: "inherit",
       },
     );
+  });
+
+  it("fails native helper build when the node addon is missing", () => {
+    const spawnSync = vi.fn(() => ({ status: 0 }));
+    expect(resolveNativeHelperNodePath("/repo")).toBe(
+      join("/repo", "packages", "native-helper", "dist", "voice_native_helper.node"),
+    );
+
+    expect(
+      buildNativeHelperForDev({
+        existsSync: () => false,
+        platform: "darwin",
+        spawnSync,
+        workspaceRoot: "/repo",
+      }),
+    ).toBe(1);
   });
 
   it("skips native helper build before dev launch on unsupported platforms", () => {

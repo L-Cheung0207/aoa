@@ -14,32 +14,32 @@ pub fn is_editable_target_focused() -> NativeHelperResult<bool> {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        unreachable!("platform is checked before this branch");
+        Ok(true)
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        unreachable!("platform is checked before this branch")
     }
 }
 
 #[cfg(windows)]
 fn is_focused_element_editable_by_uia() -> NativeHelperResult<bool> {
     use crate::NativeHelperError;
+    use windows::core::Result as WindowsResult;
     use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, S_FALSE, S_OK};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
         COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
     };
     use windows::Win32::UI::Accessibility::{
-        CUIAutomation, IUIAutomation, IUIAutomationValuePattern,
-        UIA_DocumentControlTypeId, UIA_EditControlTypeId, UIA_ValuePatternId,
+        CUIAutomation, IUIAutomation, IUIAutomationValuePattern, UIA_DocumentControlTypeId,
+        UIA_EditControlTypeId, UIA_ValuePatternId,
     };
-    use windows::core::Result as WindowsResult;
 
-    let coinit = unsafe {
-        CoInitializeEx(
-            None,
-            COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE,
-        )
-    };
+    let coinit = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
     let should_uninitialize = coinit == S_OK || coinit == S_FALSE;
     if coinit.is_err() && coinit != RPC_E_CHANGED_MODE {
         return Err(NativeHelperError::InputUnavailable(format!(
@@ -59,9 +59,9 @@ fn is_focused_element_editable_by_uia() -> NativeHelperResult<bool> {
             }
         }
 
-        if let Ok(value_pattern) = unsafe {
-            element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
-        } {
+        if let Ok(value_pattern) =
+            unsafe { element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }
+        {
             let is_read_only = unsafe { value_pattern.CurrentIsReadOnly()? };
             return Ok(!is_read_only.as_bool());
         }
@@ -81,9 +81,7 @@ fn is_focused_element_editable_by_uia() -> NativeHelperResult<bool> {
 fn is_focused_window_class_editable() -> NativeHelperResult<bool> {
     use crate::NativeHelperError;
     use std::mem::size_of;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetGUIThreadInfo, GUITHREADINFO,
-    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetGUIThreadInfo, GUITHREADINFO};
 
     let mut info = GUITHREADINFO::default();
     info.cbSize = size_of::<GUITHREADINFO>() as u32;
@@ -122,8 +120,8 @@ mod tests {
     use crate::NativeHelperError;
 
     #[test]
-    fn reports_unsupported_platform_outside_windows() {
-        if !cfg!(windows) {
+    fn reports_unsupported_platform_outside_supported_targets() {
+        if !cfg!(any(windows, target_os = "macos")) {
             assert_eq!(
                 is_editable_target_focused(),
                 Err(NativeHelperError::UnsupportedPlatform)

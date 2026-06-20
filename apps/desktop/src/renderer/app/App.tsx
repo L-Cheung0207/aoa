@@ -36,7 +36,10 @@ import {
 } from "../features/overlay/OverlayWindow";
 import { loadRendererAppConfig } from "./appConfig";
 import { createJavaVoiceSessionProvider } from "./javaVoiceSessionProvider";
-import { resolveSelectedWsServer } from "./transcriptionProviderFactory";
+import {
+  createConfiguredTranscriptionProvider,
+  resolveSelectedWsServer,
+} from "./transcriptionProviderFactory";
 import { selectVoiceService } from "./voiceServiceSelection";
 import {
   createInitialVoiceOverlayState,
@@ -101,6 +104,7 @@ export function App(): React.JSX.Element {
   });
   const state = overlayProjection.state;
   const reason = overlayProjection.reason;
+  const errorMessage = overlayProjection.errorMessage;
   const result = overlayProjection.result;
   const insertionFallbackText = overlayProjection.insertionFallbackText;
   const insertionFallbackMode = overlayProjection.insertionFallbackMode;
@@ -108,6 +112,7 @@ export function App(): React.JSX.Element {
   const showBusyHint = overlayProjection.busyHintVisible;
   const shortcutHelp = overlayProjection.shortcutHelp;
   const networkErrorDismissed = overlayState.networkDismissed;
+  const overlayError = errorMessage ?? initError;
   // Keep controller bundle in component scope for overlay callbacks.
   const bundleRef = useRef<ControllerBundle | undefined>(undefined);
   const showModeHintRef = useRef(false);
@@ -367,7 +372,11 @@ export function App(): React.JSX.Element {
       console.warn("[voice] shortcut conflict received", payload);
       setDisplayedResult(undefined);
       hideShortcutHelp();
-      dispatchOverlay({ type: "showLocalError", reason: "shortcut_conflict" });
+      dispatchOverlay({
+        type: "showLocalError",
+        reason: "shortcut_conflict",
+        ...(payload.reason ? { message: payload.reason } : {}),
+      });
     });
 
     // Escape while processing is routed here by the main process.
@@ -652,7 +661,7 @@ export function App(): React.JSX.Element {
         : {})}
       onOpenMicrophoneHelp={openMicrophoneHelp}
       {...(reason !== undefined ? { reason } : {})}
-      {...(initError !== undefined ? { error: initError } : {})}
+      {...(overlayError !== undefined ? { error: overlayError } : {})}
       onCancel={() => {
         console.log("[voice] user clicked cancel");
         if (overlayProjectionRef.current.networkWarningVisible) {
@@ -834,18 +843,25 @@ function buildController(input: BuildControllerInput): ControllerBundle {
     developerWsUrl: input.developerWsUrl,
     javaVoiceWsUrl: input.javaVoiceWsUrl,
   });
-  if (voiceService.reason === "developer-unified-endpoint") {
+  if (voiceService.kind === "developer") {
+    console.warn("[voice] controller using legacy developer ASR provider");
+  } else if (voiceService.reason === "developer-unified-endpoint") {
     console.warn(
       `[voice] developer API URL overrides Java voice gateway url=${redactUrlForLog(voiceService.url, revealSensitiveLogs)}`,
     );
   }
-  console.log(
-    `[voice] controller using Java voice gateway url=${redactUrlForLog(voiceService.url, revealSensitiveLogs)}`,
-  );
-  const transcriptionProvider = createJavaVoiceSessionProvider({
-    url: voiceService.url,
-    revealSensitiveLogs,
-  });
+  const transcriptionProvider =
+    voiceService.kind === "developer"
+      ? createConfiguredTranscriptionProvider()
+      : createJavaVoiceSessionProvider({
+          url: voiceService.url,
+          revealSensitiveLogs,
+        });
+  if (voiceService.kind === "java") {
+    console.log(
+      `[voice] controller using Java voice gateway url=${redactUrlForLog(voiceService.url, revealSensitiveLogs)}`,
+    );
+  }
 
   const textTarget: VoiceTextTarget = {
     getSelectedText: () => window.voiceAI.getSelectedText(),

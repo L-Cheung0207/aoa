@@ -10,12 +10,22 @@ pub fn restore_other_apps_audio() -> NativeHelperResult<()> {
     windows_audio::restore_other_apps_audio()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn mute_other_apps_for_recording(_excluded_process_ids: &[u32]) -> NativeHelperResult<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn restore_other_apps_audio() -> NativeHelperResult<()> {
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn mute_other_apps_for_recording(_excluded_process_ids: &[u32]) -> NativeHelperResult<()> {
     Err(NativeHelperError::UnsupportedPlatform)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn restore_other_apps_audio() -> NativeHelperResult<()> {
     Err(NativeHelperError::UnsupportedPlatform)
 }
@@ -23,16 +33,15 @@ pub fn restore_other_apps_audio() -> NativeHelperResult<()> {
 #[cfg(windows)]
 mod windows_audio {
     use crate::{NativeHelperError, NativeHelperResult};
-    use std::ffi::c_void;
     use std::collections::HashSet;
+    use std::ffi::c_void;
     use std::ptr::null;
     use std::sync::{Mutex, OnceLock};
     use windows::core::{Interface, PWSTR};
     use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, S_FALSE, S_OK};
     use windows::Win32::Media::Audio::{
-        eConsole, eRender, IAudioSessionControl, IAudioSessionControl2,
-        IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume,
-        AudioSessionStateExpired, MMDeviceEnumerator,
+        eConsole, eRender, AudioSessionStateExpired, IAudioSessionControl, IAudioSessionControl2,
+        IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
     };
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
@@ -55,12 +64,9 @@ mod windows_audio {
         MUTED_SESSIONS.get_or_init(|| Mutex::new(Vec::new()))
     }
 
-    pub fn mute_other_apps_for_recording(
-        excluded_process_ids: &[u32],
-    ) -> NativeHelperResult<()> {
+    pub fn mute_other_apps_for_recording(excluded_process_ids: &[u32]) -> NativeHelperResult<()> {
         let _com = ComApartment::initialize()?;
-        let excluded_process_ids: HashSet<u32> =
-            excluded_process_ids.iter().copied().collect();
+        let excluded_process_ids: HashSet<u32> = excluded_process_ids.iter().copied().collect();
         let mut muted_sessions = muted_sessions()
             .lock()
             .map_err(|error| NativeHelperError::InputUnavailable(error.to_string()))?;
@@ -142,8 +148,7 @@ mod windows_audio {
     fn enumerate_render_sessions() -> NativeHelperResult<Vec<AudioSessionSnapshot>> {
         unsafe {
             let enumerator: IMMDeviceEnumerator =
-                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
-                    .map_err(to_audio_error)?;
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(to_audio_error)?;
             let device = enumerator
                 .GetDefaultAudioEndpoint(eRender, eConsole)
                 .map_err(to_audio_error)?;
@@ -154,8 +159,9 @@ mod windows_audio {
             let mut sessions = Vec::with_capacity(count as usize);
 
             for index in 0..count {
-                let control: IAudioSessionControl =
-                    session_enumerator.GetSession(index).map_err(to_audio_error)?;
+                let control: IAudioSessionControl = session_enumerator
+                    .GetSession(index)
+                    .map_err(to_audio_error)?;
                 if let Ok(control2) = control.cast::<IAudioSessionControl2>() {
                     let instance_id = pwstr_to_string(
                         control2

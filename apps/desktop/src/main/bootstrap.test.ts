@@ -97,7 +97,6 @@ describe("bootstrap runtime mode", () => {
 describe("login setup shortcut capture controller", () => {
   it("clears setup shortcut capture on login setup completion and resumes global shortcuts once", () => {
     let shortcutCaptureDepth = 0;
-    let registeredShortcutCount = 3;
     const suspendGlobalShortcuts = vi.fn();
     const resumeGlobalShortcuts = vi.fn();
     const ensureWindowGuards = vi.fn();
@@ -105,10 +104,6 @@ describe("login setup shortcut capture controller", () => {
     const stopShortcutCaptureSession = vi.fn();
     const controller = createLoginSetupShortcutCaptureController({
       getShortcutCaptureDepth: () => shortcutCaptureDepth,
-      getRegisteredShortcutCount: () => registeredShortcutCount,
-      setRegisteredShortcutCount: (count) => {
-        registeredShortcutCount = count;
-      },
       suspendGlobalShortcuts,
       resumeGlobalShortcuts,
       ensureWindowGuards,
@@ -121,7 +116,6 @@ describe("login setup shortcut capture controller", () => {
     controller.setActive(false);
 
     expect(controller.isActive()).toBe(false);
-    expect(registeredShortcutCount).toBe(0);
     expect(suspendGlobalShortcuts).toHaveBeenCalledTimes(1);
     expect(resumeGlobalShortcuts).toHaveBeenCalledTimes(1);
     expect(resumeGlobalShortcuts).toHaveBeenCalledWith({
@@ -134,6 +128,7 @@ describe("login setup shortcut capture controller", () => {
     shortcutCaptureDepth = 1;
     controller.setActive(true);
     controller.clear();
+    expect(suspendGlobalShortcuts).toHaveBeenCalledTimes(1);
     expect(resumeGlobalShortcuts).toHaveBeenCalledTimes(1);
     expect(stopShortcutCaptureSession).toHaveBeenCalledTimes(2);
   });
@@ -885,7 +880,7 @@ describe("startup auth gate", () => {
     expect(openHomeWindowAfterLoginSetup).toHaveBeenCalledTimes(1);
   });
 
-  it("allows setup completion after logout and second login while runtime remains active", async () => {
+  it("cleans runtime after logout and starts fresh after second login setup", async () => {
     const { service, emit } = createGateAuthService(authenticatedSnapshot);
     const startAuthenticatedRuntime = vi.fn();
     const stopAuthenticatedRuntime = vi.fn();
@@ -912,8 +907,8 @@ describe("startup auth gate", () => {
     await Promise.resolve();
     await completeLoginSetup?.();
 
-    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
-    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
+    expect(stopAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     expect(showLoginSetupWindow).toHaveBeenCalledWith({
       status: "unauthenticated",
     });
@@ -982,15 +977,19 @@ describe("startup auth gate", () => {
     });
   });
 
-  it("keeps the pending runtime when auth returns during setup", async () => {
+  it("cleans a pending runtime before second login setup can complete", async () => {
     let resolveRuntimeStart: (() => void) | undefined;
+    let startCallCount = 0;
     const { service, emit } = createGateAuthService(authenticatedSnapshot);
-    const startAuthenticatedRuntime = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
+    const startAuthenticatedRuntime = vi.fn(() => {
+      startCallCount += 1;
+      if (startCallCount === 1) {
+        return new Promise<void>((resolve) => {
           resolveRuntimeStart = resolve;
-        }),
-    );
+        });
+      }
+      return Promise.resolve();
+    });
     const stopAuthenticatedRuntime = vi.fn();
     const showLoginSetupWindow = vi.fn();
     const hideLoginSetupWindow = vi.fn();
@@ -1020,14 +1019,14 @@ describe("startup auth gate", () => {
     expect(showLoginSetupWindow).toHaveBeenCalledWith({
       status: "unauthenticated",
     });
-    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
-    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
+    expect(stopAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     const completePromise = completeLoginSetup?.();
     await Promise.resolve();
     await completePromise;
     await Promise.resolve();
 
-    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
     expect(hideLoginSetupWindow).toHaveBeenCalledTimes(1);
   });
 });

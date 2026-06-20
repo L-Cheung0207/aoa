@@ -6,7 +6,9 @@ import {
 } from "./nativeBridge";
 
 describe("native bridge", () => {
-  it("uses the Windows helper binding to paste and type text", async () => {
+  it.each(["win32", "darwin"] as RuntimePlatform[])(
+    "uses the native helper binding on %s",
+    async (platform) => {
     const calls: string[] = [];
     const helper: NativeHelperBinding = {
       pasteFromClipboard: async () => {
@@ -34,7 +36,7 @@ describe("native bridge", () => {
       }
     };
     const bridge = createNativeBridge({
-      platform: "win32",
+      platform,
       loadHelper: () => helper
     });
 
@@ -56,11 +58,12 @@ describe("native bridge", () => {
       "mute:100,200",
       "restore-audio"
     ]);
-  });
+    }
+  );
 
   it("reports unsupported platform without crashing the app", async () => {
     const bridge = createNativeBridge({
-      platform: "darwin" as RuntimePlatform,
+      platform: "linux" as RuntimePlatform,
       loadHelper: () => undefined
     });
 

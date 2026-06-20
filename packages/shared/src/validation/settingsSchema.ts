@@ -2,7 +2,7 @@ import type { AppSettings, AppSettingsPatch } from "../types/settings";
 
 export interface DefaultSettingsOptions {
   isPackaged: boolean;
-  platform?: "darwin" | "win32" | "linux" | "mac" | "windows";
+  platform?: string;
 }
 
 export const DEFAULT_INTERFACE_LANGUAGE: AppSettings["ui"]["language"] =

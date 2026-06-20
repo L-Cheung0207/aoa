@@ -1,5 +1,5 @@
-pub mod audio;
 pub mod active_window;
+pub mod audio;
 pub mod editable_target;
 pub mod input;
 pub mod keyboard;
@@ -39,7 +39,7 @@ impl std::error::Error for NativeHelperError {}
 pub type NativeHelperResult<T> = Result<T, NativeHelperError>;
 
 pub fn ensure_supported_platform() -> NativeHelperResult<()> {
-    if cfg!(windows) {
+    if cfg!(any(windows, target_os = "macos")) {
         Ok(())
     } else {
         Err(NativeHelperError::UnsupportedPlatform)
@@ -50,9 +50,8 @@ pub fn recognize_right_alt_hotkey_event(
     key_code: u32,
     transition: keyboard::KeyTransition,
 ) -> Option<keyboard::HotkeyAction> {
-    let recognizer = HOTKEY_RECOGNIZER.get_or_init(|| {
-        Mutex::new(keyboard::RightAltHotkeyRecognizer::new())
-    });
+    let recognizer =
+        HOTKEY_RECOGNIZER.get_or_init(|| Mutex::new(keyboard::RightAltHotkeyRecognizer::new()));
     let mut recognizer = recognizer.lock().ok()?;
 
     recognizer.handle_event(keyboard::KeyEvent {
@@ -253,8 +252,8 @@ fn write_log_impl(text: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_supported_platform, keyboard, recognize_right_alt_hotkey_event,
-        NativeHelperError, HOTKEY_RECOGNIZER,
+        ensure_supported_platform, keyboard, recognize_right_alt_hotkey_event, NativeHelperError,
+        HOTKEY_RECOGNIZER,
     };
 
     fn reset_hotkey_recognizer() {
@@ -265,8 +264,8 @@ mod tests {
     }
 
     #[test]
-    fn reports_non_windows_as_unsupported() {
-        if !cfg!(windows) {
+    fn reports_unsupported_platforms_as_unsupported() {
+        if !cfg!(any(windows, target_os = "macos")) {
             assert_eq!(
                 ensure_supported_platform(),
                 Err(NativeHelperError::UnsupportedPlatform)
@@ -293,10 +292,7 @@ mod tests {
             None
         );
         assert_eq!(
-            recognize_right_alt_hotkey_event(
-                keyboard::SPACE_KEY_CODE,
-                keyboard::KeyTransition::Up
-            ),
+            recognize_right_alt_hotkey_event(keyboard::SPACE_KEY_CODE, keyboard::KeyTransition::Up),
             Some(keyboard::HotkeyAction::ProcessSelection)
         );
     }

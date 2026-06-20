@@ -35,51 +35,51 @@ export function createNativeBridge(options: CreateNativeBridgeOptions = {}): Nat
 
   return {
     pasteFromClipboard: async () => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       await helper.pasteFromClipboard();
     },
     copySelectionToClipboard: async () => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       await helper.copySelectionToClipboard();
     },
     typeText: async (text) => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       await helper.typeText(text);
     },
     getForegroundWindowHandle: async () => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       return helper.getForegroundWindowHandle();
     },
     focusWindow: async (windowHandle) => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       await helper.focusWindow(windowHandle);
     },
     isEditableTargetFocused: async () => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       return helper.isEditableTargetFocused();
     },
     muteOtherAppsForRecording: async (excludedProcessIds) => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       await helper.muteOtherAppsForRecording(excludedProcessIds);
     },
     restoreOtherAppsAudio: async () => {
-      const helper = getWindowsHelper(platform, loadHelper);
+      const helper = getNativeHelper(platform, loadHelper);
       await helper.restoreOtherAppsAudio();
     }
   };
 }
 
-function getWindowsHelper(
+function getNativeHelper(
   platform: RuntimePlatform,
   loadHelper: () => NativeHelperBinding | undefined
 ): NativeHelperBinding {
-  if (platform !== "win32") {
-    throw new Error("UNSUPPORTED_PLATFORM: native input helper only supports Windows V1");
+  if (platform !== "win32" && platform !== "darwin") {
+    throw new Error("UNSUPPORTED_PLATFORM: native input helper only supports Windows/macOS");
   }
 
   const helper = loadHelper();
   if (!helper) {
-    throw new Error("NATIVE_HELPER_UNAVAILABLE: Windows native helper binding was not loaded");
+    throw new Error("NATIVE_HELPER_UNAVAILABLE: native helper binding was not loaded");
   }
 
   return helper;

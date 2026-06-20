@@ -67,7 +67,6 @@ export function createDistInstallerShellCommands(
   options = {}
 ) {
   const packageRoot = fileURLToPath(new URL("..", scriptUrl));
-  const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
 
   return [
     ...createDistWinCommands(scriptUrl, options),

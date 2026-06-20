@@ -1,9 +1,13 @@
 export type VoiceServiceSelection =
-  {
-    kind: "java";
-    url: string;
-    reason: "standard" | "developer-unified-endpoint";
-  };
+  | {
+      kind: "developer";
+      reason: "developer-legacy-endpoint";
+    }
+  | {
+      kind: "java";
+      url: string;
+      reason: "standard" | "developer-unified-endpoint";
+    };
 
 export interface SelectVoiceServiceInput {
   developerEnabled: boolean;
@@ -26,6 +30,12 @@ export function selectVoiceService(
   }
 
   if (developerWsUrl) {
+    if (!isJavaVoiceUnifiedEndpoint(developerWsUrl)) {
+      return {
+        kind: "developer",
+        reason: "developer-legacy-endpoint",
+      };
+    }
     return {
       kind: "java",
       url: developerWsUrl,
@@ -40,3 +50,11 @@ export function selectVoiceService(
   };
 }
 
+export function isJavaVoiceUnifiedEndpoint(url: string): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.pathname.replace(/\/+$/, "").endsWith("/aoa_api/voice");
+  } catch {
+    return false;
+  }
+}

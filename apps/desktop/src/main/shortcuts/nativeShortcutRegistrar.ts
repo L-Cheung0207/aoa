@@ -11,6 +11,11 @@ export interface GenericShortcutApi {
   unregister(accelerator: string): void;
 }
 
+export interface NativeShortcutCaptureInterceptor {
+  isActive(): boolean;
+  onAccelerator(accelerator: string): void;
+}
+
 export type NativeShortcutRecordingAction = Exclude<
   NativeHotkeyAction,
   "shortcutHelp" | "shortcutHelpDismiss"
@@ -46,13 +51,15 @@ const DOM_SYMBOL_KEY_ACCELERATORS: Record<string, string> = {
 
 export function createNativeShortcutRegistrar(
   api: NativeKeyboardHookApi,
-  genericShortcut?: GenericShortcutApi
+  genericShortcut?: GenericShortcutApi,
+  captureInterceptor?: NativeShortcutCaptureInterceptor
 ): ShortcutRegistrar {
   const callbacks = new Map<string, () => void>();
   const genericAccelerators = new Set<string>();
   let actionToAccelerator = { ...ACTION_TO_ACCELERATOR };
   let handle: KeyboardHookHandle | undefined;
   let nativeAvailable = true;
+  let failureReason: string | undefined;
 
   const dispatch = (action: NativeHotkeyAction): void => {
     if (isVirtualAccelerator(action)) {
@@ -65,6 +72,10 @@ export function createNativeShortcutRegistrar(
     console.log(
       `[shortcut] dispatch action=${action} accelerator=${accelerator} hasCallback=${Boolean(callback)}`
     );
+    if (captureInterceptor?.isActive() === true && accelerator) {
+      captureInterceptor.onAccelerator(accelerator);
+      return;
+    }
     callback?.();
   };
 
@@ -77,6 +88,7 @@ export function createNativeShortcutRegistrar(
       console.log("[shortcut] native keyboard hook started");
       return true;
     } catch (error) {
+      failureReason = formatShortcutRegistrarError(error);
       console.error("[shortcut] native keyboard hook failed to start", error);
       handle = undefined;
       nativeAvailable = false;
@@ -110,11 +122,14 @@ export function createNativeShortcutRegistrar(
           normalizedConfig.translateDictation
         );
         nativeAvailable = true;
+        failureReason = undefined;
       } catch (error) {
+        failureReason = formatShortcutRegistrarError(error);
         console.warn("[shortcut] native shortcut configuration unavailable", error);
         nativeAvailable = false;
       }
     },
+    getFailureReason: () => failureReason,
     register: (accelerator, callback) => {
       const normalizedAccelerator = normalizeElectronAccelerator(accelerator);
       if (isVirtualAccelerator(normalizedAccelerator)) {
@@ -177,6 +192,7 @@ export function createNativeShortcutRegistrar(
     callback: () => void,
   ): boolean {
     if (isNativeOnlyAccelerator(accelerator)) {
+      failureReason ??= "Native keyboard hook is unavailable.";
       console.warn(
         `[shortcut] native-only accelerator "${accelerator}" requires native keyboard hook`
       );
@@ -201,6 +217,13 @@ export function createNativeShortcutRegistrar(
     }
     return ok;
   }
+}
+
+function formatShortcutRegistrarError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 function normalizeElectronAccelerator(accelerator: string): string {

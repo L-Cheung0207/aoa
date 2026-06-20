@@ -1,21 +1,26 @@
 import {
-  JAVA_VOICE_WS_URL,
+  BUNDLED_ASR_WS_URL,
   type AppSettings,
   type WsServerConfig,
 } from "@voice/shared";
 
 export interface EditableConnectionSettings {
-  apiUrl: string;
+  wsUrl: string;
+  wsProxy: string;
+  wsProxyUsername: string;
+  wsProxyPassword: string;
 }
 
 export function readConnectionSettings(
   settings: AppSettings,
 ): EditableConnectionSettings {
   const ws = getPrimaryWsServer(settings);
-  const url = ws?.url?.trim();
 
   return {
-    apiUrl: url || JAVA_VOICE_WS_URL,
+    wsUrl: ws?.url ?? BUNDLED_ASR_WS_URL,
+    wsProxy: ws?.proxy ?? "",
+    wsProxyUsername: ws?.proxyUsername ?? "",
+    wsProxyPassword: ws?.proxyPassword ?? "",
   };
 }
 
@@ -68,14 +73,35 @@ export function validateConnectionSettings(
     return undefined;
   }
   const connection = readConnectionSettings(settings);
-  if (!connection.apiUrl.trim()) {
-    return "API地址不能为空";
+  if (!connection.wsUrl.trim()) {
+    return "WebSocket 地址不能为空";
   }
   return undefined;
 }
 
 function buildApiServer(connection: EditableConnectionSettings): WsServerConfig {
-  return { url: connection.apiUrl.trim() || JAVA_VOICE_WS_URL };
+  const server: WsServerConfig = {
+    url: connection.wsUrl.trim(),
+  };
+  addOptionalString(server, "proxy", connection.wsProxy);
+  addOptionalString(server, "proxyUsername", connection.wsProxyUsername);
+  addOptionalString(server, "proxyPassword", connection.wsProxyPassword);
+  return server;
+}
+
+function addOptionalString(
+  target: {
+    proxy?: string;
+    proxyUsername?: string;
+    proxyPassword?: string;
+  },
+  key: "proxy" | "proxyUsername" | "proxyPassword",
+  value: string,
+): void {
+  const trimmed = value.trim();
+  if (trimmed) {
+    target[key] = trimmed;
+  }
 }
 
 function clampIndex(value: number, length: number): number {

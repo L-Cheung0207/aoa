@@ -6,9 +6,11 @@ import { getOtherShortcutValues, SettingsPage } from "./SettingsPage";
 
 describe("SettingsPage", () => {
   it("renders the waveform style selector in recording settings", () => {
+    const settings = createDefaultSettings({ isPackaged: false });
+    settings.ui.language = "zh-CN";
     const html = renderToStaticMarkup(
       createElement(SettingsPage, {
-        initialSettings: createDefaultSettings({ isPackaged: false })
+        initialSettings: settings
       })
     );
 

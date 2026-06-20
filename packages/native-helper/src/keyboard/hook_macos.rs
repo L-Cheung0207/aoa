@@ -324,10 +324,7 @@ fn send_action(guard: &HookState, action: HotkeyAction) {
     }
 }
 
-fn map_macos_key_event(
-    raw_key_code: i64,
-    event_type: CGEventType,
-) -> Option<(u32, KeyTransition)> {
+fn map_macos_key_event(raw_key_code: i64, event_type: CGEventType) -> Option<(u32, KeyTransition)> {
     let key_code = match raw_key_code as CGKeyCode {
         KVK_RIGHT_COMMAND => RIGHT_ALT_KEY_CODE,
         KVK_RIGHT_SHIFT => RIGHT_SHIFT_KEY_CODE,

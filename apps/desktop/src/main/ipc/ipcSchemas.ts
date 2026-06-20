@@ -40,6 +40,8 @@ export interface ReplaceSelectedTextInput {
 export interface StartRecordingInput {
   mode: RecordingMode;
   selectedText?: string;
+  previewSelectedText?: string;
+  loginSetupTrial?: boolean;
 }
 
 export interface DeleteHistoryRecordInput {
@@ -432,7 +434,7 @@ function isValidShortcutValue(value: string): boolean {
   if (value.length === 0) {
     return true;
   }
-  return validateShortcut(value, process.platform).ok;
+  return validateShortcut(value, "win32").ok;
 }
 
 function isTranslationPatch(input: unknown): boolean {
@@ -553,6 +555,17 @@ export function parseStartRecordingInput(input: unknown): StartRecordingInput {
   if (selectedText !== undefined && typeof selectedText !== "string") {
     throw new Error("Selected text must be a string when provided");
   }
+  const previewSelectedText = input.previewSelectedText;
+  if (
+    previewSelectedText !== undefined &&
+    typeof previewSelectedText !== "string"
+  ) {
+    throw new Error("Preview selected text must be a string when provided");
+  }
+  const loginSetupTrial = input.loginSetupTrial;
+  if (loginSetupTrial !== undefined && typeof loginSetupTrial !== "boolean") {
+    throw new Error("Login setup trial must be a boolean when provided");
+  }
 
   if (
     mode === "processSelection" &&
@@ -564,6 +577,12 @@ export function parseStartRecordingInput(input: unknown): StartRecordingInput {
   const result: StartRecordingInput = { mode: mode as RecordingMode };
   if (selectedText !== undefined) {
     result.selectedText = selectedText;
+  }
+  if (previewSelectedText !== undefined) {
+    result.previewSelectedText = previewSelectedText;
+  }
+  if (loginSetupTrial !== undefined) {
+    result.loginSetupTrial = loginSetupTrial;
   }
   return result;
 }

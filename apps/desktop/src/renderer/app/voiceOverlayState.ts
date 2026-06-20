@@ -25,6 +25,7 @@ export interface VoiceOverlayState {
   networkDismissed: boolean;
   forcedNetworkErrorVisible: boolean;
   localErrorReason: VoiceErrorReason | undefined;
+  localErrorMessage: string | undefined;
   result: ResultOverlayContent | undefined;
   insertionFallbackText: string | undefined;
   insertionFallbackMode: "direct" | "translate" | undefined;
@@ -45,7 +46,7 @@ export type VoiceOverlayAction =
   | { type: "clearPendingTransition" }
   | { type: "dismissNetworkError" }
   | { type: "resetNetworkError" }
-  | { type: "showLocalError"; reason: VoiceErrorReason }
+  | { type: "showLocalError"; reason: VoiceErrorReason; message?: string }
   | { type: "clearLocalError" }
   | { type: "showResult"; result: ResultOverlayContent }
   | { type: "dismissResult" }
@@ -74,6 +75,7 @@ export interface VoiceOverlayProjection {
   state: RecordingState;
   mode: RecordingMode | undefined;
   reason?: VoiceErrorReason;
+  errorMessage?: string;
   result?: ResultOverlayContent;
   insertionFallbackText?: string;
   insertionFallbackMode?: "direct" | "translate";
@@ -92,6 +94,7 @@ export function createInitialVoiceOverlayState(): VoiceOverlayState {
     networkDismissed: false,
     forcedNetworkErrorVisible: false,
     localErrorReason: undefined,
+    localErrorMessage: undefined,
     result: undefined,
     insertionFallbackText: undefined,
     insertionFallbackMode: undefined,
@@ -221,6 +224,7 @@ export function voiceOverlayReducer(
       return {
         ...state,
         localErrorReason: action.reason,
+        localErrorMessage: action.message,
         pendingTransition: undefined,
         result: undefined,
         insertionFallbackText: undefined,
@@ -233,6 +237,7 @@ export function voiceOverlayReducer(
       return {
         ...state,
         localErrorReason: undefined,
+        localErrorMessage: undefined,
       };
     case "showResult":
       return {
@@ -242,6 +247,7 @@ export function voiceOverlayReducer(
         insertionFallbackMode: undefined,
         pendingTransition: undefined,
         localErrorReason: undefined,
+        localErrorMessage: undefined,
         thinkingStartedAtMs: undefined,
         thinkingTimeoutFired: false,
       };
@@ -441,6 +447,9 @@ export function selectVoiceOverlayProjection(
     state,
     mode,
     ...(reason !== undefined ? { reason } : {}),
+    ...(state === "error" && input.overlay.localErrorMessage !== undefined
+      ? { errorMessage: input.overlay.localErrorMessage }
+      : {}),
     ...(input.overlay.result !== undefined ? { result: input.overlay.result } : {}),
     ...(input.overlay.insertionFallbackText !== undefined
       ? { insertionFallbackText: input.overlay.insertionFallbackText }

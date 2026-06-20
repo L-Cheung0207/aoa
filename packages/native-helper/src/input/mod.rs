@@ -20,23 +20,33 @@ pub fn paste_from_clipboard() -> NativeHelperResult<()> {
         send_input_events(&build_ctrl_v_events())
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        unreachable!("platform is checked before this branch");
+        send_command_key(MACOS_V_KEY_CODE)
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        unreachable!("platform is checked before this branch")
     }
 }
 
-pub fn type_text(text: &str) -> NativeHelperResult<()> {
+pub fn type_text(_text: &str) -> NativeHelperResult<()> {
     ensure_supported_platform()?;
 
     #[cfg(windows)]
     {
-        send_input_events(&build_unicode_text_events(text))
+        send_input_events(&build_unicode_text_events(_text))
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        unreachable!("platform is checked before this branch");
+        send_unicode_text(_text)
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        unreachable!("platform is checked before this branch")
     }
 }
 
@@ -48,9 +58,14 @@ pub fn copy_selection_to_clipboard() -> NativeHelperResult<()> {
         send_input_events(&build_ctrl_c_events())
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        unreachable!("platform is checked before this branch");
+        send_command_key(MACOS_C_KEY_CODE)
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        unreachable!("platform is checked before this branch")
     }
 }
 
@@ -74,7 +89,12 @@ pub fn build_ctrl_v_events() -> Vec<InputEvent> {
 
 pub fn build_unicode_text_events(text: &str) -> Vec<InputEvent> {
     text.encode_utf16()
-        .flat_map(|code_unit| [InputEvent::UnicodeDown(code_unit), InputEvent::UnicodeUp(code_unit)])
+        .flat_map(|code_unit| {
+            [
+                InputEvent::UnicodeDown(code_unit),
+                InputEvent::UnicodeUp(code_unit),
+            ]
+        })
         .collect()
 }
 
@@ -82,8 +102,8 @@ pub fn build_unicode_text_events(text: &str) -> Vec<InputEvent> {
 fn send_input_events(events: &[InputEvent]) -> NativeHelperResult<()> {
     use crate::NativeHelperError;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        KEYEVENTF_UNICODE, VIRTUAL_KEY,
     };
 
     let inputs: Vec<INPUT> = events
@@ -95,9 +115,11 @@ fn send_input_events(events: &[InputEvent]) -> NativeHelperResult<()> {
                 InputEvent::UnicodeDown(code_unit) => {
                     (VIRTUAL_KEY(0), code_unit, KEYEVENTF_UNICODE)
                 }
-                InputEvent::UnicodeUp(code_unit) => {
-                    (VIRTUAL_KEY(0), code_unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)
-                }
+                InputEvent::UnicodeUp(code_unit) => (
+                    VIRTUAL_KEY(0),
+                    code_unit,
+                    KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+                ),
             };
 
             INPUT {
@@ -127,29 +149,146 @@ fn send_input_events(events: &[InputEvent]) -> NativeHelperResult<()> {
     }
 }
 
+#[cfg(target_os = "macos")]
+const MACOS_C_KEY_CODE: u16 = 0x08;
+#[cfg(target_os = "macos")]
+const MACOS_V_KEY_CODE: u16 = 0x09;
+
+#[cfg(target_os = "macos")]
+fn send_command_key(key_code: u16) -> NativeHelperResult<()> {
+    send_macos_key(key_code, true)?;
+    send_macos_key(key_code, false)
+}
+
+#[cfg(target_os = "macos")]
+fn send_unicode_text(text: &str) -> NativeHelperResult<()> {
+    for code_unit in text.encode_utf16() {
+        send_macos_unicode(code_unit, true)?;
+        send_macos_unicode(code_unit, false)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn send_macos_key(key_code: u16, down: bool) -> NativeHelperResult<()> {
+    macos_input::post_key_event(key_code, down, macos_input::COMMAND_FLAG)
+}
+
+#[cfg(target_os = "macos")]
+fn send_macos_unicode(code_unit: u16, down: bool) -> NativeHelperResult<()> {
+    macos_input::post_unicode_event(code_unit, down)
+}
+
+#[cfg(target_os = "macos")]
+mod macos_input {
+    use crate::{NativeHelperError, NativeHelperResult};
+    use std::ffi::c_void;
+
+    type CGEventRef = *mut c_void;
+    type CGEventSourceRef = *mut c_void;
+    type CGEventSourceStateID = u32;
+    type CGEventTapLocation = u32;
+    type CGEventFlags = u64;
+    type CGKeyCode = u16;
+
+    const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: CGEventSourceStateID = 1;
+    const K_CG_HID_EVENT_TAP: CGEventTapLocation = 0;
+    pub const COMMAND_FLAG: CGEventFlags = 1 << 20;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceCreate(state_id: CGEventSourceStateID) -> CGEventSourceRef;
+        fn CGEventCreateKeyboardEvent(
+            source: CGEventSourceRef,
+            virtual_key: CGKeyCode,
+            key_down: bool,
+        ) -> CGEventRef;
+        fn CGEventSetFlags(event: CGEventRef, flags: CGEventFlags);
+        fn CGEventKeyboardSetUnicodeString(
+            event: CGEventRef,
+            string_length: usize,
+            unicode_string: *const u16,
+        );
+        fn CGEventPost(tap: CGEventTapLocation, event: CGEventRef);
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: *const c_void);
+    }
+
+    pub fn post_key_event(
+        key_code: CGKeyCode,
+        down: bool,
+        flags: CGEventFlags,
+    ) -> NativeHelperResult<()> {
+        unsafe {
+            let source = create_source()?;
+            let event = CGEventCreateKeyboardEvent(source, key_code, down);
+            if event.is_null() {
+                CFRelease(source.cast());
+                return Err(NativeHelperError::InputUnavailable(
+                    "CGEventCreateKeyboardEvent failed".to_string(),
+                ));
+            }
+            CGEventSetFlags(event, flags);
+            CGEventPost(K_CG_HID_EVENT_TAP, event);
+            CFRelease(event.cast());
+            CFRelease(source.cast());
+        }
+        Ok(())
+    }
+
+    pub fn post_unicode_event(code_unit: u16, down: bool) -> NativeHelperResult<()> {
+        unsafe {
+            let source = create_source()?;
+            let event = CGEventCreateKeyboardEvent(source, 0, down);
+            if event.is_null() {
+                CFRelease(source.cast());
+                return Err(NativeHelperError::InputUnavailable(
+                    "CGEventCreateKeyboardEvent failed".to_string(),
+                ));
+            }
+            CGEventKeyboardSetUnicodeString(event, 1, &code_unit);
+            CGEventPost(K_CG_HID_EVENT_TAP, event);
+            CFRelease(event.cast());
+            CFRelease(source.cast());
+        }
+        Ok(())
+    }
+
+    unsafe fn create_source() -> NativeHelperResult<CGEventSourceRef> {
+        let source = CGEventSourceCreate(K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE);
+        if source.is_null() {
+            Err(NativeHelperError::InputUnavailable(
+                "CGEventSourceCreate failed; enable Accessibility permission".to_string(),
+            ))
+        } else {
+            Ok(source)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_ctrl_c_events, build_ctrl_v_events, build_unicode_text_events,
-        copy_selection_to_clipboard, paste_from_clipboard, InputEvent,
-    };
+    use super::{build_ctrl_c_events, build_ctrl_v_events, build_unicode_text_events, InputEvent};
     use crate::NativeHelperError;
 
     #[test]
-    fn paste_reports_unsupported_platform_outside_windows() {
-        if !cfg!(windows) {
+    fn paste_reports_unsupported_platform_outside_supported_targets() {
+        if !cfg!(any(windows, target_os = "macos")) {
             assert_eq!(
-                paste_from_clipboard(),
+                super::paste_from_clipboard(),
                 Err(NativeHelperError::UnsupportedPlatform)
             );
         }
     }
 
     #[test]
-    fn copy_reports_unsupported_platform_outside_windows() {
-        if !cfg!(windows) {
+    fn copy_reports_unsupported_platform_outside_supported_targets() {
+        if !cfg!(any(windows, target_os = "macos")) {
             assert_eq!(
-                copy_selection_to_clipboard(),
+                super::copy_selection_to_clipboard(),
                 Err(NativeHelperError::UnsupportedPlatform)
             );
         }

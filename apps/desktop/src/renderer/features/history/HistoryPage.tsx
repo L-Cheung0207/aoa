@@ -428,18 +428,23 @@ function HistoryRecordRow({
           </button>
         ) : null}
         {record.audio ? (
-          <button
-            className="history-row__icon-button"
-            type="button"
+          <a
+            className={`history-row__icon-button history-row__audio-link${
+              downloading ? " history-row__audio-link--disabled" : ""
+            }`}
+            href={record.audio.url}
             aria-label={downloading ? text.downloading : text.downloadAudio}
             title={downloading ? text.downloading : text.downloadAudio}
-            disabled={downloading}
-            onClick={() => {
-              void onDownload(record);
+            aria-disabled={downloading}
+            onClick={(event) => {
+              event.preventDefault();
+              if (!downloading) {
+                void onDownload(record);
+              }
             }}
           >
             {downloading ? <span>...</span> : <DownloadIcon />}
-          </button>
+          </a>
         ) : null}
         <button
           className="history-row__icon-button"

@@ -8,35 +8,27 @@ import {
   HomePage,
   shouldSuspendGlobalShortcutsForOnboardingStep
 } from "./HomePage";
+import { OnboardingGuide } from "./components/OnboardingGuide";
+
+function createZhCnSettings() {
+  const settings = createDefaultSettings({ isPackaged: false });
+  settings.ui.language = "zh-CN";
+  return settings;
+}
 
 describe("HomePage", () => {
   it("renders the tray home dashboard with a settings entry and shortcut/language settings", () => {
     const html = renderToStaticMarkup(
       createElement(HomePage, {
-        initialSettings: createDefaultSettings({ isPackaged: false }),
-        initialSettingsOpen: true
+        initialSettings: createZhCnSettings()
       })
     );
 
-    expect(html).toContain("自然说话，完美书写");
-    expect(html).toContain("测试版");
-    expect(html).toContain('aria-label="打开设置"');
     expect(html).toContain('aria-label="打开首次引导"');
-    expect(html).toContain("首次引导");
     expect(html).toContain("语音输入");
-    expect(html).toContain('aria-label="点击录制快捷键"');
-    expect(html).toContain("翻译目标");
-    expect(html).toContain("英语（英国）");
-    expect(html).toContain("声波效果");
-    expect(html).toContain("脉冲焰");
-    expect(html).toContain("银核灰");
-    expect(html).toContain("霓虹糖");
-    expect(html).not.toContain("量子绿");
-    expect(html).not.toContain("极光蓝");
-    expect(html).not.toContain("矩阵光");
-    expect(html).toContain("麦克风");
-    expect(html).toContain("自动检测");
-    expect(html).toContain("选择您首选的麦克风");
+    expect(html).toContain("智能翻译");
+    expect(html).toContain("智能改写");
+    expect(html).toContain("使用概览");
     expect(html).not.toContain("mic-level-meter");
     expect(html).not.toContain("词典");
     expect(html).not.toContain("推荐朋友");
@@ -46,9 +38,11 @@ describe("HomePage", () => {
 
   it("renders the onboarding permissions guide when opened from the home page", () => {
     const html = renderToStaticMarkup(
-      createElement(HomePage, {
-        initialSettings: createDefaultSettings({ isPackaged: false }),
-        initialOnboardingOpen: true
+      createElement(OnboardingGuide, {
+        settings: createZhCnSettings(),
+        onClose: () => undefined,
+        onOpenSettings: () => undefined,
+        onSettingsChange: () => undefined
       })
     );
 
@@ -59,13 +53,15 @@ describe("HomePage", () => {
   });
 
   it("renders the onboarding microphone, shortcut, and ready steps", () => {
-    const settings = createDefaultSettings({ isPackaged: false });
+    const settings = createZhCnSettings();
     const renderStep = (initialOnboardingStep: number): string =>
       renderToStaticMarkup(
-        createElement(HomePage, {
-          initialSettings: settings,
-          initialOnboardingOpen: true,
-          initialOnboardingStep
+        createElement(OnboardingGuide, {
+          settings,
+          initialStep: initialOnboardingStep,
+          onClose: () => undefined,
+          onOpenSettings: () => undefined,
+          onSettingsChange: () => undefined
         })
       );
 
@@ -75,13 +71,12 @@ describe("HomePage", () => {
     expect(microphoneStep).toContain('aria-label="打开麦克风选择"');
     expect(microphoneStep).not.toContain("onboarding-microphone-picker");
     expect(microphoneStep).not.toContain("mic-picker__trigger");
-    expect(microphoneStep).toContain("onboarding-meter");
-    expect(microphoneStep).toContain("onboarding-meter__bar");
-    expect(microphoneStep).toContain("onboarding-meter__bar-fill");
+    expect(microphoneStep).toContain("mic-level-meter");
+    expect(microphoneStep).toContain("mic-level-meter__bar");
     expect(microphoneStep).toContain(
-      '<span class="onboarding-meter__bar"><span class="onboarding-meter__bar-fill" style="transform:scaleY(0)"></span></span>'
+      '<span class="mic-level-meter__bar" data-filled="false" aria-hidden="true"></span>'
     );
-    expect(microphoneStep).toContain("data-state=\"idle\"");
+    expect(microphoneStep).toContain('data-active="false"');
     expect(microphoneStep.indexOf("您计算机内置或外接的麦克风会影响转写效果。")).toBeLessThan(
       microphoneStep.indexOf("您在说话时看到蓝色条形图在移动吗？")
     );

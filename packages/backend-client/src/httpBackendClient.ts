@@ -2,7 +2,6 @@ import { requestBackendJson, type BackendJsonError } from "@voice/shared";
 import type {
   AnonymousQuota,
   BackendClient,
-  ClientBootstrapRequest,
   ClientBootstrapSnapshot,
   FeatureFlags,
   PostprocessRequest,

@@ -28,6 +28,8 @@ interface OverlayWindowProps {
   language?: InterfaceLanguage;
   modeHintLabel?: string;
   modeHintVisible?: boolean;
+  promptLabel?: string;
+  translationTargetLabel?: string;
   shortcutHelp?: ShortcutHelpPayload;
   busyHintVisible?: boolean;
   /** 麥克風當前 RMS 電平（線性 0~1，實際常在 0~0.2）。僅 listening 時有效，否則請傳 0。 */
@@ -133,7 +135,7 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
       "Voice Assistant 无法访问您的麦克风。可能是其他应用正在使用它，或者访问被系统或安全设置阻止。",
     help: "获取帮助",
     retry: "重试",
-    busyTitle: "Voice Assistant 仍在处理您的上一个转录",
+    busyTitle: "Voice Assistant仍在处理您的上一个转录",
     busyMessage: "如果您想取消上一个转录，请按 Esc 或点击下面。",
     limitTitle: "转录会话将在不到 1 分钟内结束",
     limitMessage: "当前每个会话支持最多 5 分钟的转写。请开始一个新会话以继续。",
@@ -307,7 +309,13 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
   const text = getOverlayText(props.language);
   const label = computeLabel(state, props.reason, props.error, text);
   const level = state === "listening" ? (props.level ?? 0) : 0;
-  const overlayHintLabel = props.modeHintLabel?.trim();
+  const legacyPromptLabel = props.promptLabel?.trim();
+  const translationTargetLabel = props.translationTargetLabel?.trim();
+  const legacyTranslationLabel = translationTargetLabel
+    ? `${props.language === "zh-TW" ? "正在翻譯為" : props.language === "en-US" ? "Translating to" : "正在翻译为"} ${translationTargetLabel}`
+    : undefined;
+  const overlayHintLabel =
+    props.modeHintLabel?.trim() || legacyPromptLabel || legacyTranslationLabel;
   const isThinking = state === "processing" || state === "inserting";
   const showBusyHint = isThinking && props.busyHintVisible === true;
   const recordingRemainingSeconds =
@@ -1117,11 +1125,11 @@ function computeLabel(
   error: string | undefined,
   text: OverlayText,
 ): string {
+  if (state === "error" && reason) {
+    return error ? `${text.errors[reason]}：${error}` : text.errors[reason];
+  }
   if (error) {
     return `${text.initFailedPrefix}${error}`;
-  }
-  if (state === "error" && reason) {
-    return text.errors[reason];
   }
   return text.states[state];
 }

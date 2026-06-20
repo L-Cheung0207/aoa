@@ -44,6 +44,8 @@ export interface StartRecordingInput {
   selectedText?: string;
   /** 安裝向導示例文本，只作 LLM 上下文，不替換真實選區 */
   previewSelectedText?: string;
+  /** 安裝向導「試一試」頁發起的錄音，其他安裝向導頁不可使用。 */
+  loginSetupTrial?: boolean;
 }
 
 export interface RecordingStateUpdate {
@@ -80,6 +82,7 @@ export interface BootstrapClientResponse extends ClientBootstrapSnapshot {
 
 export interface ShortcutConflictPayload {
   conflicts: string[];
+  reason?: string;
 }
 
 export interface ShortcutHelpPayload {
@@ -90,6 +93,7 @@ export interface ShortcutHelpPayload {
 
 export interface ShortcutCaptureAcceleratorPayload {
   accelerator: string;
+  state?: "down" | "up";
 }
 
 export type HomeWindowControlAction = "minimize" | "toggleMaximize" | "close";

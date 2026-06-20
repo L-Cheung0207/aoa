@@ -23,7 +23,7 @@ export interface ConfigStorageAdapter {
 export interface CreateConfigStoreOptions {
   adapter: ConfigStorageAdapter;
   defaults: AppSettings;
-  platform?: "darwin" | "win32" | "linux" | "mac" | "windows";
+  platform?: string;
 }
 
 export interface ConfigStore {

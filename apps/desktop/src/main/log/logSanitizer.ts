@@ -98,13 +98,13 @@ function sanitizeValue(
   key = "",
   options: LogSanitizerOptions = {},
 ): SanitizedLogValue {
+  if (!options.revealSensitive && SENSITIVE_KEY_PATTERN.test(key)) {
+    return "***";
+  }
   if (input === null || input === undefined) {
     return input;
   }
   if (typeof input === "string") {
-    if (!options.revealSensitive && SENSITIVE_KEY_PATTERN.test(key)) {
-      return "***";
-    }
     if (!options.revealSensitive && TEXT_KEY_PATTERN.test(key)) {
       return input.length;
     }

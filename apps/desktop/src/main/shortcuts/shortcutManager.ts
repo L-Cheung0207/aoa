@@ -2,6 +2,7 @@ import type { RecordingMode } from "@voice/shared";
 
 export interface ShortcutRegistrar {
   configureShortcuts?(config: ShortcutConfig): void;
+  getFailureReason?(): string | undefined;
   register(accelerator: string, callback: () => void): boolean;
   unregister(accelerator: string): void;
   unregisterAll(): void;
@@ -40,6 +41,7 @@ export type ShortcutConfigureResult =
       ok: false;
       registered: ConfiguredShortcut[];
       conflicts: ConfiguredShortcut[];
+      failureReason?: string;
     };
 
 export interface ShortcutManager {
@@ -136,7 +138,13 @@ export function createShortcutManager(
       logger.log(
         `[shortcut] configure completed ok=false registered=${registered.length} conflicts=${conflicts.length}`
       );
-      return { ok: false, registered, conflicts };
+      const failureReason = registrar.getFailureReason?.();
+      return {
+        ok: false,
+        registered,
+        conflicts,
+        ...(failureReason ? { failureReason } : {}),
+      };
     }
 
     if (handlers.onShortcutHelp) {

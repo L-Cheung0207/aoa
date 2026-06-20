@@ -29,7 +29,7 @@ export interface UpdateMetadata {
   packageName?: string;
 }
 
-export interface UpdateReadyPayload extends UpdateMetadata {}
+export type UpdateReadyPayload = UpdateMetadata;
 
 export interface BackendInstallerDownloadProgress {
   phase: "downloading" | "verifying";
@@ -892,9 +892,15 @@ function sanitizeInstallerFileName(input: string): string {
     ? basename(new URL(input).pathname)
     : basename(input);
   const safeName = decodeURIComponent(rawName)
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
+    .split("")
+    .map((char) => (isUnsafeFileNameCharacter(char) ? "_" : char))
+    .join("")
     .trim();
   return safeName || "Voice Assistant Update.exe";
+}
+
+function isUnsafeFileNameCharacter(char: string): boolean {
+  return '<>:"/\\|?*'.includes(char) || char.charCodeAt(0) < 32;
 }
 
 export async function inspectWindowsExecutableMetadata(

@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -8,6 +10,16 @@ function getCssRuleBody(css: string, selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, "m").exec(css);
   return match?.[1] ?? "";
+}
+
+function readCssWithImports(url: URL): string {
+  const css = readFileSync(url, "utf8");
+  const baseDir = dirname(fileURLToPath(url));
+  return css.replace(
+    /@import\s+"([^"]+)";/g,
+    (_match, specifier: string) =>
+      readCssWithImports(new URL(`${specifier}`, `file://${baseDir}/`))
+  );
 }
 
 describe("OverlayWindow result panel", () => {
@@ -49,7 +61,7 @@ describe("OverlayWindow result panel", () => {
     expect(html).toContain("--bar-phase:");
     expect(html).toContain("--bar-opacity:");
     expect(html).toContain("transform:scaleY(");
-    expect(html).toContain("transform:scaleY(1.000)");
+    expect(html).toContain("--bar-weight:1.000");
   });
 
   it("renders all waveform styles with the shared pill waveform structure", () => {
@@ -92,12 +104,12 @@ describe("OverlayWindow result panel", () => {
     expect(html).toContain(">取消<");
   });
 
-  it("uses waveform theme variables for the listening border and meter colors", () => {
-    const css = readFileSync(new URL("../../styles/app.css", import.meta.url), "utf8");
+  it("uses waveform theme variables without adding a listening border", () => {
+    const css = readCssWithImports(new URL("../../styles/app.css", import.meta.url));
     const listeningRule = getCssRuleBody(css, ".overlay--listening");
     const candyRule = getCssRuleBody(css, ".volume-meter--waveform-candy");
 
-    expect(listeningRule).toContain("var(--overlay-border)");
+    expect(listeningRule).toContain("box-shadow: none");
     expect(candyRule).toContain("--wave-a:");
     expect(candyRule).toContain("--wave-glow:");
   });
@@ -196,7 +208,7 @@ describe("OverlayWindow result panel", () => {
   });
 
   it("does not paint an outer backdrop or shadow around the result panel", () => {
-    const css = readFileSync(new URL("../../styles/app.css", import.meta.url), "utf8");
+    const css = readCssWithImports(new URL("../../styles/app.css", import.meta.url));
     const overlayRule = getCssRuleBody(css, ".result-overlay");
     const panelRule = getCssRuleBody(css, ".result-panel");
 
