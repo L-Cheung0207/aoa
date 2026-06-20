@@ -20,6 +20,9 @@ interface WindowAltSpaceGuardState {
   rightAltCaptureStarted: boolean;
   rightAltDown: boolean;
   rightAltSyntheticCtrlDown: boolean;
+  rightCommandAcceleratorCaptured: boolean;
+  rightCommandCaptureStarted: boolean;
+  rightCommandDown: boolean;
   shiftDown: boolean;
 }
 
@@ -99,6 +102,9 @@ function getOrCreateGuardState(window: BrowserWindow): WindowAltSpaceGuardState 
     rightAltCaptureStarted: false,
     rightAltDown: false,
     rightAltSyntheticCtrlDown: false,
+    rightCommandAcceleratorCaptured: false,
+    rightCommandCaptureStarted: false,
+    rightCommandDown: false,
     shiftDown: false
   };
   guardStates.set(window, state);
@@ -163,8 +169,35 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
       return;
     }
 
+    if (
+      input.type === "keyUp" &&
+      input.code === "MetaRight" &&
+      getActiveCaptureKind(state) === "loginSetup" &&
+      state.rightCommandAcceleratorCaptured
+    ) {
+      event.preventDefault();
+      resetRightCommandCaptureState(state);
+      return;
+    }
+
+    if (
+      input.type === "keyUp" &&
+      input.code === "MetaRight" &&
+      getActiveCaptureKind(state) === "loginSetup" &&
+      state.rightCommandCaptureStarted &&
+      !state.rightCommandAcceleratorCaptured
+    ) {
+      event.preventDefault();
+      sendShortcutCaptureAccelerator(window, state, "MetaRight");
+      resetRightCommandCaptureState(state);
+      return;
+    }
+
     trackModifierState(state, input);
     if (input.code === "AltRight" || input.key === "AltGraph") {
+      return;
+    }
+    if (input.code === "MetaRight" && getActiveCaptureKind(state) === "loginSetup") {
       return;
     }
     if (
@@ -180,6 +213,28 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
       ) {
         sendShortcutCaptureAccelerator(window, state, "RightAlt+Space");
         state.rightAltAcceleratorCaptured = true;
+      }
+      return;
+    }
+
+    if (
+      input.type === "keyDown" &&
+      getActiveCaptureKind(state) === "loginSetup" &&
+      isRightCommandChordInput(state, input) &&
+      !state.rightCommandAcceleratorCaptured
+    ) {
+      if (input.code === "ShiftRight") {
+        event.preventDefault();
+        sendShortcutCaptureAccelerator(window, state, "MetaRight+RightShift");
+        state.rightCommandAcceleratorCaptured = true;
+        return;
+      }
+
+      const accelerator = buildRightCommandAccelerator(state, input.code);
+      if (accelerator) {
+        event.preventDefault();
+        sendShortcutCaptureAccelerator(window, state, accelerator);
+        state.rightCommandAcceleratorCaptured = true;
       }
       return;
     }
@@ -254,6 +309,9 @@ function resetKeyboardState(state: WindowAltSpaceGuardState): void {
   state.rightAltCaptureStarted = false;
   state.rightAltDown = false;
   state.rightAltSyntheticCtrlDown = false;
+  state.rightCommandAcceleratorCaptured = false;
+  state.rightCommandCaptureStarted = false;
+  state.rightCommandDown = false;
   state.shiftDown = false;
 }
 
@@ -262,6 +320,12 @@ function resetRightAltCaptureState(state: WindowAltSpaceGuardState): void {
   state.rightAltCaptureStarted = false;
   state.rightAltDown = false;
   state.rightAltSyntheticCtrlDown = false;
+}
+
+function resetRightCommandCaptureState(state: WindowAltSpaceGuardState): void {
+  state.rightCommandAcceleratorCaptured = false;
+  state.rightCommandCaptureStarted = false;
+  state.rightCommandDown = false;
 }
 
 function trackModifierState(
@@ -318,12 +382,57 @@ function trackModifierState(
       state.shiftDown = isDown;
       break;
     case "MetaLeft":
+      state.metaDown = isDown;
+      break;
     case "MetaRight":
       state.metaDown = isDown;
+      state.rightCommandDown = isDown;
+      if (isDown) {
+        state.rightCommandCaptureStarted = true;
+        state.rightCommandAcceleratorCaptured = false;
+      }
       break;
     default:
       break;
   }
+}
+
+function isRightCommandChordInput(
+  state: WindowAltSpaceGuardState,
+  input: Electron.Input
+): boolean {
+  return (
+    state.rightCommandDown ||
+    input.code === "MetaRight" ||
+    (input.meta === true && isRightSideModifierInput(input))
+  );
+}
+
+function buildRightCommandAccelerator(
+  state: WindowAltSpaceGuardState,
+  code: string
+): string | undefined {
+  const key = keyFromInputCode(code);
+  if (!key) {
+    return undefined;
+  }
+
+  const parts = ["Ctrl", "Alt", "Shift", "Super"].filter((modifier) => {
+    switch (modifier) {
+      case "Ctrl":
+        return state.ctrlDown;
+      case "Alt":
+        return state.leftAltDown;
+      case "Shift":
+        return state.shiftDown;
+      case "Super":
+        return state.metaDown && !state.rightCommandDown;
+      default:
+        return false;
+    }
+  });
+  parts.push("MetaRight");
+  return [...new Set(parts), key].join("+");
 }
 
 function isRightAltChordInput(

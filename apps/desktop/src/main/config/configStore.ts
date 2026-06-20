@@ -23,6 +23,7 @@ export interface ConfigStorageAdapter {
 export interface CreateConfigStoreOptions {
   adapter: ConfigStorageAdapter;
   defaults: AppSettings;
+  platform?: "darwin" | "win32" | "linux" | "mac" | "windows";
 }
 
 export interface ConfigStore {
@@ -34,7 +35,8 @@ export interface ConfigStore {
 export function createConfigStore(options: CreateConfigStoreOptions): ConfigStore {
   const persistedSettings = readPersistedSettings(
     options.adapter,
-    options.defaults
+    options.defaults,
+    options.platform,
   );
   let currentSettings = persistedSettings.settings;
   if (persistedSettings.migrated) {
@@ -58,7 +60,8 @@ export function createConfigStore(options: CreateConfigStoreOptions): ConfigStor
 
 function readPersistedSettings(
   adapter: ConfigStorageAdapter,
-  defaults: AppSettings
+  defaults: AppSettings,
+  platform?: CreateConfigStoreOptions["platform"],
 ): { settings: AppSettings; migrated: boolean } {
   const persisted = adapter.get(settingsKey);
 
@@ -107,7 +110,7 @@ function readPersistedSettings(
     migrated = true;
   }
 
-  const normalizedShortcuts = normalizeLegacyShortcuts(merged.shortcuts);
+  const normalizedShortcuts = normalizeLegacyShortcuts(merged.shortcuts, platform);
   if (normalizedShortcuts !== merged.shortcuts) {
     merged = {
       ...merged,
@@ -116,18 +119,35 @@ function readPersistedSettings(
     migrated = true;
   }
 
+  if (
+    (platform === "darwin" || platform === "mac") &&
+    (merged.shortcuts.processSelection === "RightAlt+Space" ||
+      merged.shortcuts.processSelection === "MetaRight+Space") &&
+    defaults.shortcuts.processSelection === "MetaRight+/"
+  ) {
+    merged = {
+      ...merged,
+      shortcuts: {
+        ...merged.shortcuts,
+        processSelection: defaults.shortcuts.processSelection,
+      },
+    };
+    migrated = true;
+  }
+
   return { settings: merged, migrated };
 }
 
 function normalizeLegacyShortcuts(
-  shortcuts: AppSettings["shortcuts"]
+  shortcuts: AppSettings["shortcuts"],
+  platform?: CreateConfigStoreOptions["platform"],
 ): AppSettings["shortcuts"] {
   const normalized = {
     ...shortcuts,
-    toggleRecording: normalizeLegacyShortcut(shortcuts.toggleRecording),
-    processSelection: normalizeLegacyShortcut(shortcuts.processSelection),
-    translateDictation: normalizeLegacyShortcut(shortcuts.translateDictation),
-    holdToTalk: normalizeLegacyShortcut(shortcuts.holdToTalk)
+    toggleRecording: normalizeLegacyShortcut(shortcuts.toggleRecording, platform),
+    processSelection: normalizeLegacyShortcut(shortcuts.processSelection, platform),
+    translateDictation: normalizeLegacyShortcut(shortcuts.translateDictation, platform),
+    holdToTalk: normalizeLegacyShortcut(shortcuts.holdToTalk, platform)
   };
   if (
     normalized.toggleRecording === shortcuts.toggleRecording &&
@@ -140,14 +160,20 @@ function normalizeLegacyShortcuts(
   return normalized;
 }
 
-function normalizeLegacyShortcut(shortcut: string): string {
+function normalizeLegacyShortcut(
+  shortcut: string,
+  platform?: CreateConfigStoreOptions["platform"],
+): string {
+  const storageRightModifier =
+    platform === "darwin" || platform === "mac" ? "MetaRight" : "RightAlt";
   return shortcut
     .split("+")
     .filter(Boolean)
     .map((part) => {
       switch (part) {
         case "MetaRight":
-          return "RightAlt";
+        case "RightAlt":
+          return storageRightModifier;
         case "Slash":
           return "/";
         case "ShiftRight":

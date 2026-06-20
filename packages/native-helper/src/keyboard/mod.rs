@@ -2,6 +2,8 @@ use crate::{ensure_supported_platform, NativeHelperError, NativeHelperResult};
 
 #[cfg(windows)]
 pub mod hook_windows;
+#[cfg(target_os = "macos")]
+pub mod hook_macos;
 
 pub const RIGHT_ALT_KEY_CODE: u32 = 0xA5;
 pub const SPACE_KEY_CODE: u32 = 0x20;
@@ -393,6 +395,8 @@ where
 pub struct HookHandle {
     #[cfg(windows)]
     inner: hook_windows::WindowsHookHandle,
+    #[cfg(target_os = "macos")]
+    inner: hook_macos::MacHookHandle,
 }
 
 /// Install a global low-level keyboard hook that forwards recognized
@@ -410,7 +414,17 @@ where
         .map_err(NativeHelperError::InputUnavailable)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn install_hook<F>(on_action: F) -> NativeHelperResult<HookHandle>
+where
+    F: Fn(HotkeyAction) + Send + 'static,
+{
+    hook_macos::install(on_action)
+        .map(|inner| HookHandle { inner })
+        .map_err(NativeHelperError::InputUnavailable)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn install_hook<F>(_on_action: F) -> NativeHelperResult<HookHandle>
 where
     F: Fn(HotkeyAction) + Send + 'static,
@@ -423,7 +437,12 @@ pub fn uninstall_hook(handle: HookHandle) -> NativeHelperResult<()> {
     hook_windows::uninstall(handle.inner).map_err(NativeHelperError::InputUnavailable)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn uninstall_hook(handle: HookHandle) -> NativeHelperResult<()> {
+    hook_macos::uninstall(handle.inner).map_err(NativeHelperError::InputUnavailable)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn uninstall_hook(_handle: HookHandle) -> NativeHelperResult<()> {
     Err(NativeHelperError::UnsupportedPlatform)
 }
@@ -439,7 +458,17 @@ pub fn configure_hook_shortcuts(
         .map_err(NativeHelperError::InputUnavailable)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn configure_hook_shortcuts(
+    direct: &str,
+    process_selection: &str,
+    translate: &str,
+) -> NativeHelperResult<()> {
+    hook_macos::configure_shortcuts(direct, process_selection, translate)
+        .map_err(NativeHelperError::InputUnavailable)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn configure_hook_shortcuts(
     _direct: &str,
     _process_selection: &str,

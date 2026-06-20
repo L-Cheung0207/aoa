@@ -23,6 +23,8 @@ import type {
 } from "../features/recorder/recordingStateMachine";
 import {
   createVoiceOperationController,
+  VoiceTextInsertionError,
+  type VoiceInsertionFallbackEvent,
   type VoiceOperationController,
   type VoicePostprocessResultEvent,
   type VoiceTextTarget,
@@ -100,6 +102,8 @@ export function App(): React.JSX.Element {
   const state = overlayProjection.state;
   const reason = overlayProjection.reason;
   const result = overlayProjection.result;
+  const insertionFallbackText = overlayProjection.insertionFallbackText;
+  const insertionFallbackMode = overlayProjection.insertionFallbackMode;
   const activeMode = overlayProjection.mode;
   const showBusyHint = overlayProjection.busyHintVisible;
   const shortcutHelp = overlayProjection.shortcutHelp;
@@ -178,6 +182,24 @@ export function App(): React.JSX.Element {
   const dismissResult = (): void => {
     setDisplayedResult(undefined);
     hideShortcutHelp();
+  };
+
+  const showInsertionFallback = (event: VoiceInsertionFallbackEvent): void => {
+    const { mode, text } = event;
+    if (!text.trim()) {
+      return;
+    }
+    hideShortcutHelp();
+    hideBusyHint();
+    dispatchOverlay({ type: "showInsertionFallback", mode, text });
+  };
+
+  const dismissInsertionFallback = (): void => {
+    dispatchOverlay({ type: "dismissInsertionFallback" });
+    hideShortcutHelp();
+    bundleRef.current?.controller.cancel().catch((error) => {
+      console.error("[voice] dismiss insertion fallback reset failed", error);
+    });
   };
 
   const showStartLoading = (mode: RecordingMode): void => {
@@ -320,6 +342,7 @@ export function App(): React.JSX.Element {
           onClearResult: () => {
             setDisplayedResult(undefined);
           },
+          onInsertionFallback: showInsertionFallback,
           onToggleAccepted: (mode) => {
             showStartLoading(mode);
           },
@@ -352,6 +375,11 @@ export function App(): React.JSX.Element {
       if (overlayStateRef.current.result) {
         console.log("[voice] cancel requested by ESC; dismissing result");
         dismissResult();
+        return;
+      }
+      if (overlayStateRef.current.insertionFallbackText) {
+        console.log("[voice] cancel requested by ESC; dismissing insertion fallback");
+        dismissInsertionFallback();
         return;
       }
 
@@ -598,6 +626,8 @@ export function App(): React.JSX.Element {
       state={state}
       {...(shortcutHelp !== undefined ? { shortcutHelp } : {})}
       {...(result !== undefined ? { result } : {})}
+      {...(insertionFallbackText !== undefined ? { insertionFallbackText } : {})}
+      {...(insertionFallbackMode !== undefined ? { insertionFallbackMode } : {})}
       level={level}
       {...(recordingRemainingSeconds !== undefined &&
       overlayProjection.recordingLimitWarningVisible
@@ -652,6 +682,7 @@ export function App(): React.JSX.Element {
       onDismissBusyHint={hideBusyHint}
       onDismissRecordingLimitWarning={dismissRecordingLimitWarning}
       onDismissResult={dismissResult}
+      onDismissInsertionFallback={dismissInsertionFallback}
     />
   );
 }
@@ -669,6 +700,7 @@ interface BuildControllerInput {
   audio: AppSettings["audio"];
   onPostprocessResult(event: VoicePostprocessResultEvent): void;
   onClearResult(): void;
+  onInsertionFallback(event: VoiceInsertionFallbackEvent): void;
   onToggleAccepted(mode: RecordingMode): void;
   onStopAccepted(mode: RecordingMode): void;
   getPendingStartMode(): RecordingMode | undefined;
@@ -824,7 +856,10 @@ function buildController(input: BuildControllerInput): ControllerBundle {
         `[voice] textTarget.insertText result ok=${result.ok} strategy=${result.strategy} message=${result.message ?? ""}`,
       );
       if (!result.ok) {
-        throw new Error(result.message ?? "insert failed");
+        throw new VoiceTextInsertionError(
+          result.message ?? "insert failed",
+          result.fallbackText ?? text,
+        );
       }
     },
     replaceSelection: async (text, expectedSelectedText) => {

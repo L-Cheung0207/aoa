@@ -161,6 +161,35 @@ describe("OverlayWindow result panel", () => {
     expect(html).toContain(">复制<");
   });
 
+  it("shows a copy fallback panel when direct insertion failed", () => {
+    const html = renderToStaticMarkup(
+      createElement(OverlayWindow, {
+        state: "result",
+        insertionFallbackText: "我就拉里的旧码入到。",
+        onDismissInsertionFallback: () => undefined
+      })
+    );
+
+    expect(html).toContain("复制最后的转录");
+    expect(html).toContain("&quot;我就拉里的旧码入到。&quot;");
+    expect(html).toContain('class="insertion-fallback-panel__copy"');
+    expect(html).not.toContain('class="result-panel"');
+  });
+
+  it("uses the translation fallback title when translated text cannot be inserted", () => {
+    const html = renderToStaticMarkup(
+      createElement(OverlayWindow, {
+        state: "result",
+        insertionFallbackText: "The meeting starts now.",
+        insertionFallbackMode: "translate",
+        onDismissInsertionFallback: () => undefined
+      })
+    );
+
+    expect(html).toContain("复制最后的翻译");
+    expect(html).toContain("&quot;The meeting starts now.&quot;");
+  });
+
   it("uses the copied label after the copy action succeeds", () => {
     expect(getCopyTooltipLabel(false)).toBe("复制");
     expect(getCopyTooltipLabel(true)).toBe("已复制");

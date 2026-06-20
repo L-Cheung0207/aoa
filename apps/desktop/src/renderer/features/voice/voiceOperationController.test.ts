@@ -13,6 +13,7 @@ import type {
 } from "../recorder/recorderService";
 import {
   createVoiceOperationController,
+  VoiceTextInsertionError,
   type VoiceOperationSettings,
   type VoiceTextTarget
 } from "./voiceOperationController";
@@ -820,6 +821,57 @@ describe("voice operation controller", () => {
     await controller.handleToggle("direct");
     await expect(controller.handleToggle("direct")).rejects.toThrow("INSERT_FAILED");
 
+    expect(controller.getSnapshot()).toEqual({
+      state: "error",
+      mode: undefined,
+      reason: "insertion"
+    });
+  });
+
+  it("reports a copy fallback when translated text cannot be inserted", async () => {
+    const recorder = new FakeRecorderService();
+    const translatedText = "The meeting starts now.";
+    const transcriptionProvider = new FakeTranscriptionProvider("现在开会", {
+      action: "insert",
+      finalText: translatedText,
+      confidence: 0.8,
+      usedDictionaryTermIds: [],
+      warnings: []
+    });
+    const textTarget: VoiceTextTarget = {
+      getSelectedText: async () => "",
+      insertText: async () => {
+        throw new VoiceTextInsertionError("INSERT_FAILED", translatedText);
+      },
+      replaceSelection: async () => undefined
+    };
+    const fallbacks: Array<{ mode: "direct" | "translate"; text: string }> = [];
+    const controller = createVoiceOperationController({
+      recorder,
+      transcriptionProvider,
+      postProcessService: createPostProcessService({
+        action: "insert",
+        finalText: translatedText,
+        confidence: 0.8,
+        usedDictionaryTermIds: [],
+        warnings: []
+      }),
+      textTarget,
+      settings: createSettings(),
+      getAppContext: async () => ({
+        platform: "windows",
+        appName: "notepad.exe",
+        windowTitle: "notes.txt"
+      }),
+      onInsertionFallback: (event) => {
+        fallbacks.push(event);
+      }
+    });
+
+    await controller.handleToggle("translate");
+    await expect(controller.handleToggle("direct")).rejects.toThrow("INSERT_FAILED");
+
+    expect(fallbacks).toEqual([{ mode: "translate", text: translatedText }]);
     expect(controller.getSnapshot()).toEqual({
       state: "error",
       mode: undefined,

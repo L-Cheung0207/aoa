@@ -226,7 +226,7 @@ describe("config store", () => {
     expect(store.get().recording.waveformStyle).toBe("waveform-mono");
   });
 
-  it("migrates legacy MetaRight shortcut settings to RightAlt storage", () => {
+  it("migrates legacy MetaRight shortcut settings to RightAlt storage on Windows", () => {
     const defaults = createDefaultSettings({ isPackaged: false });
     const adapter = createInspectableMemoryAdapter({
       ...defaults,
@@ -250,6 +250,59 @@ describe("config store", () => {
       translateDictation: "RightAlt+RightShift",
       holdToTalk: "RightShift+RightAlt"
     });
+    expect(adapter.read()).toEqual(store.get());
+  });
+
+  it("keeps MetaRight shortcut settings as canonical macOS storage", () => {
+    const defaults = createDefaultSettings({
+      isPackaged: false,
+      platform: "darwin"
+    });
+    const adapter = createInspectableMemoryAdapter({
+      ...defaults,
+      shortcuts: {
+        ...defaults.shortcuts,
+        toggleRecording: "RightAlt",
+        processSelection: "RightAlt+Slash",
+        translateDictation: "RightAlt+RightShift",
+        holdToTalk: "ShiftRight+RightAlt"
+      }
+    });
+    const store = createConfigStore({
+      adapter,
+      defaults,
+      platform: "darwin"
+    });
+
+    expect(store.get().shortcuts).toEqual({
+      ...defaults.shortcuts,
+      toggleRecording: "MetaRight",
+      processSelection: "MetaRight+/",
+      translateDictation: "MetaRight+RightShift",
+      holdToTalk: "RightShift+MetaRight"
+    });
+    expect(adapter.read()).toEqual(store.get());
+  });
+
+  it("migrates the macOS default rewrite shortcut from Space to slash", () => {
+    const defaults = createDefaultSettings({
+      isPackaged: false,
+      platform: "darwin",
+    });
+    const adapter = createInspectableMemoryAdapter({
+      ...defaults,
+      shortcuts: {
+        ...defaults.shortcuts,
+        processSelection: "RightAlt+Space"
+      }
+    });
+    const store = createConfigStore({
+      adapter,
+      defaults,
+      platform: "darwin"
+    });
+
+    expect(store.get().shortcuts.processSelection).toBe("MetaRight+/");
     expect(adapter.read()).toEqual(store.get());
   });
 });

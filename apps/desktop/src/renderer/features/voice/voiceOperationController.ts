@@ -44,6 +44,16 @@ export interface VoiceTextTarget {
   replaceSelection(text: string, expectedSelectedText?: string): Promise<void>;
 }
 
+export class VoiceTextInsertionError extends Error {
+  readonly fallbackText: string | undefined;
+
+  constructor(message: string, fallbackText?: string) {
+    super(message);
+    this.name = "VoiceTextInsertionError";
+    this.fallbackText = fallbackText;
+  }
+}
+
 export interface CreateVoiceOperationControllerOptions {
   recorder: RecorderService;
   transcriptionProvider: TranscriptionProvider;
@@ -51,6 +61,7 @@ export interface CreateVoiceOperationControllerOptions {
   settings: VoiceOperationSettings;
   getAppContext(): Promise<AppContext>;
   onPostprocessResult?(event: VoicePostprocessResultEvent): void;
+  onInsertionFallback?(event: VoiceInsertionFallbackEvent): void;
   onCancel?(mode: RecordingMode): void;
   onTranscriptionUnavailable?(): void;
   onHistoryRecord?(input: CreateHistoryRecordInput): void;
@@ -62,6 +73,11 @@ export interface VoicePostprocessResultEvent {
   rawText: string;
   selectedText: string;
   result: PostprocessResult;
+}
+
+export interface VoiceInsertionFallbackEvent {
+  mode: "direct" | "translate";
+  text: string;
 }
 
 export interface VoiceOperationController {
@@ -569,6 +585,19 @@ export function createVoiceOperationController(
         return;
       }
       console.error(`[voice] 停止會話在階段=${stage} 失敗`, error);
+      if (
+        stage === "insertion" &&
+        (session.mode === "direct" || session.mode === "translate") &&
+        error instanceof VoiceTextInsertionError
+      ) {
+        const fallbackText = error.fallbackText ?? finalTranscript;
+        if (fallbackText.trim()) {
+          options.onInsertionFallback?.({
+            mode: session.mode,
+            text: fallbackText,
+          });
+        }
+      }
       keepSessionForRetry = stage === "transcription";
       fail(stageToReason(stage));
       throw error;

@@ -40,6 +40,7 @@ import {
   summarizeArgvForLog,
   shouldReplayMicErrorOverlay,
   shouldShowShortcutHelpForState,
+  createLoginSetupShortcutCaptureController,
 } from "./bootstrap";
 
 vi.mock("electron", () => ({
@@ -90,6 +91,51 @@ describe("bootstrap runtime mode", () => {
     expect(resolveAuthDevicePlatform("darwin")).toBe("mac");
     expect(resolveAuthDevicePlatform("linux")).toBe("linux");
     expect(resolveAuthDevicePlatform("win32")).toBe("windows");
+  });
+});
+
+describe("login setup shortcut capture controller", () => {
+  it("clears setup shortcut capture on login setup completion and resumes global shortcuts once", () => {
+    let shortcutCaptureDepth = 0;
+    let registeredShortcutCount = 3;
+    const suspendGlobalShortcuts = vi.fn();
+    const resumeGlobalShortcuts = vi.fn();
+    const ensureWindowGuards = vi.fn();
+    const startShortcutCaptureSession = vi.fn();
+    const stopShortcutCaptureSession = vi.fn();
+    const controller = createLoginSetupShortcutCaptureController({
+      getShortcutCaptureDepth: () => shortcutCaptureDepth,
+      getRegisteredShortcutCount: () => registeredShortcutCount,
+      setRegisteredShortcutCount: (count) => {
+        registeredShortcutCount = count;
+      },
+      suspendGlobalShortcuts,
+      resumeGlobalShortcuts,
+      ensureWindowGuards,
+      startShortcutCaptureSession,
+      stopShortcutCaptureSession,
+    });
+
+    controller.setActive(true);
+    controller.clear();
+    controller.setActive(false);
+
+    expect(controller.isActive()).toBe(false);
+    expect(registeredShortcutCount).toBe(0);
+    expect(suspendGlobalShortcuts).toHaveBeenCalledTimes(1);
+    expect(resumeGlobalShortcuts).toHaveBeenCalledTimes(1);
+    expect(resumeGlobalShortcuts).toHaveBeenCalledWith({
+      broadcastConflicts: false,
+    });
+    expect(ensureWindowGuards).toHaveBeenCalledTimes(1);
+    expect(startShortcutCaptureSession).toHaveBeenCalledTimes(1);
+    expect(stopShortcutCaptureSession).toHaveBeenCalledTimes(1);
+
+    shortcutCaptureDepth = 1;
+    controller.setActive(true);
+    controller.clear();
+    expect(resumeGlobalShortcuts).toHaveBeenCalledTimes(1);
+    expect(stopShortcutCaptureSession).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -332,6 +378,11 @@ describe("bootstrap overlay visibility", () => {
     expect(formatShortcutHelpLabel("RightAlt")).toBe("Alt");
     expect(formatShortcutHelpLabel("RightAlt+Space")).toBe("Alt+Space");
     expect(formatShortcutHelpLabel("RightAlt+RightShift")).toBe("Alt+Shift");
+    expect(formatShortcutHelpLabel("MetaRight")).toBe("Right Cmd");
+    expect(formatShortcutHelpLabel("MetaRight+/")).toBe("Right Cmd+/");
+    expect(formatShortcutHelpLabel("MetaRight+RightShift")).toBe(
+      "Right Cmd+Right Shift",
+    );
   });
 
   it("shows shortcut help while idle or after a successful recording", () => {
@@ -548,19 +599,14 @@ describe("installer launch handoff", () => {
     );
   });
 
-  it("starts the installed app with a home launch argument", async () => {
+  it("starts the installed app with a home launch argument", () => {
     const child = {
-      once: vi.fn((event: string, listener: () => void) => {
-        if (event === "spawn") {
-          listener();
-        }
-        return child;
-      }),
+      once: vi.fn(() => child),
       unref: vi.fn(),
     };
     const spawnProcess = vi.fn(() => child);
 
-    await launchInstalledAppHome({
+    launchInstalledAppHome({
       target: {
         executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
         args: ["--open-home"],
@@ -579,14 +625,13 @@ describe("installer launch handoff", () => {
       }),
     );
     expect(child.once).toHaveBeenCalledWith("error", expect.any(Function));
-    expect(child.once).toHaveBeenCalledWith("spawn", expect.any(Function));
     expect(child.unref).toHaveBeenCalled();
   });
 
-  it("checks the installed app executable before spawning", async () => {
+  it("checks the installed app executable before spawning", () => {
     const spawnProcess = vi.fn();
 
-    await expect(
+    expect(() =>
       launchInstalledAppHome({
         target: {
           executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
@@ -595,7 +640,7 @@ describe("installer launch handoff", () => {
         spawnProcess: spawnProcess as never,
         existsSync: () => false,
       }),
-    ).rejects.toThrow(
+    ).toThrow(
       "Installed app executable not found: C:/Tools/Voice Assistant/Voice Assistant.exe",
     );
     expect(spawnProcess).not.toHaveBeenCalled();
@@ -607,37 +652,37 @@ describe("installer launch handoff", () => {
       hide: vi.fn(),
       destroy: vi.fn(),
     };
-    const launch = vi.fn(async () => {
+    const launch = vi.fn(() => {
       throw new Error(
         "Installed app executable not found: C:/Tools/Voice Assistant/Voice Assistant.exe",
       );
     });
     const exitApp = vi.fn();
 
-    await expect(
+    expect(() =>
       handoffInstallerLaunch({
         installerWindow: window,
         installDir: "C:/Tools/Voice Assistant",
         launch,
         exitApp,
       }),
-    ).rejects.toThrow("Installed app executable not found");
+    ).toThrow("Installed app executable not found");
 
     expect(window.hide).not.toHaveBeenCalled();
     expect(window.destroy).not.toHaveBeenCalled();
     expect(exitApp).not.toHaveBeenCalled();
   });
 
-  it("hides and destroys the installer window after the installed app is launched", async () => {
+  it("hides and destroys the installer window after queuing the installed app launch", () => {
     const window = {
       isDestroyed: vi.fn(() => false),
       hide: vi.fn(),
       destroy: vi.fn(),
     };
-    const launch = vi.fn(async () => undefined);
+    const launch = vi.fn();
     const exitApp = vi.fn();
 
-    await handoffInstallerLaunch({
+    handoffInstallerLaunch({
       installerWindow: window,
       installDir: "C:/Tools/Voice Assistant",
       platform: "win32",

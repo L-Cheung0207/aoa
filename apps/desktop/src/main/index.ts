@@ -1,7 +1,8 @@
 import { join } from "node:path";
-import { app } from "electron";
+import { app, BrowserWindow } from "electron";
 import { bootstrap } from "./bootstrap";
 import { installConsoleRedirect } from "./log/redirectConsole";
+import { installSingleInstanceGuard } from "./singleInstance";
 
 app.setAppLogsPath();
 
@@ -13,10 +14,19 @@ process.stderr.write(
   `[diag] platform=${process.platform} stdout.isTTY=${Boolean(process.stdout.isTTY)} stderr.isTTY=${Boolean(process.stderr.isTTY)} argv0=${process.argv0}\n`
 );
 
-app.whenReady().then(bootstrap);
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+const hasSingleInstanceLock = installSingleInstanceGuard({
+  app,
+  argv: process.argv,
+  browserWindow: BrowserWindow,
+  logger: console,
 });
+
+if (hasSingleInstanceLock) {
+  app.whenReady().then(bootstrap);
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+}

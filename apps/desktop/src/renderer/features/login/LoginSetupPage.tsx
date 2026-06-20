@@ -91,8 +91,15 @@ const LOGIN_SETUP_TRANSLATION_TARGET_OPTIONS: Array<{
   { value: "en-US", label: "English（英語）" },
   { value: "zh-CN", label: "中文（簡體）" },
 ];
-const LOGIN_SETUP_VOICE_INPUT_SHORTCUT = "RightAlt";
-const LOGIN_SETUP_TRANSLATE_SHORTCUT = "RightAlt+RightShift";
+function getLoginSetupVoiceInputShortcut(): string {
+  return detectShortcutDisplayPlatform() === "mac" ? "MetaRight" : "RightAlt";
+}
+
+function getLoginSetupTranslateShortcut(): string {
+  return detectShortcutDisplayPlatform() === "mac"
+    ? "MetaRight+RightShift"
+    : "RightAlt+RightShift";
+}
 const REWRITE_SELECTED_TEXT =
   "這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。";
 
@@ -172,7 +179,7 @@ function formatSetupShortcutLabel(shortcut: string): string {
 
 function getLoginSetupRewriteShortcut(): string {
   return detectShortcutDisplayPlatform() === "mac"
-    ? "RightAlt+/"
+    ? "MetaRight+/"
     : "RightAlt+Space";
 }
 
@@ -316,10 +323,10 @@ function isSetupShortcutEvent(
   shortcut: string,
   rightAltDown: boolean,
 ): boolean {
-  if (shortcut === "RightAlt") {
+  if (shortcut === "RightAlt" || shortcut === "MetaRight") {
     return isSetupPhysicalRightAltEvent(event);
   }
-  if (shortcut === "RightAlt+RightShift") {
+  if (shortcut === "RightAlt+RightShift" || shortcut === "MetaRight+RightShift") {
     return (
       rightAltDown &&
       (event.code === "ShiftRight" || (event.key === "Shift" && event.location === 2))
@@ -328,7 +335,7 @@ function isSetupShortcutEvent(
   if (shortcut === "RightAlt+Space") {
     return rightAltDown && (event.code === "Space" || event.key === " ");
   }
-  if (shortcut === "RightAlt+/") {
+  if (shortcut === "RightAlt+/" || shortcut === "MetaRight+/") {
     return (
       rightAltDown &&
       (event.code === "Slash" || event.key === "/" || event.key === "?")
@@ -417,8 +424,8 @@ export function LoginSetupPage(): React.JSX.Element {
   const activeStepIndex = useMemo(() => getStepIndex(step), [step]);
   const selectedInputDeviceId = settings?.recording.inputDeviceId ?? "";
   const selectedRecordingLanguage = settings?.recording.language ?? "cantonese";
-  const setupVoiceInputShortcut = LOGIN_SETUP_VOICE_INPUT_SHORTCUT;
-  const setupTranslateShortcut = LOGIN_SETUP_TRANSLATE_SHORTCUT;
+  const setupVoiceInputShortcut = getLoginSetupVoiceInputShortcut();
+  const setupTranslateShortcut = getLoginSetupTranslateShortcut();
   const setupRewriteShortcut = getLoginSetupRewriteShortcut();
   const selectedTranslationTargetLanguage =
     settings?.translation.targetLanguage ?? "en-US";

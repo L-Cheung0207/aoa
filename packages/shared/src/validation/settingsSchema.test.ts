@@ -30,6 +30,17 @@ describe("settings schema", () => {
     expect(settings.privacy.historyRetention).toBe("forever");
   });
 
+  it("uses slash for the macOS smart rewrite default shortcut", () => {
+    const settings = createDefaultSettings({
+      isPackaged: false,
+      platform: "darwin",
+    });
+
+    expect(settings.shortcuts.toggleRecording).toBe("MetaRight");
+    expect(settings.shortcuts.processSelection).toBe("MetaRight+/");
+    expect(settings.shortcuts.translateDictation).toBe("MetaRight+RightShift");
+  });
+
   it("creates default ws settings for the bundled ASR endpoint", () => {
     const settings = createDefaultSettings({ isPackaged: false });
 

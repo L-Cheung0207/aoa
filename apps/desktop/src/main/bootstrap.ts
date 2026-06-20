@@ -309,6 +309,8 @@ export function resolveShortcutTriggerOverlayLayout(
 }
 
 export function formatShortcutHelpLabel(shortcut: string): string {
+  const shortcutParts = shortcut.split("+").map((part) => part.trim());
+  const usesRightCommand = shortcutParts.includes("MetaRight");
   return shortcut
     .split("+")
     .map((part) => {
@@ -317,7 +319,10 @@ export function formatShortcutHelpLabel(shortcut: string): string {
         case "LeftAlt":
         case "Alt":
           return "Alt";
+        case "MetaRight":
+          return "Right Cmd";
         case "RightShift":
+          return usesRightCommand ? "Right Shift" : "Shift";
         case "LeftShift":
         case "Shift":
           return "Shift";
@@ -513,46 +518,27 @@ export function launchInstalledAppHome(input: {
   target: AppLaunchTarget;
   spawnProcess?: typeof spawn;
   existsSync?: typeof existsSync;
-}): Promise<void> {
+}): void {
   const spawnProcess = input.spawnProcess ?? spawn;
   const fileExists = input.existsSync ?? existsSync;
   const executablePath = input.target.executablePath;
   if (!fileExists(executablePath)) {
-    return Promise.reject(
-      new Error(`Installed app executable not found: ${executablePath}`),
-    );
+    throw new Error(`Installed app executable not found: ${executablePath}`);
   }
 
-  return new Promise((resolve, reject) => {
-    const child = spawnProcess(
-      executablePath,
-      input.target.args,
-      {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      } satisfies SpawnOptions,
-    );
-    let settled = false;
-    const settleOk = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve();
-    };
-    const settleError = (error: Error): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      reject(error);
-    };
-
-    child.once?.("error", settleError);
-    child.once?.("spawn", settleOk);
-    child.unref();
+  const child = spawnProcess(
+    executablePath,
+    input.target.args,
+    {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+    } satisfies SpawnOptions,
+  );
+  child.once?.("error", (error) => {
+    console.warn("[installer] installed app launch failed", error);
   });
+  child.unref();
 }
 
 interface InstallerLaunchWindow {
@@ -568,9 +554,9 @@ export function handoffInstallerLaunch(input: {
   platform?: NodeJS.Platform;
   appPath?: string;
   execPath?: string;
-  launch?: (input: { target: AppLaunchTarget }) => Promise<void>;
+  launch?: (input: { target: AppLaunchTarget }) => void;
   exitApp?: (exitCode: number) => void;
-}): Promise<void> {
+}): void {
   const launch = input.launch ?? launchInstalledAppHome;
   const exitApp = input.exitApp ?? ((exitCode: number) => app.exit(exitCode));
   const target = resolvePostInstallLaunchTarget({
@@ -580,14 +566,13 @@ export function handoffInstallerLaunch(input: {
     appPath: input.appPath ?? app.getAppPath(),
     execPath: input.execPath ?? process.execPath,
   });
-  return launch({ target }).then(() => {
-    const installerWindow = input.installerWindow;
-    if (installerWindow && !installerWindow.isDestroyed()) {
-      installerWindow.hide();
-      installerWindow.destroy();
-    }
-    exitApp(0);
-  });
+  launch({ target });
+  const installerWindow = input.installerWindow;
+  if (installerWindow && !installerWindow.isDestroyed()) {
+    installerWindow.hide();
+    installerWindow.destroy();
+  }
+  exitApp(0);
 }
 
 const AUTH_IPC_CHANNELS = new Set([
@@ -706,6 +691,81 @@ export function wireLoginSetupWindowVisibility(
   window.webContents.once("did-finish-load", showOnce);
   window.webContents.once("did-fail-load", showOnce);
   fallbackTimer = setTimeoutFn(showOnce, timeoutMs);
+}
+
+export interface LoginSetupShortcutCaptureController {
+  setActive(active: boolean): void;
+  clear(): void;
+  isActive(): boolean;
+}
+
+interface LoginSetupShortcutCaptureControllerOptions {
+  getShortcutCaptureDepth(): number;
+  getRegisteredShortcutCount(): number;
+  setRegisteredShortcutCount(count: number): void;
+  suspendGlobalShortcuts(): void;
+  resumeGlobalShortcuts(options: { broadcastConflicts: boolean }): void;
+  ensureWindowGuards(): void;
+  startShortcutCaptureSession(): void;
+  stopShortcutCaptureSession(): void;
+}
+
+export function createLoginSetupShortcutCaptureController(
+  options: LoginSetupShortcutCaptureControllerOptions,
+): LoginSetupShortcutCaptureController {
+  let depth = 0;
+  let suspendedGlobalShortcuts = false;
+
+  const resumeIfNeeded = (): void => {
+    if (
+      depth === 0 &&
+      options.getShortcutCaptureDepth() === 0 &&
+      suspendedGlobalShortcuts
+    ) {
+      suspendedGlobalShortcuts = false;
+      options.resumeGlobalShortcuts({ broadcastConflicts: false });
+    }
+  };
+
+  return {
+    setActive: (active) => {
+      if (active) {
+        if (options.getShortcutCaptureDepth() === 0 && depth === 0) {
+          if (options.getRegisteredShortcutCount() > 0) {
+            options.suspendGlobalShortcuts();
+            options.setRegisteredShortcutCount(0);
+            suspendedGlobalShortcuts = true;
+          } else {
+            suspendedGlobalShortcuts = false;
+          }
+        }
+        depth += 1;
+        options.ensureWindowGuards();
+        options.startShortcutCaptureSession();
+        console.log("[bootstrap] 安裝向導快捷鍵試用：已暫停全域性快捷鍵");
+        return;
+      }
+
+      if (depth === 0) {
+        return;
+      }
+
+      depth -= 1;
+      resumeIfNeeded();
+      if (depth === 0) {
+        options.stopShortcutCaptureSession();
+      }
+    },
+    clear: () => {
+      if (depth === 0) {
+        return;
+      }
+      depth = 0;
+      resumeIfNeeded();
+      options.stopShortcutCaptureSession();
+    },
+    isActive: () => depth > 0,
+  };
 }
 
 export async function runStartupGate(
@@ -829,7 +889,7 @@ export async function bootstrap(): Promise<void> {
           launchAtLogin: false,
           updated: true,
         });
-        await launchInstalledAppHome({
+        launchInstalledAppHome({
           target: resolveInstalledAppLaunchTarget({
             installDir: silentUpdateInstallDir,
           }),
@@ -882,7 +942,11 @@ export async function bootstrap(): Promise<void> {
   const mainAppConfig = await readMainAppConfig(appConfigPath);
   const configStore = createConfigStore({
     adapter: storeAdapter,
-    defaults: createDefaultSettings({ isPackaged: app.isPackaged }),
+    defaults: createDefaultSettings({
+      isPackaged: app.isPackaged,
+      platform: process.platform,
+    }),
+    platform: process.platform,
   });
   applyPendingInstallOptions({
     installOptionsPath: resolvePendingInstallOptionsPath({
@@ -1115,9 +1179,11 @@ export async function bootstrap(): Promise<void> {
   });
   console.log("[bootstrap] IPC 路由已註冊");
   let completeLoginSetup: (() => Promise<void>) | undefined;
+  let releaseLoginSetupShortcutCapture = (): void => {};
   createAuthenticatedIpcMainAdapter(ipcMain, authService).handle(
     "voice:auth:complete-login-setup",
     async () => {
+      releaseLoginSetupShortcutCapture();
       await completeLoginSetup?.();
       loginSetupActive = false;
     },
@@ -1450,8 +1516,6 @@ export async function bootstrap(): Promise<void> {
 
     let shortcutCaptureDepth = 0;
     let shortcutCaptureTargetWindow: BrowserWindow | undefined;
-    let loginSetupShortcutCaptureDepth = 0;
-    let loginSetupSuspendedGlobalShortcuts = false;
     let registeredShortcutCount = 0;
 
     const resumeSuspendedShortcuts = (options: {
@@ -1480,7 +1544,10 @@ export async function bootstrap(): Promise<void> {
       targetWindow: BrowserWindow | undefined,
     ): void {
       if (active) {
-        if (shortcutCaptureDepth === 0 && loginSetupShortcutCaptureDepth === 0) {
+        if (
+          shortcutCaptureDepth === 0 &&
+          !loginSetupShortcutCaptureController.isActive()
+        ) {
           shortcutManager.suspend();
           registeredShortcutCount = 0;
         }
@@ -1496,7 +1563,7 @@ export async function bootstrap(): Promise<void> {
             shortcutCaptureDepth = 1;
           } catch (error) {
             shortcutCaptureSession.stop();
-            if (loginSetupShortcutCaptureDepth === 0) {
+            if (!loginSetupShortcutCaptureController.isActive()) {
               resumeSuspendedShortcuts({ broadcastConflicts: true });
             }
             throw error;
@@ -1518,47 +1585,43 @@ export async function bootstrap(): Promise<void> {
       if (shortcutCaptureDepth === 0) {
         shortcutCaptureTargetWindow = undefined;
         shortcutCaptureSession.stop();
-        if (loginSetupShortcutCaptureDepth === 0) {
+        if (!loginSetupShortcutCaptureController.isActive()) {
           resumeSuspendedShortcuts({ broadcastConflicts: true });
         }
       }
     }
 
-    function setLoginSetupShortcutCaptureActive(active: boolean): void {
-      if (active) {
-        if (shortcutCaptureDepth === 0 && loginSetupShortcutCaptureDepth === 0) {
-          if (registeredShortcutCount > 0) {
-            shortcutManager.suspend();
-            registeredShortcutCount = 0;
-            loginSetupSuspendedGlobalShortcuts = true;
-          } else {
-            loginSetupSuspendedGlobalShortcuts = false;
+    const loginSetupShortcutCaptureController =
+      createLoginSetupShortcutCaptureController({
+        getShortcutCaptureDepth: () => shortcutCaptureDepth,
+        getRegisteredShortcutCount: () => registeredShortcutCount,
+        setRegisteredShortcutCount: (count) => {
+          registeredShortcutCount = count;
+        },
+        suspendGlobalShortcuts: () => shortcutManager.suspend(),
+        resumeGlobalShortcuts: resumeSuspendedShortcuts,
+        ensureWindowGuards: () => {
+          ensureLoginSetupShortcutCaptureWindowGuards(
+            BrowserWindow.getAllWindows(),
+            () => loginSetupShortcutCaptureController.isActive(),
+            () => loginSetupWindow,
+          );
+        },
+        startShortcutCaptureSession: () => {
+          shortcutCaptureSession.start();
+        },
+        stopShortcutCaptureSession: () => {
+          if (shortcutCaptureDepth === 0) {
+            shortcutCaptureSession.stop();
           }
-        }
-        loginSetupShortcutCaptureDepth += 1;
-        ensureLoginSetupShortcutCaptureWindowGuards(
-          BrowserWindow.getAllWindows(),
-          () => loginSetupShortcutCaptureDepth > 0,
-          () => loginSetupWindow,
-        );
-        console.log("[bootstrap] 安裝向導快捷鍵試用：已暫停全域性快捷鍵");
-        return;
-      }
+        },
+      });
 
-      if (loginSetupShortcutCaptureDepth === 0) {
-        return;
-      }
-
-      loginSetupShortcutCaptureDepth -= 1;
-      if (
-        loginSetupShortcutCaptureDepth === 0 &&
-        shortcutCaptureDepth === 0 &&
-        loginSetupSuspendedGlobalShortcuts
-      ) {
-        loginSetupSuspendedGlobalShortcuts = false;
-        resumeSuspendedShortcuts({ broadcastConflicts: false });
-      }
+    function setLoginSetupShortcutCaptureActive(active: boolean): void {
+      loginSetupShortcutCaptureController.setActive(active);
     }
+
+    releaseLoginSetupShortcutCapture = loginSetupShortcutCaptureController.clear;
 
     function broadcastShortcutConflict(conflicts: string[]): void {
       for (const window of BrowserWindow.getAllWindows()) {
@@ -1742,7 +1805,7 @@ export async function bootstrap(): Promise<void> {
       );
       wireLoginSetupShortcutCaptureWindowGuard(
         homeWindow,
-        () => loginSetupShortcutCaptureDepth > 0,
+        () => loginSetupShortcutCaptureController.isActive(),
         () => loginSetupWindow,
       );
       homeWindow.once("ready-to-show", () => {
@@ -2045,6 +2108,7 @@ export async function bootstrap(): Promise<void> {
       shortcutCaptureSession.stop();
       escCancelController.dispose();
       shortcutManager.dispose();
+      releaseLoginSetupShortcutCapture = (): void => {};
       unsubscribeTranscriptionEvents();
       app.removeListener("will-quit", willQuitHandler);
       ipcMain.removeListener(

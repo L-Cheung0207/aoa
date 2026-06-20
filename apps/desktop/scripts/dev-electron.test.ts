@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
 import {
   buildAppBuilderRceditArgs,
+  buildNativeHelperForDev,
   createDevElectronEnv,
   createDevElectronPaths,
   createElectronViteDevArgs,
   prepareDevElectronExecutable,
   resolveCachedRceditPath,
+  shouldBuildNativeHelperForDev,
 } from "./dev-electron.mjs";
 
 describe("desktop development Electron launcher", () => {
@@ -99,6 +101,42 @@ describe("desktop development Electron launcher", () => {
       "--",
       "--open-home",
     ]);
+  });
+
+  it("builds the native helper before dev launch on macOS and Windows", () => {
+    expect(shouldBuildNativeHelperForDev("darwin")).toBe(true);
+    expect(shouldBuildNativeHelperForDev("win32")).toBe(true);
+    expect(shouldBuildNativeHelperForDev("linux")).toBe(false);
+
+    const spawnSync = vi.fn(() => ({ status: 0 }));
+    expect(
+      buildNativeHelperForDev({
+        platform: "darwin",
+        spawnSync,
+        workspaceRoot: "/repo",
+      }),
+    ).toBe(0);
+    expect(spawnSync).toHaveBeenCalledWith(
+      "pnpm",
+      ["--filter", "@voice/native-helper", "build:native"],
+      {
+        cwd: "/repo",
+        shell: true,
+        stdio: "inherit",
+      },
+    );
+  });
+
+  it("skips native helper build before dev launch on unsupported platforms", () => {
+    const spawnSync = vi.fn();
+    expect(
+      buildNativeHelperForDev({
+        platform: "linux",
+        spawnSync,
+        workspaceRoot: "/repo",
+      }),
+    ).toBe(0);
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 
   it("builds rcedit args that replace the dev executable icon", () => {

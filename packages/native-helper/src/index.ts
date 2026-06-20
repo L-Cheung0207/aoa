@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import path, { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 
@@ -263,15 +263,16 @@ function getAddon(addon: NativeAddonBinding | undefined): NativeAddonBinding {
 }
 
 export function getNativeAddonCandidatePaths(packageRoot: string): string[] {
+  const pathApi = /^[a-zA-Z]:[\\/]/.test(packageRoot) ? path.win32 : path;
   const paths: string[] = [];
   const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
   if (resourcesPath) {
-    paths.push(join(resourcesPath, "voice_native_helper.node"));
+    paths.push(pathApi.join(resourcesPath, "voice_native_helper.node"));
   }
 
   paths.push(
-    join(packageRoot, "target", "debug", "voice_native_helper.node"),
-    join(packageRoot, "dist", "voice_native_helper.node")
+    pathApi.join(packageRoot, "target", "debug", "voice_native_helper.node"),
+    pathApi.join(packageRoot, "dist", "voice_native_helper.node")
   );
   return paths;
 }

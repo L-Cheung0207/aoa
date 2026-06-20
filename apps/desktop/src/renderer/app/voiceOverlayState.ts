@@ -26,6 +26,8 @@ export interface VoiceOverlayState {
   forcedNetworkErrorVisible: boolean;
   localErrorReason: VoiceErrorReason | undefined;
   result: ResultOverlayContent | undefined;
+  insertionFallbackText: string | undefined;
+  insertionFallbackMode: "direct" | "translate" | undefined;
   shortcutHelp: ShortcutHelpPayload | undefined;
   busyHintVisible: boolean;
   recordingLimitWarningDismissed: boolean;
@@ -47,6 +49,8 @@ export type VoiceOverlayAction =
   | { type: "clearLocalError" }
   | { type: "showResult"; result: ResultOverlayContent }
   | { type: "dismissResult" }
+  | { type: "showInsertionFallback"; mode: "direct" | "translate"; text: string }
+  | { type: "dismissInsertionFallback" }
   | { type: "showShortcutHelp"; shortcutHelp: ShortcutHelpPayload }
   | { type: "hideShortcutHelp" }
   | { type: "showBusyHint" }
@@ -71,6 +75,8 @@ export interface VoiceOverlayProjection {
   mode: RecordingMode | undefined;
   reason?: VoiceErrorReason;
   result?: ResultOverlayContent;
+  insertionFallbackText?: string;
+  insertionFallbackMode?: "direct" | "translate";
   shortcutHelp?: ShortcutHelpPayload;
   busyHintVisible: boolean;
   recordingLimitWarningVisible: boolean;
@@ -87,6 +93,8 @@ export function createInitialVoiceOverlayState(): VoiceOverlayState {
     forcedNetworkErrorVisible: false,
     localErrorReason: undefined,
     result: undefined,
+    insertionFallbackText: undefined,
+    insertionFallbackMode: undefined,
     shortcutHelp: undefined,
     busyHintVisible: false,
     recordingLimitWarningDismissed: false,
@@ -146,6 +154,8 @@ export function voiceOverlayReducer(
         forcedNetworkErrorVisible: false,
         localErrorReason: undefined,
         result: undefined,
+        insertionFallbackText: undefined,
+        insertionFallbackMode: undefined,
         busyHintVisible: false,
         thinkingStartedAtMs: undefined,
         thinkingTimeoutFired: false,
@@ -163,6 +173,8 @@ export function voiceOverlayReducer(
         forcedNetworkErrorVisible: false,
         localErrorReason: undefined,
         result: undefined,
+        insertionFallbackText: undefined,
+        insertionFallbackMode: undefined,
         busyHintVisible: false,
         thinkingStartedAtMs: action.nowMs,
         thinkingTimeoutFired: false,
@@ -179,6 +191,8 @@ export function voiceOverlayReducer(
         networkDismissed: false,
         forcedNetworkErrorVisible: false,
         localErrorReason: undefined,
+        insertionFallbackText: undefined,
+        insertionFallbackMode: undefined,
         busyHintVisible: false,
         thinkingStartedAtMs: action.nowMs,
         thinkingTimeoutFired: false,
@@ -209,6 +223,8 @@ export function voiceOverlayReducer(
         localErrorReason: action.reason,
         pendingTransition: undefined,
         result: undefined,
+        insertionFallbackText: undefined,
+        insertionFallbackMode: undefined,
         busyHintVisible: false,
         thinkingStartedAtMs: undefined,
         thinkingTimeoutFired: false,
@@ -222,6 +238,8 @@ export function voiceOverlayReducer(
       return {
         ...state,
         result: action.result,
+        insertionFallbackText: undefined,
+        insertionFallbackMode: undefined,
         pendingTransition: undefined,
         localErrorReason: undefined,
         thinkingStartedAtMs: undefined,
@@ -231,6 +249,28 @@ export function voiceOverlayReducer(
       return {
         ...state,
         result: undefined,
+        insertionFallbackMode: undefined,
+        pendingTransition: undefined,
+        thinkingStartedAtMs: undefined,
+        thinkingTimeoutFired: false,
+      };
+    case "showInsertionFallback":
+      return {
+        ...state,
+        insertionFallbackText: action.text,
+        insertionFallbackMode: action.mode,
+        result: undefined,
+        pendingTransition: undefined,
+        localErrorReason: undefined,
+        busyHintVisible: false,
+        thinkingStartedAtMs: undefined,
+        thinkingTimeoutFired: false,
+      };
+    case "dismissInsertionFallback":
+      return {
+        ...state,
+        insertionFallbackText: undefined,
+        insertionFallbackMode: undefined,
         pendingTransition: undefined,
         thinkingStartedAtMs: undefined,
         thinkingTimeoutFired: false,
@@ -331,7 +371,9 @@ export function selectVoiceOverlayProjection(
     input.overlay.canceledStartedAtMs !== undefined &&
     input.nowMs - input.overlay.canceledStartedAtMs >= canceledAutoCloseMs;
 
-  let state: RecordingState = input.overlay.result
+  let state: RecordingState = input.overlay.insertionFallbackText
+    ? "result"
+    : input.overlay.result
     ? "result"
     : shouldAutoCloseCanceled
       ? "idle"
@@ -400,6 +442,12 @@ export function selectVoiceOverlayProjection(
     mode,
     ...(reason !== undefined ? { reason } : {}),
     ...(input.overlay.result !== undefined ? { result: input.overlay.result } : {}),
+    ...(input.overlay.insertionFallbackText !== undefined
+      ? { insertionFallbackText: input.overlay.insertionFallbackText }
+      : {}),
+    ...(input.overlay.insertionFallbackMode !== undefined
+      ? { insertionFallbackMode: input.overlay.insertionFallbackMode }
+      : {}),
     ...(input.overlay.shortcutHelp !== undefined
       ? { shortcutHelp: input.overlay.shortcutHelp }
       : {}),

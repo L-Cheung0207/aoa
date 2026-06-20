@@ -21,9 +21,16 @@ describe("desktop macOS distribution script", () => {
   it("generates the macOS icon, builds the desktop app, and packages a DMG", () => {
     const scriptUrl = new URL("./dist-mac.mjs", import.meta.url);
     const commands = createDistMacCommands(scriptUrl);
+    const workspaceRoot = resolve(fileURLToPath(new URL("../../..", scriptUrl)));
     const packageRoot = resolve(fileURLToPath(new URL("..", scriptUrl)));
 
     expect(commands).toEqual([
+      {
+        command: "pnpm",
+        args: ["--filter", "@voice/native-helper", "build:native"],
+        cwd: workspaceRoot,
+        env: undefined,
+      },
       {
         command: "node",
         args: ["scripts/generate-mac-icon.mjs"],
@@ -52,7 +59,7 @@ describe("desktop macOS distribution script", () => {
     expect(commands.at(-1)?.env).toBeUndefined();
   });
 
-  it("keeps the macOS package independent of the Windows-only native helper", () => {
+  it("packages the macOS native helper for global shortcut support", () => {
     const scriptUrl = new URL("./dist-mac.mjs", import.meta.url);
     const packageRoot = fileURLToPath(new URL("..", scriptUrl));
     const config = readFileSync(join(packageRoot, "electron-builder.mac.yml"), "utf8");
@@ -60,7 +67,8 @@ describe("desktop macOS distribution script", () => {
     expect(config).toContain("target: dmg");
     expect(config).toContain("icon: resources/app-icon.icns");
     expect(config).toContain("hardenedRuntime: true");
-    expect(config).not.toContain("voice_native_helper.node");
+    expect(config).toContain("../../packages/native-helper/dist/voice_native_helper.node");
+    expect(config).toContain("to: voice_native_helper.node");
   });
 
   it("resolves the DMG artifact name produced by the macOS build", () => {
@@ -206,6 +214,12 @@ describe("desktop macOS distribution script", () => {
           "/tmp/aoa-dist-mac/apps/desktop",
         ],
         cwd: "/Volumes/External/aoa/apps/desktop",
+        env: undefined,
+      },
+      {
+        command: "pnpm",
+        args: ["--filter", "@voice/native-helper", "build:native"],
+        cwd: "/tmp/aoa-dist-mac",
         env: undefined,
       },
       {

@@ -18,11 +18,18 @@ const DIST_MAC_STAGING_ROOT = "aoa-desktop-dist-mac";
 
 export function createDistMacCommands(scriptUrl = import.meta.url, options = {}) {
   const packageRoot = resolve(fileURLToPath(new URL("..", scriptUrl)));
+  const workspaceRoot = resolve(fileURLToPath(new URL("../../..", scriptUrl)));
   const packagingEnv = options.sign
     ? undefined
     : { CSC_IDENTITY_AUTO_DISCOVERY: "false" };
 
   return [
+    {
+      command: "pnpm",
+      args: ["--filter", "@voice/native-helper", "build:native"],
+      cwd: workspaceRoot,
+      env: undefined,
+    },
     {
       command: "node",
       args: ["scripts/generate-mac-icon.mjs"],

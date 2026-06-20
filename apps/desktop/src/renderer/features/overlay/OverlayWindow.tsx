@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { InterfaceLanguage, RecordingMode, WaveformStyle } from "@voice/shared";
 import type {
   RecordingState,
@@ -18,6 +18,8 @@ export type { ResultOverlayContent } from "./ResultOverlayPanel";
 interface OverlayWindowProps {
   state?: RecordingState;
   result?: ResultOverlayContent;
+  insertionFallbackText?: string;
+  insertionFallbackMode?: "direct" | "translate";
   /** 僅 state=error 時生效 */
   reason?: VoiceErrorReason;
   /** bootstrap 初始化失敗的原始錯誤文案 */
@@ -44,6 +46,7 @@ interface OverlayWindowProps {
   onConfirm?(): void;
   onUndoCancel?(): void;
   onDismissResult?(): void;
+  onDismissInsertionFallback?(): void;
 }
 
 type OverlayText = {
@@ -76,6 +79,8 @@ type OverlayText = {
   busyMessage: string;
   limitTitle: string;
   limitMessage: string;
+  insertionFallbackTitle: string;
+  translationFallbackTitle: string;
   volumeMeter: string;
   canceled: Record<RecordingMode, string>;
 } & ResultOverlayText;
@@ -132,6 +137,8 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     busyMessage: "如果您想取消上一个转录，请按 Esc 或点击下面。",
     limitTitle: "转录会话将在不到 1 分钟内结束",
     limitMessage: "当前每个会话支持最多 5 分钟的转写。请开始一个新会话以继续。",
+    insertionFallbackTitle: "复制最后的转录",
+    translationFallbackTitle: "复制最后的翻译",
     resultAria: "AI 回答",
     brand: "Voice Assistant",
     closeAnswer: "关闭回答",
@@ -197,6 +204,8 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     busyMessage: "如果您想取消上一個轉錄，請按 Esc 或點擊下面。",
     limitTitle: "轉錄會話將在不到 1 分鐘內結束",
     limitMessage: "目前每個會話支援最多 5 分鐘的轉寫。請開始一個新會話以繼續。",
+    insertionFallbackTitle: "複製最後的轉錄",
+    translationFallbackTitle: "複製最後的翻譯",
     resultAria: "AI 回答",
     brand: "Voice Assistant",
     closeAnswer: "關閉回答",
@@ -264,6 +273,8 @@ const OVERLAY_TEXT: Record<InterfaceLanguage, OverlayText> = {
     busyMessage: "To cancel the previous transcription, press Esc or click below.",
     limitTitle: "This transcription session will end in less than 1 minute",
     limitMessage: "Each session supports up to 5 minutes of transcription. Start a new session to continue.",
+    insertionFallbackTitle: "Copy the last transcript",
+    translationFallbackTitle: "Copy the last translation",
     resultAria: "AI Answer",
     brand: "Voice Assistant",
     closeAnswer: "Close answer",
@@ -314,6 +325,19 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
 
   if (state === "idle" || state === "success") {
     return <main className="overlay-empty" aria-hidden="true" />;
+  }
+
+  if (state === "result" && props.insertionFallbackText) {
+    return (
+      <InsertionFallbackPanel
+        text={text}
+        value={props.insertionFallbackText}
+        mode={props.insertionFallbackMode ?? "direct"}
+        {...(props.onDismissInsertionFallback
+          ? { onDismiss: props.onDismissInsertionFallback }
+          : {})}
+      />
+    );
   }
 
   if (state === "result" && props.result) {
@@ -539,6 +563,13 @@ interface MicrophoneErrorHintProps {
 
 interface NoSelectionErrorHintProps {
   text: OverlayText;
+  onDismiss?(): void;
+}
+
+interface InsertionFallbackPanelProps {
+  text: OverlayText;
+  value: string;
+  mode: "direct" | "translate";
   onDismiss?(): void;
 }
 
@@ -801,6 +832,110 @@ function NoSelectionErrorHint({
             {message ? <p>{message}</p> : null}
           </div>
         </div>
+      </section>
+    </main>
+  );
+}
+
+const INSERTION_FALLBACK_COPY_FEEDBACK_RESET_MS = 1400;
+
+function InsertionFallbackPanel({
+  text,
+  value,
+  mode,
+  onDismiss,
+}: InsertionFallbackPanelProps): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const copyTranscript = (): void => {
+    void window.voiceAI
+      .copyText(value)
+      .then(() => {
+        setCopied(true);
+        if (copyResetTimerRef.current) {
+          clearTimeout(copyResetTimerRef.current);
+        }
+        copyResetTimerRef.current = setTimeout(() => {
+          setCopied(false);
+        }, INSERTION_FALLBACK_COPY_FEEDBACK_RESET_MS);
+      })
+      .catch((error: unknown) => {
+        console.warn("[overlay] failed to copy insertion fallback text", error);
+      });
+  };
+
+  const title =
+    mode === "translate"
+      ? text.translationFallbackTitle
+      : text.insertionFallbackTitle;
+
+  return (
+    <main
+      className="insertion-fallback-shell"
+      role="dialog"
+      aria-label={title}
+    >
+      <section className="insertion-fallback-panel">
+        <header className="insertion-fallback-panel__header">
+          <span className="insertion-fallback-panel__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <circle
+                cx="12"
+                cy="12"
+                r="8.6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                d="M12 10.5v5.6M12 7.6v.1"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+          <strong>{title}</strong>
+          {onDismiss ? (
+            <button
+              type="button"
+              className="insertion-fallback-panel__close"
+              aria-label={text.close}
+              title={text.close}
+              onClick={onDismiss}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M6 6l12 12M18 6 6 18"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              </svg>
+            </button>
+          ) : null}
+        </header>
+        <blockquote>{`"${value}"`}</blockquote>
+        <button
+          type="button"
+          className="insertion-fallback-panel__copy"
+          onClick={copyTranscript}
+        >
+          {copied ? text.copied : text.copy}
+        </button>
       </section>
     </main>
   );

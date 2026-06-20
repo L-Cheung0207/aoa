@@ -23,6 +23,12 @@ import { fileURLToPath } from "node:url";
  */
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
+const nativeLibraryName =
+  process.platform === "win32"
+    ? "voice_native_helper.dll"
+    : process.platform === "darwin"
+      ? "libvoice_native_helper.dylib"
+      : "libvoice_native_helper.so";
 
 /**
  * @param {CopyNativeAddonOptions} options
@@ -69,7 +75,7 @@ function isBusyError(error) {
 
 if (import.meta.main) {
   copyNativeAddon({
-    sourcePath: join(packageRoot, "target", "debug", "voice_native_helper.dll"),
+    sourcePath: join(packageRoot, "target", "debug", nativeLibraryName),
     debugNodePath: join(packageRoot, "target", "debug", "voice_native_helper.node"),
     destinationDirectory: join(packageRoot, "dist"),
     destinationPath: join(packageRoot, "dist", "voice_native_helper.node"),

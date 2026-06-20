@@ -30,6 +30,8 @@ extraResources:
     to: app-icon.ico
   - from: src/renderer/public/config.json
     to: config.json
+  - from: ../../packages/native-helper/dist/voice_native_helper.node
+    to: voice_native_helper.node
 
 mac:
   target: dmg

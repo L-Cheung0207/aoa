@@ -28,6 +28,7 @@ type LegalDocumentKind = "agreement" | "privacy";
 
 const DEFAULT_VERSION_LABEL = "v0.0.0";
 const DEFAULT_DEVICE_NAME = "";
+const FOREGROUND_SHORTCUT_THROTTLE_MS = 500;
 
 type HomeShellText = {
   mainNav: string;
@@ -408,6 +409,79 @@ export function HomeShell({
     }
     document.documentElement.dataset.theme = theme;
   }, [settings?.ui?.theme]);
+
+  useEffect(() => {
+    if (!settings) {
+      return;
+    }
+
+    let rightCommandDown = false;
+    let lastTriggerAtMs = 0;
+    const triggerShortcut = (
+      event: KeyboardEvent,
+      mode: "direct" | "processSelection" | "translate",
+    ): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      const now = window.performance.now();
+      if (now - lastTriggerAtMs < FOREGROUND_SHORTCUT_THROTTLE_MS) {
+        return;
+      }
+      lastTriggerAtMs = now;
+      window.voiceAI.triggerRecording({ mode });
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat) {
+        return;
+      }
+      if (isRightCommandEvent(event)) {
+        rightCommandDown = true;
+        if (settings.shortcuts.toggleRecording === "MetaRight") {
+          triggerShortcut(event, "direct");
+        }
+        return;
+      }
+      if (!event.metaKey) {
+        rightCommandDown = false;
+        return;
+      }
+      if (
+        rightCommandDown &&
+        settings.shortcuts.translateDictation === "MetaRight+RightShift" &&
+        isRightShiftEvent(event)
+      ) {
+        triggerShortcut(event, "translate");
+        return;
+      }
+      if (
+        rightCommandDown &&
+        settings.shortcuts.processSelection === "MetaRight+/" &&
+        isSlashEvent(event)
+      ) {
+        triggerShortcut(event, "processSelection");
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent): void => {
+      if (isRightCommandEvent(event)) {
+        rightCommandDown = false;
+      }
+    };
+
+    const handleBlur = (): void => {
+      rightCommandDown = false;
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [settings]);
 
   return (
     <main className="home-page">
@@ -806,6 +880,18 @@ function formatVersionLabel(appVersion: string): string {
     return DEFAULT_VERSION_LABEL;
   }
   return normalized.startsWith("v") ? normalized : `v${normalized}`;
+}
+
+export function isRightCommandEvent(event: KeyboardEvent): boolean {
+  return event.code === "MetaRight" || (event.key === "Meta" && event.location === 2);
+}
+
+export function isRightShiftEvent(event: KeyboardEvent): boolean {
+  return event.code === "ShiftRight" || (event.key === "Shift" && event.location === 2);
+}
+
+export function isSlashEvent(event: KeyboardEvent): boolean {
+  return event.code === "Slash" || event.key === "/" || event.key === "?";
 }
 
 function HomeIcon({ active }: { active: boolean }): React.JSX.Element {

@@ -2,6 +2,7 @@ import type { AppSettings, AppSettingsPatch } from "../types/settings";
 
 export interface DefaultSettingsOptions {
   isPackaged: boolean;
+  platform?: "darwin" | "win32" | "linux" | "mac" | "windows";
 }
 
 export const DEFAULT_INTERFACE_LANGUAGE: AppSettings["ui"]["language"] =
@@ -22,6 +23,7 @@ export const MISCONFIGURED_AOSO_ASR_WS_URL = `ws://${AOSO_SERVER_HOST}/ws/transc
 export function createDefaultSettings(
   options: DefaultSettingsOptions,
 ): AppSettings {
+  const isMac = options.platform === "darwin" || options.platform === "mac";
   return {
     schemaVersion: 1,
     ui: {
@@ -61,9 +63,9 @@ export function createDefaultSettings(
       selectedIndex: 0,
     },
     shortcuts: {
-      toggleRecording: "RightAlt",
-      processSelection: "RightAlt+Space",
-      translateDictation: "RightAlt+RightShift",
+      toggleRecording: isMac ? "MetaRight" : "RightAlt",
+      processSelection: isMac ? "MetaRight+/" : "RightAlt+Space",
+      translateDictation: isMac ? "MetaRight+RightShift" : "RightAlt+RightShift",
       holdToTalk: "",
     },
     translation: {

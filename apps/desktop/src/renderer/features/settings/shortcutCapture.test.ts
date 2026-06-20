@@ -72,6 +72,20 @@ describe("shortcutCapture", () => {
     expect(onCapture).toHaveBeenCalledWith("RightAlt+Space");
   });
 
+  it("captures Right Command + slash as the canonical macOS rewrite shortcut", () => {
+    const onCapture = vi.fn();
+    const handlers = createShortcutCaptureHandlers({
+      onCapture,
+      onCancel: vi.fn(),
+      platform: "mac",
+    });
+
+    handlers.handleKeyDown(keyEvent("MetaRight", { metaKey: true }));
+    handlers.handleKeyDown(keyEvent("Slash", { key: "/", metaKey: true }));
+
+    expect(onCapture).toHaveBeenCalledWith("MetaRight+/");
+  });
+
   it("captures Right Alt + Right Shift", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
@@ -85,11 +99,12 @@ describe("shortcutCapture", () => {
     expect(onCapture).toHaveBeenCalledWith("RightAlt+RightShift");
   });
 
-  it("stores Right Command + Right Shift as the canonical Right Alt shortcut", () => {
+  it("stores Right Command + Right Shift as the canonical macOS shortcut", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
+      platform: "mac",
     });
 
     handlers.handleKeyDown(keyEvent("MetaRight", { metaKey: true }));
@@ -100,7 +115,7 @@ describe("shortcutCapture", () => {
       keyEvent("ShiftRight", { metaKey: true, shiftKey: true }),
     );
 
-    expect(onCapture).toHaveBeenCalledWith("RightAlt+RightShift");
+    expect(onCapture).toHaveBeenCalledWith("MetaRight+RightShift");
     expect(formatShortcutLabel("MetaRight+RightShift")).toBe(
       "Right Cmd + Right Shift",
     );
@@ -111,6 +126,7 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
+      platform: "mac",
     });
 
     handlers.handleKeyDown(keyEvent("ShiftRight", { shiftKey: true }));
@@ -121,7 +137,7 @@ describe("shortcutCapture", () => {
       keyEvent("MetaRight", { metaKey: true, shiftKey: true }),
     );
 
-    expect(onCapture).toHaveBeenCalledWith("RightShift+RightAlt");
+    expect(onCapture).toHaveBeenCalledWith("RightShift+MetaRight");
     expect(formatShortcutLabel("RightShift+MetaRight")).toBe(
       "Right Shift + Right Cmd",
     );

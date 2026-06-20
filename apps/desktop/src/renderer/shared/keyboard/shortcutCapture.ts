@@ -4,6 +4,9 @@ export const SUPPORTED_SHORTCUTS = [
   "RightAlt",
   "RightAlt+Space",
   "RightAlt+RightShift",
+  "MetaRight",
+  "MetaRight+/",
+  "MetaRight+RightShift",
 ] as const;
 
 export type SupportedShortcut = (typeof SUPPORTED_SHORTCUTS)[number];
@@ -12,6 +15,9 @@ const SHORTCUT_LABELS: Record<SupportedShortcut, string> = {
   RightAlt: "Right Alt",
   "RightAlt+Space": "Right Alt + Space",
   "RightAlt+RightShift": "Right Alt + Right Shift",
+  MetaRight: "Right Cmd",
+  "MetaRight+/": "Right Cmd + /",
+  "MetaRight+RightShift": "Right Cmd + Right Shift",
 };
 
 const SYMBOL_KEY_LABELS: Record<string, string> = {
@@ -94,14 +100,17 @@ export function formatShortcutLabel(
     .join(" + ");
 }
 
-export function normalizeShortcutForStorage(value: string): string {
+export function normalizeShortcutForStorage(
+  value: string,
+  platform: ShortcutDisplayPlatform = detectShortcutDisplayPlatform(),
+): string {
   return value
     .split("+")
     .filter(Boolean)
     .map((part) => {
       switch (part) {
         case "MetaRight":
-          return "RightAlt";
+          return platform === "mac" ? "MetaRight" : "RightAlt";
         case "RightShift":
         case "ShiftRight":
           return "RightShift";
@@ -113,7 +122,7 @@ export function normalizeShortcutForStorage(value: string): string {
 }
 
 export function isSupportedShortcut(value: string): boolean {
-  return validateShortcut(normalizeShortcutForStorage(value), "win32").ok;
+  return validateShortcut(normalizeShortcutForValidation(value), "win32").ok;
 }
 
 export interface ShortcutCaptureHandlers {
@@ -129,6 +138,7 @@ export interface CreateShortcutCaptureHandlersOptions {
   onCapture(accelerator: string): void;
   onCancel(): void;
   onInvalid?(message: string): void;
+  platform?: ShortcutDisplayPlatform;
 }
 
 const INVALID_SHORTCUT_MESSAGE = "请按下一个快捷键";
@@ -163,14 +173,15 @@ export function createShortcutCaptureHandlers(
     }
     clearRightAltFallback();
 
-    const normalizedAccelerator = normalizeShortcutForStorage(accelerator);
-    const validation = validateShortcut(normalizedAccelerator, {
+    const platform = options.platform ?? detectShortcutDisplayPlatform();
+    const normalizedAccelerator = normalizeShortcutForStorage(accelerator, platform);
+    const validation = validateShortcut(normalizeShortcutForValidation(accelerator), {
       platform: "win32",
       currentShortcut:
         options.currentShortcut !== undefined
-          ? normalizeShortcutForStorage(options.currentShortcut)
+          ? normalizeShortcutForValidation(options.currentShortcut)
           : undefined,
-      existingShortcuts: options.existingShortcuts?.map(normalizeShortcutForStorage),
+      existingShortcuts: options.existingShortcuts?.map(normalizeShortcutForValidation),
     });
     if (!validation.ok) {
       options.onInvalid?.(validation.message ?? INVALID_SHORTCUT_MESSAGE);
@@ -278,6 +289,11 @@ export function createShortcutCaptureHandlers(
     handleKeyUp,
     reset,
   };
+}
+
+function normalizeShortcutForValidation(value: string): string {
+  return normalizeShortcutForStorage(value, "windows")
+    .replaceAll("MetaRight", "RightAlt");
 }
 
 function modifierFromEvent(event: KeyboardEvent): string | undefined {

@@ -61,6 +61,32 @@ export function createElectronViteDevArgs(extraArgs = []) {
   return ["dev", ...forwardedArgs];
 }
 
+export function shouldBuildNativeHelperForDev(platform = process.platform) {
+  return platform === "darwin" || platform === "win32";
+}
+
+export function buildNativeHelperForDev({
+  platform = process.platform,
+  spawnSync,
+  workspaceRoot,
+}) {
+  if (!shouldBuildNativeHelperForDev(platform)) {
+    return 0;
+  }
+
+  console.log("[dev] building native helper for global shortcuts");
+  const result = spawnSync(
+    "pnpm",
+    ["--filter", "@voice/native-helper", "build:native"],
+    {
+      cwd: workspaceRoot,
+      shell: true,
+      stdio: "inherit",
+    },
+  );
+  return result.status ?? 1;
+}
+
 export function buildAppBuilderRceditArgs({
   exePath,
   iconPath,
@@ -170,6 +196,18 @@ export function prepareDevElectronExecutable({
 
 export function runDevElectron(scriptUrl = import.meta.url) {
   const packageRoot = fileURLToPath(new URL("..", scriptUrl));
+  const workspaceRoot = fileURLToPath(new URL("../../..", scriptUrl));
+  const nativeHelperStatus = buildNativeHelperForDev({
+    platform: process.platform,
+    spawnSync,
+    workspaceRoot,
+  });
+  if (nativeHelperStatus !== 0) {
+    console.warn(
+      "[dev] native helper build failed; continuing without global Right Cmd/Right Alt shortcuts.",
+    );
+  }
+
   const paths = createDevElectronPaths(packageRoot);
   prepareDevElectronExecutable({
     copyFileSync,
