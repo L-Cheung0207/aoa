@@ -244,7 +244,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "654321",
-      rememberMe: true,
+      acceptedLicense: true,
     });
     resolveRefresh(refreshedTokenResponse);
 
@@ -323,7 +323,7 @@ describe("auth service", () => {
       service.loginWithEmailCode({
         email: "alex@example.com",
         code: "123456",
-        rememberMe: true,
+        acceptedLicense: true,
       }),
     ).resolves.toEqual({
       status: "authenticated",
@@ -333,7 +333,7 @@ describe("auth service", () => {
     expect(client.loginWithEmailCode).toHaveBeenCalledWith({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
       device,
     });
     expect(store.write).toHaveBeenCalledWith(tokenResponse, {
@@ -357,7 +357,7 @@ describe("auth service", () => {
       service.loginWithEmailCode({
         email: "",
         code: "000000",
-        rememberMe: true,
+        acceptedLicense: true,
       }),
     ).resolves.toEqual({
       status: "authenticated",
@@ -390,27 +390,13 @@ describe("auth service", () => {
     });
   });
 
-  it("writes store with persistRefreshToken false when rememberMe is false", async () => {
-    const { service, store } = createService();
-
-    await service.loginWithEmailCode({
-      email: "alex@example.com",
-      code: "123456",
-      rememberMe: false,
-    });
-
-    expect(store.write).toHaveBeenCalledWith(tokenResponse, {
-      persistRefreshToken: false,
-    });
-  });
-
   it("encrypts LDAP password before login and never sends plaintext password", async () => {
     const { service, client, encryptLdapPassword } = createService();
 
     await service.loginWithLdap({
       account: "alex.ldap",
       password: "P@ssw0rd!",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     expect(client.getLdapPublicKey).toHaveBeenCalledOnce();
@@ -425,7 +411,7 @@ describe("auth service", () => {
       keyId: "key-1",
       nonce: "nonce",
       timestamp: "2026-06-17T09:00:00.000Z",
-      rememberMe: true,
+      acceptedLicense: true,
       device,
     });
     expect(
@@ -445,7 +431,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     const firstToken = service.getAccessTokenForRequest();
@@ -474,7 +460,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     const refreshPromise = service.getAccessTokenForRequest();
@@ -503,7 +489,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     const refreshPromise = service.getAccessTokenForRequest();
@@ -513,7 +499,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "654321",
-      rememberMe: true,
+      acceptedLicense: true,
     });
     resolveRefresh(refreshedTokenResponse);
 
@@ -541,7 +527,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
     vi.mocked(client.refresh).mockRejectedValue(
       new AuthHttpError(401, "session_expired", "Refresh token expired"),
@@ -561,21 +547,6 @@ describe("auth service", () => {
     });
   });
 
-  it("keeps refresh persistence in-memory only after rememberMe false login", async () => {
-    const { service, client, store } = createService();
-    await service.loginWithEmailCode({
-      email: "alex@example.com",
-      code: "123456",
-      rememberMe: false,
-    });
-
-    await expect(service.getAccessTokenForRequest()).resolves.toBe("access-2");
-    expect(client.refresh).toHaveBeenCalledOnce();
-    expect(store.write).toHaveBeenLastCalledWith(refreshedTokenResponse, {
-      persistRefreshToken: false,
-    });
-  });
-
   it("does not authenticate runtime session when persistent store write fails", async () => {
     const store = createStore();
     vi.mocked(store.write).mockImplementation(() => {
@@ -587,7 +558,7 @@ describe("auth service", () => {
       service.loginWithEmailCode({
         email: "alex@example.com",
         code: "123456",
-        rememberMe: true,
+        acceptedLicense: true,
       }),
     ).rejects.toThrow("store write failed");
     expect(service.getSessionSnapshot()).toEqual({
@@ -612,7 +583,7 @@ describe("auth service", () => {
       service.loginWithEmailCode({
         email: "alex@example.com",
         code: "123456",
-        rememberMe: true,
+        acceptedLicense: true,
       }),
     ).resolves.toEqual({
       status: "authenticated",
@@ -640,7 +611,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     await expect(service.getAccessTokenForRequest()).rejects.toMatchObject({
@@ -674,7 +645,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     await expect(service.getAccessTokenForRequest()).resolves.toBe("access-1");
@@ -690,7 +661,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     await expect(service.logout()).resolves.toEqual({
@@ -717,7 +688,7 @@ describe("auth service", () => {
     await service.loginWithEmailCode({
       email: "alex@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
     });
 
     expect(service.clearSession("Signed out elsewhere")).toEqual({

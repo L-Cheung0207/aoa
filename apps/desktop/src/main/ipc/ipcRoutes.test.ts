@@ -957,14 +957,14 @@ describe("ipc route handlers", () => {
       handlers.loginWithEmailCode({
         email: "user@example.com",
         code: "123456",
-        rememberMe: true
+        acceptedLicense: true
       })
     ).resolves.toBe(authSessionSnapshot);
     await expect(
       handlers.loginWithLdap({
         account: "alex",
         password: "secret",
-        rememberMe: false
+        acceptedLicense: true
       })
     ).resolves.toBe(authSessionSnapshot);
     await expect(handlers.logout()).resolves.toBe(authSessionSnapshot);
@@ -973,11 +973,11 @@ describe("ipc route handlers", () => {
       ["sendEmailCode", { email: "user@example.com" }],
       [
         "loginWithEmailCode",
-        { email: "user@example.com", code: "123456", rememberMe: true }
+        { email: "user@example.com", code: "123456", acceptedLicense: true }
       ],
       [
         "loginWithLdap",
-        { account: "alex", password: "secret", rememberMe: false }
+        { account: "alex", password: "secret", acceptedLicense: true }
       ],
       ["logout", undefined]
     ]);
@@ -1003,7 +1003,7 @@ describe("ipc route handlers", () => {
       handlers.loginWithEmailCode({
         email: "user@example.com",
         code: "12",
-        rememberMe: true
+        acceptedLicense: true
       })
     ).rejects.toThrow("Auth code must be 6 digits");
     await expect(
@@ -1011,14 +1011,14 @@ describe("ipc route handlers", () => {
         email: "user@example.com",
         code: "123456"
       })
-    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    ).rejects.toThrow("Auth acceptedLicense must be a boolean");
     await expect(
       handlers.loginWithEmailCode({
         email: "user@example.com",
         code: "123456",
-        rememberMe: "yes"
+        acceptedLicense: "yes"
       })
-    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    ).rejects.toThrow("Auth acceptedLicense must be a boolean");
     await expect(handlers.loginWithEmailCode("bad")).rejects.toThrow(
       "Auth email login input must be an object"
     );
@@ -1026,14 +1026,14 @@ describe("ipc route handlers", () => {
       handlers.loginWithLdap({
         account: "",
         password: "secret",
-        rememberMe: false
+        acceptedLicense: true
       })
     ).rejects.toThrow("Auth LDAP account is required");
     await expect(
       handlers.loginWithLdap({
         account: "alex",
         password: "   ",
-        rememberMe: false
+        acceptedLicense: true
       })
     ).rejects.toThrow("Auth LDAP password is required");
     await expect(
@@ -1041,14 +1041,14 @@ describe("ipc route handlers", () => {
         account: "alex",
         password: "secret"
       })
-    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    ).rejects.toThrow("Auth acceptedLicense must be a boolean");
     await expect(
       handlers.loginWithLdap({
         account: "alex",
         password: "secret",
-        rememberMe: 1
+        acceptedLicense: 1
       })
-    ).rejects.toThrow("Auth rememberMe must be a boolean");
+    ).rejects.toThrow("Auth acceptedLicense must be a boolean");
     await expect(handlers.loginWithLdap(null)).rejects.toThrow(
       "Auth LDAP login input must be an object"
     );
@@ -1230,14 +1230,14 @@ describe("ipc route logging", () => {
       handles.get("voice:auth:login-email-code")?.({}, {
         email: "user@example.com",
         code: "123456",
-        rememberMe: true
+        acceptedLicense: true
       })
     ).resolves.toBe(authSessionSnapshot);
     await expect(
       handles.get("voice:auth:login-ldap")?.({}, {
         account: "alex",
         password: "secret",
-        rememberMe: false
+        acceptedLicense: true
       })
     ).resolves.toBe(authSessionSnapshot);
     await expect(handles.get("voice:auth:logout")?.({})).resolves.toBe(
@@ -1248,11 +1248,11 @@ describe("ipc route logging", () => {
       ["sendEmailCode", { email: "user@example.com" }],
       [
         "loginWithEmailCode",
-        { email: "user@example.com", code: "123456", rememberMe: true }
+        { email: "user@example.com", code: "123456", acceptedLicense: true }
       ],
       [
         "loginWithLdap",
-        { account: "alex", password: "secret", rememberMe: false }
+        { account: "alex", password: "secret", acceptedLicense: true }
       ],
       ["logout", undefined]
     ]);

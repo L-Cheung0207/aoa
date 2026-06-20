@@ -105,6 +105,23 @@ describe("shortcut manager", () => {
     expect(registrar.unregistered).toContain("shortcutHelpDismiss");
   });
 
+  it("does not track virtual shortcut help callbacks that fail to register", () => {
+    const registrar = createRegistrar(
+      new Set(["shortcutHelp", "shortcutHelpDismiss"])
+    );
+    const manager = createShortcutManager(registrar);
+
+    manager.configure(DEFAULT_CONFIG, {
+      onToggle: () => undefined,
+      onShortcutHelp: () => undefined,
+      onShortcutHelpDismiss: () => undefined,
+    });
+    manager.configure(DEFAULT_CONFIG, { onToggle: () => undefined });
+
+    expect(registrar.unregistered).not.toContain("shortcutHelp");
+    expect(registrar.unregistered).not.toContain("shortcutHelpDismiss");
+  });
+
   it("unregisters the previous shortcuts before reconfiguring", () => {
     const registrar = createRegistrar();
     const manager = createShortcutManager(registrar);

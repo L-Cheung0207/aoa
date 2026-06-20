@@ -15,6 +15,22 @@ function createMemoryAdapter(initial?: unknown): ConfigStorageAdapter {
   };
 }
 
+function createInspectableMemoryAdapter(initial?: unknown): ConfigStorageAdapter & {
+  read(): unknown;
+} {
+  let value = initial;
+  return {
+    get: () => value,
+    set: (_key, nextValue) => {
+      value = nextValue;
+    },
+    delete: () => {
+      value = undefined;
+    },
+    read: () => value
+  };
+}
+
 describe("config store", () => {
   it("returns defaults when no settings are persisted", () => {
     const store = createConfigStore({
@@ -208,5 +224,32 @@ describe("config store", () => {
     });
 
     expect(store.get().recording.waveformStyle).toBe("waveform-mono");
+  });
+
+  it("migrates legacy MetaRight shortcut settings to RightAlt storage", () => {
+    const defaults = createDefaultSettings({ isPackaged: false });
+    const adapter = createInspectableMemoryAdapter({
+      ...defaults,
+      shortcuts: {
+        ...defaults.shortcuts,
+        toggleRecording: "MetaRight",
+        processSelection: "MetaRight+Slash",
+        translateDictation: "MetaRight+RightShift",
+        holdToTalk: "ShiftRight+MetaRight"
+      }
+    });
+    const store = createConfigStore({
+      adapter,
+      defaults
+    });
+
+    expect(store.get().shortcuts).toEqual({
+      ...defaults.shortcuts,
+      toggleRecording: "RightAlt",
+      processSelection: "RightAlt+/",
+      translateDictation: "RightAlt+RightShift",
+      holdToTalk: "RightShift+RightAlt"
+    });
+    expect(adapter.read()).toEqual(store.get());
   });
 });

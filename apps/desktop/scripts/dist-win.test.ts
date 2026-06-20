@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDistInstallerShellCommands,
   createDistWinCommands,
@@ -68,8 +68,11 @@ describe("desktop Windows distribution script", () => {
     const packageJson = JSON.parse(
       readFileSync(join(packageRoot, "package.json"), "utf8"),
     ) as { build?: { afterPack?: string } };
-    const { cleanupElectronLocales } = (await import("./after-pack.mjs")) as {
+    const { cleanupElectronLocales, resolveElectronLocalesDir } = (await import(
+      "./after-pack.mjs"
+    )) as {
       cleanupElectronLocales(localesDir: string): string[];
+      resolveElectronLocalesDir(appOutDir: string): string | undefined;
     };
     const tempRoot = mkdtempSync(join(tmpdir(), "aoa-locales-"));
     const localesDir = join(tempRoot, "locales");
@@ -91,6 +94,7 @@ describe("desktop Windows distribution script", () => {
 
       expect(config).toContain("afterPack: scripts/after-pack.mjs");
       expect(packageJson.build?.afterPack).toBe("scripts/after-pack.mjs");
+      expect(resolveElectronLocalesDir(tempRoot)).toBe(localesDir);
       expect(removed).toEqual(["fr.pak", "ja.pak"]);
       expect(readdirSync(localesDir).sort()).toEqual([
         "README.txt",
@@ -101,6 +105,115 @@ describe("desktop Windows distribution script", () => {
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
+  });
+
+  it("can find Electron locale packs in the macOS app bundle layout", async () => {
+    const { resolveElectronLocalesDir } = (await import("./after-pack.mjs")) as {
+      resolveElectronLocalesDir(appOutDir: string): string | undefined;
+    };
+    const tempRoot = mkdtempSync(join(tmpdir(), "aoa-mac-locales-"));
+    const localesDir = join(
+      tempRoot,
+      "Voice Assistant.app",
+      "Contents",
+      "Resources",
+      "locales",
+    );
+
+    try {
+      mkdirSync(localesDir, { recursive: true });
+
+      expect(resolveElectronLocalesDir(tempRoot)).toBe(localesDir);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rewrites absolute macOS framework symlinks back into the app bundle", async () => {
+    const { rewriteAbsoluteSymlinks } = (await import("./after-pack.mjs")) as {
+      rewriteAbsoluteSymlinks(
+        rootDir: string,
+        options: {
+          existsSync(path: string): boolean;
+          readdirSync(path: string, options: { withFileTypes: true }): Array<{
+            isDirectory(): boolean;
+            isSymbolicLink(): boolean;
+            name: string;
+          }>;
+          readlinkSync(path: string): string;
+          statSync(path: string): { isDirectory(): boolean };
+          unlinkSync(path: string): void;
+          symlinkSync(target: string, path: string, type: string): void;
+        },
+      ): string[];
+    };
+    const rootDir = "/dist/mac-arm64/Voice Assistant.app";
+    const frameworkDir = join(rootDir, "Contents", "Frameworks");
+    const electronFrameworkDir = join(
+      frameworkDir,
+      "Electron Framework.framework",
+    );
+    const linkPath = join(electronFrameworkDir, "Resources");
+    const externalTarget =
+      "/Volumes/dev/aoa/node_modules/electron/dist/Electron.app/Contents/Frameworks/" +
+      "Electron Framework.framework/Versions/Current/Resources";
+    const unlink = vi.fn();
+    const symlink = vi.fn();
+
+    const rewritten = rewriteAbsoluteSymlinks(rootDir, {
+      existsSync: () => true,
+      readdirSync: (path) => {
+        if (path === rootDir) {
+          return [
+            {
+              isDirectory: () => true,
+              isSymbolicLink: () => false,
+              name: "Contents",
+            },
+          ];
+        }
+        if (path === join(rootDir, "Contents")) {
+          return [
+            {
+              isDirectory: () => true,
+              isSymbolicLink: () => false,
+              name: "Frameworks",
+            },
+          ];
+        }
+        if (path === frameworkDir) {
+          return [
+            {
+              isDirectory: () => true,
+              isSymbolicLink: () => false,
+              name: "Electron Framework.framework",
+            },
+          ];
+        }
+        if (path === electronFrameworkDir) {
+          return [
+            {
+              isDirectory: () => false,
+              isSymbolicLink: () => true,
+              name: "Resources",
+            },
+          ];
+        }
+        return [];
+      },
+      readlinkSync: () => externalTarget,
+      statSync: () => ({ isDirectory: () => true }),
+      unlinkSync: unlink,
+      symlinkSync: symlink,
+    });
+
+    expect(rewritten).toEqual([linkPath]);
+    expect(unlink).toHaveBeenCalledWith(linkPath);
+    expect(symlink).toHaveBeenCalledWith(
+      "Versions/Current/Resources",
+      linkPath,
+      "dir",
+    );
   });
 
   it("passes the requested version phase into build and packaging commands", () => {

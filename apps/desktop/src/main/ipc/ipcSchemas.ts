@@ -60,13 +60,13 @@ export interface SendEmailCodeIpcInput {
 export interface EmailCodeLoginIpcInput {
   email: string;
   code: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
 }
 
 export interface LdapLoginIpcInput {
   account: string;
   password: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -885,14 +885,14 @@ export function parseEmailCodeLoginInput(
   if (typeof input.code !== "string" || !/^\d{6}$/.test(input.code)) {
     throw new Error("Auth code must be 6 digits");
   }
-  if (typeof input.rememberMe !== "boolean") {
-    throw new Error("Auth rememberMe must be a boolean");
+  if (typeof input.acceptedLicense !== "boolean") {
+    throw new Error("Auth acceptedLicense must be a boolean");
   }
 
   return {
     email,
     code: input.code,
-    rememberMe: input.rememberMe,
+    acceptedLicense: input.acceptedLicense,
   };
 }
 
@@ -907,14 +907,14 @@ export function parseLdapLoginInput(input: unknown): LdapLoginIpcInput {
   if (typeof input.password !== "string" || input.password.trim().length === 0) {
     throw new Error("Auth LDAP password is required");
   }
-  if (typeof input.rememberMe !== "boolean") {
-    throw new Error("Auth rememberMe must be a boolean");
+  if (typeof input.acceptedLicense !== "boolean") {
+    throw new Error("Auth acceptedLicense must be a boolean");
   }
 
   return {
     account: input.account.trim(),
     password: input.password,
-    rememberMe: input.rememberMe,
+    acceptedLicense: input.acceptedLicense,
   };
 }
 

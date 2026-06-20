@@ -52,6 +52,7 @@ export function createNativeShortcutRegistrar(
   const genericAccelerators = new Set<string>();
   let actionToAccelerator = { ...ACTION_TO_ACCELERATOR };
   let handle: KeyboardHookHandle | undefined;
+  let nativeAvailable = true;
 
   const dispatch = (action: NativeHotkeyAction): void => {
     if (isVirtualAccelerator(action)) {
@@ -78,6 +79,7 @@ export function createNativeShortcutRegistrar(
     } catch (error) {
       console.error("[shortcut] native keyboard hook failed to start", error);
       handle = undefined;
+      nativeAvailable = false;
       return false;
     }
   };
@@ -91,20 +93,34 @@ export function createNativeShortcutRegistrar(
 
   return {
     configureShortcuts: (config: ShortcutConfig) => {
-      actionToAccelerator = {
-        direct: normalizeElectronAccelerator(config.toggleRecording),
+      const normalizedConfig = {
+        toggleRecording: normalizeElectronAccelerator(config.toggleRecording),
         processSelection: normalizeElectronAccelerator(config.processSelection),
-        translate: normalizeElectronAccelerator(config.translateDictation)
+        translateDictation: normalizeElectronAccelerator(config.translateDictation)
       };
-      api.configureKeyboardShortcuts?.(
-        config.toggleRecording,
-        config.processSelection,
-        config.translateDictation
-      );
+      actionToAccelerator = {
+        direct: normalizedConfig.toggleRecording,
+        processSelection: normalizedConfig.processSelection,
+        translate: normalizedConfig.translateDictation
+      };
+      try {
+        api.configureKeyboardShortcuts?.(
+          normalizedConfig.toggleRecording,
+          normalizedConfig.processSelection,
+          normalizedConfig.translateDictation
+        );
+        nativeAvailable = true;
+      } catch (error) {
+        console.warn("[shortcut] native shortcut configuration unavailable", error);
+        nativeAvailable = false;
+      }
     },
     register: (accelerator, callback) => {
       const normalizedAccelerator = normalizeElectronAccelerator(accelerator);
       if (isVirtualAccelerator(normalizedAccelerator)) {
+        if (!nativeAvailable) {
+          return false;
+        }
         if (!ensureHook()) {
           return false;
         }
@@ -112,29 +128,15 @@ export function createNativeShortcutRegistrar(
         return true;
       }
 
-      if (!isConfiguredNativeAccelerator(normalizedAccelerator, actionToAccelerator)) {
-        if (!genericShortcut) {
-          console.warn(`[shortcut] unsupported accelerator "${normalizedAccelerator}"`);
-          return false;
-        }
-        let ok = false;
-        try {
-          ok = genericShortcut.register(normalizedAccelerator, callback);
-        } catch (error) {
-          console.warn(
-            `[shortcut] failed to register generic accelerator "${normalizedAccelerator}"`,
-            error
-          );
-          return false;
-        }
-        if (ok) {
-          genericAccelerators.add(normalizedAccelerator);
-        }
-        return ok;
+      if (
+        !nativeAvailable ||
+        !isConfiguredNativeAccelerator(normalizedAccelerator, actionToAccelerator)
+      ) {
+        return registerGenericShortcut(normalizedAccelerator, callback);
       }
 
       if (!ensureHook()) {
-        return false;
+        return registerGenericShortcut(normalizedAccelerator, callback);
       }
       callbacks.set(normalizedAccelerator, callback);
       return true;
@@ -147,10 +149,12 @@ export function createNativeShortcutRegistrar(
         return;
       }
 
+      if (genericAccelerators.delete(normalizedAccelerator)) {
+        genericShortcut?.unregister(normalizedAccelerator);
+        return;
+      }
+
       if (!isConfiguredNativeAccelerator(normalizedAccelerator, actionToAccelerator)) {
-        if (genericAccelerators.delete(normalizedAccelerator)) {
-          genericShortcut?.unregister(normalizedAccelerator);
-        }
         return;
       }
 
@@ -167,12 +171,47 @@ export function createNativeShortcutRegistrar(
       genericAccelerators.clear();
     }
   };
+
+  function registerGenericShortcut(
+    accelerator: string,
+    callback: () => void,
+  ): boolean {
+    if (isNativeOnlyAccelerator(accelerator)) {
+      console.warn(
+        `[shortcut] native-only accelerator "${accelerator}" requires native keyboard hook`
+      );
+      return false;
+    }
+    if (!genericShortcut) {
+      console.warn(`[shortcut] unsupported accelerator "${accelerator}"`);
+      return false;
+    }
+    let ok = false;
+    try {
+      ok = genericShortcut.register(accelerator, callback);
+    } catch (error) {
+      console.warn(
+        `[shortcut] failed to register generic accelerator "${accelerator}"`,
+        error
+      );
+      return false;
+    }
+    if (ok) {
+      genericAccelerators.add(accelerator);
+    }
+    return ok;
+  }
 }
 
 function normalizeElectronAccelerator(accelerator: string): string {
   return accelerator
     .split("+")
-    .map((part) => DOM_SYMBOL_KEY_ACCELERATORS[part] ?? part)
+    .map((part) => {
+      if (part === "MetaRight") {
+        return "RightAlt";
+      }
+      return DOM_SYMBOL_KEY_ACCELERATORS[part] ?? part;
+    })
     .join("+");
 }
 
@@ -188,4 +227,11 @@ function isConfiguredNativeAccelerator(
   actionToAccelerator: Record<NativeShortcutRecordingAction, string>
 ): boolean {
   return Object.values(actionToAccelerator).includes(accelerator);
+}
+
+function isNativeOnlyAccelerator(accelerator: string): boolean {
+  const parts = accelerator.split("+");
+  return parts.some(
+    (part) => part === "RightAlt" || part === "AltGr" || part === "RightShift"
+  );
 }

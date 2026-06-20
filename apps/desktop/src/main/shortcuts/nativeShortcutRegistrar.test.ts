@@ -78,6 +78,36 @@ describe("native shortcut registrar", () => {
     expect(translate).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes legacy MetaRight shortcuts to the native RightAlt accelerators", () => {
+    const api = createHookApi();
+    const genericRegister = vi.fn();
+    const registrar = createNativeShortcutRegistrar(api, {
+      register: genericRegister,
+      unregister: vi.fn(),
+    });
+    const direct = vi.fn();
+    const translate = vi.fn();
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "MetaRight",
+      processSelection: "MetaRight+Slash",
+      translateDictation: "MetaRight+RightShift",
+    });
+
+    expect(registrar.register("MetaRight", direct)).toBe(true);
+    expect(registrar.register("MetaRight+RightShift", translate)).toBe(true);
+    expect(api.configuredShortcuts).toEqual([
+      ["RightAlt", "RightAlt+/", "RightAlt+RightShift"],
+    ]);
+    expect(genericRegister).not.toHaveBeenCalled();
+
+    api.dispatch("direct");
+    api.dispatch("translate");
+
+    expect(direct).toHaveBeenCalledTimes(1);
+    expect(translate).toHaveBeenCalledTimes(1);
+  });
+
   it("routes the native shortcut help action to the virtual help callback", () => {
     const api = createHookApi();
     const registrar = createNativeShortcutRegistrar(api);
@@ -244,16 +274,170 @@ describe("native shortcut registrar", () => {
     expect(api.startCount).toBe(0);
   });
 
-  it("returns false when the native hook fails to start", () => {
+  it("returns false without repeatedly retrying after the native hook fails to start", () => {
     const api = createHookApi({ failTimes: 1 });
     const registrar = createNativeShortcutRegistrar(api);
 
     expect(registrar.register("RightAlt", vi.fn())).toBe(false);
     expect(api.startCount).toBe(0);
 
-    // Subsequent register attempts should retry and succeed once the hook works.
-    expect(registrar.register("RightAlt", vi.fn())).toBe(true);
-    expect(api.startCount).toBe(1);
+    // The missing native hook is treated as unavailable for the session.
+    expect(registrar.register("RightAlt", vi.fn())).toBe(false);
+    expect(api.startCount).toBe(0);
+  });
+
+  it("does not throw when native shortcut configuration is unavailable", () => {
+    const api = createHookApi({ failTimes: 1 });
+    const registrar = createNativeShortcutRegistrar({
+      ...api,
+      configureKeyboardShortcuts: () => {
+        throw new Error("NATIVE_HELPER_UNAVAILABLE: native addon is not loaded");
+      },
+    });
+
+    expect(() =>
+      registrar.configureShortcuts?.({
+        toggleRecording: "RightAlt",
+        processSelection: "RightAlt+Space",
+        translateDictation: "RightAlt+RightShift",
+      }),
+    ).not.toThrow();
+    expect(registrar.register("RightAlt", vi.fn())).toBe(false);
+  });
+
+  it("does not try to register virtual native actions after native configuration is unavailable", () => {
+    const api = createHookApi({ failTimes: 1 });
+    const registrar = createNativeShortcutRegistrar({
+      ...api,
+      configureKeyboardShortcuts: () => {
+        throw new Error("NATIVE_HELPER_UNAVAILABLE: native addon is not loaded");
+      },
+    });
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "RightAlt",
+      processSelection: "RightAlt+Space",
+      translateDictation: "RightAlt+RightShift",
+    });
+
+    expect(registrar.register("shortcutHelp", vi.fn())).toBe(false);
+    expect(api.remainingFailures).toBe(1);
+    expect(api.startCount).toBe(0);
+  });
+
+  it("falls back to generic shortcuts after native configuration is unavailable", () => {
+    const api = createHookApi();
+    const genericRegistered: string[] = [];
+    const registrar = createNativeShortcutRegistrar(
+      {
+        ...api,
+        configureKeyboardShortcuts: () => {
+          throw new Error("NATIVE_HELPER_UNAVAILABLE: native addon is not loaded");
+        },
+      },
+      {
+        register: (accelerator) => {
+          genericRegistered.push(accelerator);
+          return true;
+        },
+        unregister: vi.fn(),
+      },
+    );
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "Ctrl+Shift+R",
+      processSelection: "Ctrl+Space",
+      translateDictation: "Shift+T",
+    });
+
+    expect(registrar.register("Ctrl+Shift+R", vi.fn())).toBe(true);
+    expect(registrar.register("Ctrl+Space", vi.fn())).toBe(true);
+    expect(registrar.register("Shift+T", vi.fn())).toBe(true);
+    expect(api.startCount).toBe(0);
+    expect(genericRegistered).toEqual([
+      "Ctrl+Shift+R",
+      "Ctrl+Space",
+      "Shift+T",
+    ]);
+  });
+
+  it("does not fall back native-only shortcuts to Electron global shortcuts", () => {
+    const api = createHookApi();
+    const genericRegister = vi.fn(() => true);
+    const registrar = createNativeShortcutRegistrar(
+      {
+        ...api,
+        configureKeyboardShortcuts: () => {
+          throw new Error("NATIVE_HELPER_UNAVAILABLE: native addon is not loaded");
+        },
+      },
+      {
+        register: genericRegister,
+        unregister: vi.fn(),
+      },
+    );
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "RightAlt",
+      processSelection: "AltGr+A",
+      translateDictation: "RightAlt+RightShift",
+    });
+
+    expect(registrar.register("RightAlt", vi.fn())).toBe(false);
+    expect(registrar.register("AltGr+A", vi.fn())).toBe(false);
+    expect(registrar.register("RightAlt+RightShift", vi.fn())).toBe(false);
+    expect(genericRegister).not.toHaveBeenCalled();
+  });
+
+  it("does not retry the unavailable native hook for each configured shortcut", () => {
+    const api = createHookApi({ failTimes: 3 });
+    const genericRegistered: string[] = [];
+    const registrar = createNativeShortcutRegistrar(api, {
+      register: (accelerator) => {
+        genericRegistered.push(accelerator);
+        return true;
+      },
+      unregister: vi.fn(),
+    });
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "Ctrl+Shift+R",
+      processSelection: "Ctrl+Space",
+      translateDictation: "Shift+T",
+    });
+
+    expect(registrar.register("Ctrl+Shift+R", vi.fn())).toBe(true);
+    expect(registrar.register("Ctrl+Space", vi.fn())).toBe(true);
+    expect(registrar.register("Shift+T", vi.fn())).toBe(true);
+    expect(api.remainingFailures).toBe(2);
+    expect(genericRegistered).toEqual([
+      "Ctrl+Shift+R",
+      "Ctrl+Space",
+      "Shift+T",
+    ]);
+  });
+
+  it("unregisters configured accelerators that fell back to the generic registrar", () => {
+    const api = createHookApi({ failTimes: 1 });
+    const genericUnregistered: string[] = [];
+    const registrar = createNativeShortcutRegistrar(api, {
+      register: () => true,
+      unregister: (accelerator) => {
+        genericUnregistered.push(accelerator);
+      },
+    });
+
+    registrar.configureShortcuts?.({
+      toggleRecording: "Ctrl+Shift+R",
+      processSelection: "Ctrl+Space",
+      translateDictation: "Shift+T",
+    });
+
+    expect(registrar.register("Ctrl+Shift+R", vi.fn())).toBe(true);
+
+    registrar.unregister("Ctrl+Shift+R");
+
+    expect(genericUnregistered).toEqual(["Ctrl+Shift+R"]);
   });
 
   it("stops the hook after the last accelerator is unregistered", () => {

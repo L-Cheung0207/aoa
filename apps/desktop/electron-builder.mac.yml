@@ -1,0 +1,41 @@
+appId: com.ctm.voice-assistant
+productName: Voice Assistant
+electronVersion: 35.7.5
+copyright: Copyright (c) 2026 Voice Assistant
+
+directories:
+  buildResources: installer-resources
+  output: dist-electron
+
+electronDist: ../../node_modules/electron/dist
+asar: true
+npmRebuild: false
+afterPack: scripts/after-pack.mjs
+
+publish:
+  provider: generic
+  url: http://172.27.209.114:8097/aoa_api/
+
+files:
+  - out/**/*
+  - package.json
+  - "!node_modules/@voice/ai/**"
+  - "!node_modules/@voice/shared/**"
+  - "!node_modules/@voice/backend-client/**"
+  - "!node_modules/@voice/db/**"
+  - "!**/target/**"
+
+extraResources:
+  - from: resources/app-icon.ico
+    to: app-icon.ico
+  - from: src/renderer/public/config.json
+    to: config.json
+
+mac:
+  target: dmg
+  icon: resources/app-icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  artifactName: "${productName}-${version}-${arch}.${ext}"

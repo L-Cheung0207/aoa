@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createShortcutCaptureHandlers,
   formatShortcutLabel,
-  isSupportedShortcut
+  isSupportedShortcut,
 } from "./shortcutCapture";
 
 interface KeyEventOptions {
@@ -22,9 +22,10 @@ function keyEvent(code: string, options: KeyEventOptions = {}): KeyboardEvent {
     key: options.key,
     metaKey: options.metaKey,
     shiftKey: options.shiftKey,
-    getModifierState: (key: string) => key === "AltGraph" && options.altGraph === true,
+    getModifierState: (key: string) =>
+      key === "AltGraph" && options.altGraph === true,
     preventDefault: vi.fn(),
-    stopPropagation: vi.fn()
+    stopPropagation: vi.fn(),
   } as unknown as KeyboardEvent;
 }
 
@@ -32,7 +33,11 @@ describe("shortcutCapture", () => {
   it("formats supported shortcut labels", () => {
     expect(formatShortcutLabel("RightAlt")).toBe("Right Alt");
     expect(formatShortcutLabel("RightAlt+Space")).toBe("Right Alt + Space");
-    expect(formatShortcutLabel("RightAlt+RightShift")).toBe("Right Alt + Right Shift");
+    expect(formatShortcutLabel("RightAlt+RightShift")).toBe(
+      "Right Alt + Right Shift",
+    );
+    expect(formatShortcutLabel("Super+Space", "windows")).toBe("Win + Space");
+    expect(formatShortcutLabel("Super+Space", "mac")).toBe("Cmd + Space");
     expect(formatShortcutLabel("Custom")).toBe("Custom");
   });
 
@@ -45,7 +50,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -58,7 +63,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -71,7 +76,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -80,11 +85,53 @@ describe("shortcutCapture", () => {
     expect(onCapture).toHaveBeenCalledWith("RightAlt+RightShift");
   });
 
+  it("stores Right Command + Right Shift as the canonical Right Alt shortcut", () => {
+    const onCapture = vi.fn();
+    const handlers = createShortcutCaptureHandlers({
+      onCapture,
+      onCancel: vi.fn(),
+    });
+
+    handlers.handleKeyDown(keyEvent("MetaRight", { metaKey: true }));
+    handlers.handleKeyDown(
+      keyEvent("ShiftRight", { metaKey: true, shiftKey: true }),
+    );
+    handlers.handleKeyUp(
+      keyEvent("ShiftRight", { metaKey: true, shiftKey: true }),
+    );
+
+    expect(onCapture).toHaveBeenCalledWith("RightAlt+RightShift");
+    expect(formatShortcutLabel("MetaRight+RightShift")).toBe(
+      "Right Cmd + Right Shift",
+    );
+  });
+
+  it("keeps modifier display in pressed order", () => {
+    const onCapture = vi.fn();
+    const handlers = createShortcutCaptureHandlers({
+      onCapture,
+      onCancel: vi.fn(),
+    });
+
+    handlers.handleKeyDown(keyEvent("ShiftRight", { shiftKey: true }));
+    handlers.handleKeyDown(
+      keyEvent("MetaRight", { metaKey: true, shiftKey: true }),
+    );
+    handlers.handleKeyUp(
+      keyEvent("MetaRight", { metaKey: true, shiftKey: true }),
+    );
+
+    expect(onCapture).toHaveBeenCalledWith("RightShift+RightAlt");
+    expect(formatShortcutLabel("RightShift+MetaRight")).toBe(
+      "Right Shift + Right Cmd",
+    );
+  });
+
   it("captures Right Alt with regular keys", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -97,7 +144,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("KeyA", { altGraph: true }));
@@ -109,7 +156,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("KeyA", { ctrlKey: true, altKey: true }));
@@ -121,10 +168,12 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
-    handlers.handleKeyDown(keyEvent("ControlLeft", { key: "AltGraph", ctrlKey: true }));
+    handlers.handleKeyDown(
+      keyEvent("ControlLeft", { key: "AltGraph", ctrlKey: true }),
+    );
     handlers.handleKeyDown(keyEvent("KeyA", { ctrlKey: true, altKey: true }));
 
     expect(onCapture).toHaveBeenCalledWith("AltGr+A");
@@ -134,11 +183,13 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("ControlLeft", { ctrlKey: true }));
-    handlers.handleKeyDown(keyEvent("AltRight", { ctrlKey: true, altKey: true }));
+    handlers.handleKeyDown(
+      keyEvent("AltRight", { ctrlKey: true, altKey: true }),
+    );
     handlers.handleKeyDown(keyEvent("KeyA", { ctrlKey: true, altKey: true }));
 
     expect(onCapture).toHaveBeenCalledWith("AltGr+A");
@@ -148,7 +199,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("ControlLeft", { ctrlKey: true }));
@@ -161,7 +212,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
     handlers.handleKeyDown(keyEvent("ControlLeft"));
@@ -175,14 +226,18 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel: vi.fn()
+      onCancel: vi.fn(),
     });
 
-    handlers.handleKeyDown(keyEvent("AltRight", { ctrlKey: true, altKey: true }));
-    handlers.handleKeyDown(keyEvent("ControlLeft", { ctrlKey: true, altKey: true }));
+    handlers.handleKeyDown(
+      keyEvent("AltRight", { ctrlKey: true, altKey: true }),
+    );
+    handlers.handleKeyDown(
+      keyEvent("ControlLeft", { ctrlKey: true, altKey: true }),
+    );
     handlers.handleKeyDown(keyEvent("KeyC", { ctrlKey: true, altKey: true }));
 
-    expect(onCapture).toHaveBeenCalledWith("Ctrl+AltGr+C");
+    expect(onCapture).toHaveBeenCalledWith("AltGr+Ctrl+C");
   });
 
   it("rejects explicit Ctrl plus Right Alt plus Shift plus key as too many keys", () => {
@@ -191,16 +246,20 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
-    handlers.handleKeyDown(keyEvent("AltRight", { ctrlKey: true, altKey: true }));
-    handlers.handleKeyDown(keyEvent("ControlLeft", { ctrlKey: true, altKey: true }));
     handlers.handleKeyDown(
-      keyEvent("ShiftLeft", { ctrlKey: true, altKey: true, shiftKey: true })
+      keyEvent("AltRight", { ctrlKey: true, altKey: true }),
     );
     handlers.handleKeyDown(
-      keyEvent("KeyC", { ctrlKey: true, altKey: true, shiftKey: true })
+      keyEvent("ControlLeft", { ctrlKey: true, altKey: true }),
+    );
+    handlers.handleKeyDown(
+      keyEvent("ShiftLeft", { ctrlKey: true, altKey: true, shiftKey: true }),
+    );
+    handlers.handleKeyDown(
+      keyEvent("KeyC", { ctrlKey: true, altKey: true, shiftKey: true }),
     );
 
     expect(onCapture).not.toHaveBeenCalled();
@@ -213,7 +272,7 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -230,7 +289,7 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel,
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -247,7 +306,7 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -264,7 +323,7 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("KeyA"));
@@ -279,7 +338,7 @@ describe("shortcutCapture", () => {
     const handlers = createShortcutCaptureHandlers({
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("Space"));
@@ -296,7 +355,7 @@ describe("shortcutCapture", () => {
       existingShortcuts: ["RightAlt", "Ctrl+Shift+K"],
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("ControlLeft"));
@@ -315,7 +374,7 @@ describe("shortcutCapture", () => {
       existingShortcuts: ["RightAlt+Space", "RightAlt+RightShift"],
       onCapture,
       onCancel: vi.fn(),
-      onInvalid
+      onInvalid,
     });
 
     handlers.handleKeyDown(keyEvent("AltRight"));
@@ -330,7 +389,7 @@ describe("shortcutCapture", () => {
     const onCapture = vi.fn();
     const handlers = createShortcutCaptureHandlers({
       onCapture,
-      onCancel
+      onCancel,
     });
 
     handlers.handleKeyDown(keyEvent("Escape"));

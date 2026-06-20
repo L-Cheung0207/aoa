@@ -140,12 +140,16 @@ export function createShortcutManager(
     }
 
     if (handlers.onShortcutHelp) {
-      registrar.register("shortcutHelp", handlers.onShortcutHelp);
-      shortcutHelpShowRegistered = true;
+      shortcutHelpShowRegistered = registrar.register(
+        "shortcutHelp",
+        handlers.onShortcutHelp
+      );
     }
     if (handlers.onShortcutHelpDismiss) {
-      registrar.register("shortcutHelpDismiss", handlers.onShortcutHelpDismiss);
-      shortcutHelpDismissRegistered = true;
+      shortcutHelpDismissRegistered = registrar.register(
+        "shortcutHelpDismiss",
+        handlers.onShortcutHelpDismiss
+      );
     }
 
     logger.log(

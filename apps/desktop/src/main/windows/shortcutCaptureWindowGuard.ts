@@ -7,7 +7,9 @@ const SC_KEYMENU = 0xf100;
 interface WindowAltSpaceGuardState {
   alwaysBlock: boolean;
   getCaptureTarget: (() => BrowserWindow | undefined) | undefined;
+  getLoginSetupCaptureTarget: (() => BrowserWindow | undefined) | undefined;
   isCaptureActive: (() => boolean) | undefined;
+  isLoginSetupCaptureActive: (() => boolean) | undefined;
   nativeHooksInstalled: boolean;
   rendererHooksInstalled: boolean;
   systemMenuListenerInstalled: boolean;
@@ -23,6 +25,8 @@ interface WindowAltSpaceGuardState {
 
 const guardStates = new WeakMap<BrowserWindow, WindowAltSpaceGuardState>();
 const SHORTCUT_CAPTURE_ACCELERATOR_CHANNEL = "voice:shortcut-capture-accelerator";
+const LOGIN_SETUP_SHORTCUT_CAPTURE_ACCELERATOR_CHANNEL =
+  "voice:login-setup-shortcut-capture-accelerator";
 
 const SYMBOL_KEY_ACCELERATORS: Record<string, string> = {
   Minus: "-",
@@ -71,7 +75,7 @@ function shouldBlockForWindow(window: BrowserWindow): boolean {
   if (!state) {
     return false;
   }
-  return state.alwaysBlock || (state.isCaptureActive?.() ?? false);
+  return state.alwaysBlock || getActiveCaptureKind(state) !== undefined;
 }
 
 function getOrCreateGuardState(window: BrowserWindow): WindowAltSpaceGuardState {
@@ -82,7 +86,9 @@ function getOrCreateGuardState(window: BrowserWindow): WindowAltSpaceGuardState 
   const state: WindowAltSpaceGuardState = {
     alwaysBlock: false,
     getCaptureTarget: undefined,
+    getLoginSetupCaptureTarget: undefined,
     isCaptureActive: undefined,
+    isLoginSetupCaptureActive: undefined,
     nativeHooksInstalled: false,
     rendererHooksInstalled: false,
     systemMenuListenerInstalled: false,
@@ -136,7 +142,7 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
     if (
       input.type === "keyUp" &&
       (input.code === "AltRight" || input.key === "AltGraph") &&
-      state.isCaptureActive?.() &&
+      getActiveCaptureKind(state) !== undefined &&
       state.rightAltAcceleratorCaptured
     ) {
       event.preventDefault();
@@ -147,7 +153,7 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
     if (
       input.type === "keyUp" &&
       (input.code === "AltRight" || input.key === "AltGraph") &&
-      state.isCaptureActive?.() &&
+      getActiveCaptureKind(state) !== undefined &&
       state.rightAltCaptureStarted &&
       !state.rightAltAcceleratorCaptured
     ) {
@@ -168,7 +174,7 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
     ) {
       event.preventDefault();
       if (
-        state.isCaptureActive?.() &&
+        getActiveCaptureKind(state) !== undefined &&
         isRightAltChordInput(state, input) &&
         !state.rightAltAcceleratorCaptured
       ) {
@@ -180,7 +186,7 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
 
     if (
       input.type === "keyDown" &&
-      state.isCaptureActive?.() &&
+      getActiveCaptureKind(state) !== undefined &&
       isRightAltChordInput(state, input) &&
       !state.rightAltAcceleratorCaptured
     ) {
@@ -206,14 +212,38 @@ function sendShortcutCaptureAccelerator(
   state: WindowAltSpaceGuardState,
   accelerator: string
 ): void {
-  const target = state.getCaptureTarget?.();
+  const captureKind = getActiveCaptureKind(state);
+  const target =
+    captureKind === "loginSetup"
+      ? state.getLoginSetupCaptureTarget?.()
+      : state.getCaptureTarget?.();
   const receiver =
     target && !target.isDestroyed() && !target.webContents.isDestroyed()
       ? target
       : window;
-  receiver.webContents.send(SHORTCUT_CAPTURE_ACCELERATOR_CHANNEL, {
+  receiver.webContents.send(getShortcutCaptureChannel(captureKind), {
     accelerator
   });
+}
+
+function getActiveCaptureKind(
+  state: WindowAltSpaceGuardState
+): "settings" | "loginSetup" | undefined {
+  if (state.isCaptureActive?.() ?? false) {
+    return "settings";
+  }
+  if (state.isLoginSetupCaptureActive?.() ?? false) {
+    return "loginSetup";
+  }
+  return undefined;
+}
+
+function getShortcutCaptureChannel(
+  captureKind: "settings" | "loginSetup" | undefined
+): string {
+  return captureKind === "loginSetup"
+    ? LOGIN_SETUP_SHORTCUT_CAPTURE_ACCELERATOR_CHANNEL
+    : SHORTCUT_CAPTURE_ACCELERATOR_CHANNEL;
 }
 
 function resetKeyboardState(state: WindowAltSpaceGuardState): void {
@@ -428,6 +458,17 @@ export function wireShortcutCaptureWindowGuard(
   ensureWindowAltSpaceGuard(window);
 }
 
+export function wireLoginSetupShortcutCaptureWindowGuard(
+  window: BrowserWindow,
+  isCaptureActive: () => boolean,
+  getCaptureTarget?: () => BrowserWindow | undefined
+): void {
+  const state = getOrCreateGuardState(window);
+  state.isLoginSetupCaptureActive = isCaptureActive;
+  state.getLoginSetupCaptureTarget = getCaptureTarget;
+  ensureWindowAltSpaceGuard(window);
+}
+
 export function ensureShortcutCaptureWindowGuards(
   windows: BrowserWindow[],
   isCaptureActive: () => boolean,
@@ -438,5 +479,22 @@ export function ensureShortcutCaptureWindowGuards(
       continue;
     }
     wireShortcutCaptureWindowGuard(window, isCaptureActive, getCaptureTarget);
+  }
+}
+
+export function ensureLoginSetupShortcutCaptureWindowGuards(
+  windows: BrowserWindow[],
+  isCaptureActive: () => boolean,
+  getCaptureTarget?: () => BrowserWindow | undefined
+): void {
+  for (const window of windows) {
+    if (window.isDestroyed()) {
+      continue;
+    }
+    wireLoginSetupShortcutCaptureWindowGuard(
+      window,
+      isCaptureActive,
+      getCaptureTarget
+    );
   }
 }

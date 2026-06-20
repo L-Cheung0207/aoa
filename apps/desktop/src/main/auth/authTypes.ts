@@ -23,7 +23,7 @@ export interface AuthSessionSnapshot {
 export interface AuthDeviceContext {
   installationId: string;
   deviceName: string;
-  platform: "windows";
+  platform: "windows" | "mac" | "linux";
   appVersion: string;
   locale: "zh-CN" | "zh-TW" | "en-US";
 }
@@ -43,7 +43,7 @@ export interface SendEmailCodeResult {
 export interface EmailCodeLoginInput {
   email: string;
   code: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
 }
 
 export interface EmailCodeLoginRequest extends EmailCodeLoginInput {
@@ -53,7 +53,7 @@ export interface EmailCodeLoginRequest extends EmailCodeLoginInput {
 export interface LdapLoginInput {
   account: string;
   password: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
 }
 
 export interface LdapPublicKeyResponse {
@@ -69,7 +69,7 @@ export interface LdapEncryptedLoginRequest {
   keyId: string;
   nonce: string;
   timestamp: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
   device: AuthDeviceContext;
 }
 

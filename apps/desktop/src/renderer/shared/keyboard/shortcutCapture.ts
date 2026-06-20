@@ -3,7 +3,7 @@ import { validateShortcut } from "@voice/shared/shortcuts/reservedShortcutPolicy
 export const SUPPORTED_SHORTCUTS = [
   "RightAlt",
   "RightAlt+Space",
-  "RightAlt+RightShift"
+  "RightAlt+RightShift",
 ] as const;
 
 export type SupportedShortcut = (typeof SUPPORTED_SHORTCUTS)[number];
@@ -11,7 +11,7 @@ export type SupportedShortcut = (typeof SUPPORTED_SHORTCUTS)[number];
 const SHORTCUT_LABELS: Record<SupportedShortcut, string> = {
   RightAlt: "Right Alt",
   "RightAlt+Space": "Right Alt + Space",
-  "RightAlt+RightShift": "Right Alt + Right Shift"
+  "RightAlt+RightShift": "Right Alt + Right Shift",
 };
 
 const SYMBOL_KEY_LABELS: Record<string, string> = {
@@ -25,7 +25,7 @@ const SYMBOL_KEY_LABELS: Record<string, string> = {
   "'": "'",
   "[": "[",
   "]": "]",
-  "`": "`"
+  "`": "`",
 };
 
 const SYMBOL_KEY_ACCELERATORS: Record<string, string> = {
@@ -39,12 +39,29 @@ const SYMBOL_KEY_ACCELERATORS: Record<string, string> = {
   Quote: "'",
   BracketLeft: "[",
   BracketRight: "]",
-  Backquote: "`"
+  Backquote: "`",
 };
 
 const RIGHT_ALT_FALLBACK_CAPTURE_MS = 600;
 
-export function formatShortcutLabel(value: string): string {
+export type ShortcutDisplayPlatform = "mac" | "windows" | "other";
+
+export function detectShortcutDisplayPlatform(): ShortcutDisplayPlatform {
+  const platform = navigator.platform.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (platform.includes("mac") || userAgent.includes("mac os")) {
+    return "mac";
+  }
+  if (platform.includes("win") || userAgent.includes("windows")) {
+    return "windows";
+  }
+  return "other";
+}
+
+export function formatShortcutLabel(
+  value: string,
+  platform: ShortcutDisplayPlatform = detectShortcutDisplayPlatform(),
+): string {
   if (value in SHORTCUT_LABELS) {
     return SHORTCUT_LABELS[value as SupportedShortcut];
   }
@@ -58,8 +75,12 @@ export function formatShortcutLabel(value: string): string {
         case "Alt":
         case "Shift":
           return part;
+        case "MetaRight":
+          return "Right Cmd";
+        case "RightShift":
+          return "Right Shift";
         case "Super":
-          return "Win";
+          return platform === "mac" ? "Cmd" : "Win";
         case "AltGr":
         case "RightAlt":
           return "Right Alt";
@@ -73,8 +94,26 @@ export function formatShortcutLabel(value: string): string {
     .join(" + ");
 }
 
+export function normalizeShortcutForStorage(value: string): string {
+  return value
+    .split("+")
+    .filter(Boolean)
+    .map((part) => {
+      switch (part) {
+        case "MetaRight":
+          return "RightAlt";
+        case "RightShift":
+        case "ShiftRight":
+          return "RightShift";
+        default:
+          return part;
+      }
+    })
+    .join("+");
+}
+
 export function isSupportedShortcut(value: string): boolean {
-  return validateShortcut(value, "win32").ok;
+  return validateShortcut(normalizeShortcutForStorage(value), "win32").ok;
 }
 
 export interface ShortcutCaptureHandlers {
@@ -95,7 +134,7 @@ export interface CreateShortcutCaptureHandlersOptions {
 const INVALID_SHORTCUT_MESSAGE = "请按下一个快捷键";
 
 export function createShortcutCaptureHandlers(
-  options: CreateShortcutCaptureHandlersOptions
+  options: CreateShortcutCaptureHandlersOptions,
 ): ShortcutCaptureHandlers {
   const pressedModifiers = new Set<string>();
   let rightAltFallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -124,10 +163,14 @@ export function createShortcutCaptureHandlers(
     }
     clearRightAltFallback();
 
-    const validation = validateShortcut(accelerator, {
+    const normalizedAccelerator = normalizeShortcutForStorage(accelerator);
+    const validation = validateShortcut(normalizedAccelerator, {
       platform: "win32",
-      currentShortcut: options.currentShortcut,
-      existingShortcuts: options.existingShortcuts
+      currentShortcut:
+        options.currentShortcut !== undefined
+          ? normalizeShortcutForStorage(options.currentShortcut)
+          : undefined,
+      existingShortcuts: options.existingShortcuts?.map(normalizeShortcutForStorage),
     });
     if (!validation.ok) {
       options.onInvalid?.(validation.message ?? INVALID_SHORTCUT_MESSAGE);
@@ -135,7 +178,7 @@ export function createShortcutCaptureHandlers(
     }
 
     finished = true;
-    options.onCapture(accelerator);
+    options.onCapture(normalizedAccelerator);
     reset();
   };
 
@@ -162,9 +205,17 @@ export function createShortcutCaptureHandlers(
         return;
       }
       pressedModifiers.add(modifier);
-      if (modifier === "RightAlt" && pressedModifiers.size === 1 && !rightAltFallbackTimer) {
+      if (
+        modifier === "RightAlt" &&
+        pressedModifiers.size === 1 &&
+        !rightAltFallbackTimer
+      ) {
         rightAltFallbackTimer = setTimeout(() => {
-          if (pressedModifiers.size === 1 && pressedModifiers.has("RightAlt") && !finished) {
+          if (
+            pressedModifiers.size === 1 &&
+            pressedModifiers.has("RightAlt") &&
+            !finished
+          ) {
             finish("RightAlt");
           }
         }, RIGHT_ALT_FALLBACK_CAPTURE_MS);
@@ -192,7 +243,11 @@ export function createShortcutCaptureHandlers(
     event.stopPropagation();
 
     if (event.code === "AltRight" || event.key === "AltGraph") {
-      if (pressedModifiers.has("RightAlt") && !finished && pressedModifiers.size === 1) {
+      if (
+        pressedModifiers.has("RightAlt") &&
+        !finished &&
+        pressedModifiers.size === 1
+      ) {
         finish("RightAlt");
         return;
       }
@@ -221,7 +276,7 @@ export function createShortcutCaptureHandlers(
     capture: finish,
     handleKeyDown,
     handleKeyUp,
-    reset
+    reset,
   };
 }
 
@@ -239,11 +294,13 @@ function modifierFromEvent(event: KeyboardEvent): string | undefined {
     case "AltRight":
       return "RightAlt";
     case "ShiftLeft":
-    case "ShiftRight":
       return "Shift";
+    case "ShiftRight":
+      return "RightShift";
     case "MetaLeft":
-    case "MetaRight":
       return "Super";
+    case "MetaRight":
+      return "MetaRight";
     default:
       return undefined;
   }
@@ -252,7 +309,7 @@ function modifierFromEvent(event: KeyboardEvent): string | undefined {
 function syncHeldModifiersFromEvent(
   event: KeyboardEvent,
   modifiers: Set<string>,
-  currentModifier?: string
+  currentModifier?: string,
 ): void {
   if (
     currentModifier === "RightAlt" ||
@@ -280,10 +337,20 @@ function syncHeldModifiersFromEvent(
     }
   }
 
-  if (event.shiftKey && currentModifier !== "Shift") {
+  if (
+    event.shiftKey &&
+    currentModifier !== "Shift" &&
+    currentModifier !== "RightShift" &&
+    !modifiers.has("RightShift")
+  ) {
     modifiers.add("Shift");
   }
-  if (event.metaKey && currentModifier !== "Super") {
+  if (
+    event.metaKey &&
+    currentModifier !== "Super" &&
+    currentModifier !== "MetaRight" &&
+    !modifiers.has("MetaRight")
+  ) {
     modifiers.add("Super");
   }
 }
@@ -298,7 +365,7 @@ function isAltGraphActive(event: KeyboardEvent): boolean {
 function isImplicitRightAltEvent(
   event: KeyboardEvent,
   modifiers: Set<string>,
-  currentModifier?: string
+  currentModifier?: string,
 ): boolean {
   return (
     event.ctrlKey &&
@@ -311,23 +378,14 @@ function isImplicitRightAltEvent(
 }
 
 function buildAccelerator(modifiers: Set<string>, key: string): string {
-  const parts = ["Ctrl", "Alt", "Shift", "Super"].filter((modifier) =>
-    modifiers.has(modifier)
+  const parts = Array.from(modifiers).map((modifier) =>
+    modifier === "RightAlt" ? "AltGr" : modifier,
   );
-  if (modifiers.has("RightAlt")) {
-    parts.push("AltGr");
-  }
-  return [...new Set(parts), key].join("+");
+  return [...parts, key].join("+");
 }
 
 function buildModifierAccelerator(modifiers: Set<string>): string {
-  const parts = ["Ctrl", "Alt", "Shift", "Super"].filter((modifier) =>
-    modifiers.has(modifier)
-  );
-  if (modifiers.has("RightAlt")) {
-    parts.push("RightAlt");
-  }
-  return [...new Set(parts)].join("+");
+  return Array.from(modifiers).join("+");
 }
 
 function keyFromEvent(event: KeyboardEvent): string | undefined {

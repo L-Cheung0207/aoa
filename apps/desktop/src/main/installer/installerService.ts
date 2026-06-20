@@ -59,7 +59,7 @@ export function shouldOpenInstallerShell(
   argv: readonly string[],
   hasInstallerMarker: boolean,
 ): boolean {
-  if (argv.some(isUninstallArg)) {
+  if (argv.some(isAppRuntimeArg)) {
     return false;
   }
 
@@ -77,6 +77,17 @@ function isInstallerShellArg(arg: string): boolean {
 function isUninstallArg(arg: string): boolean {
   const normalized = arg.toLowerCase();
   return normalized === "--uninstall" || normalized === "/uninstall";
+}
+
+function isAppRuntimeArg(arg: string): boolean {
+  const normalized = arg.toLowerCase();
+  return (
+    isUninstallArg(normalized) ||
+    normalized === "--open-home" ||
+    normalized === "/open-home" ||
+    normalized === "--post-install-login" ||
+    normalized === "/post-install-login"
+  );
 }
 
 export function appendProductDirectory(path: string, productName: string): string {

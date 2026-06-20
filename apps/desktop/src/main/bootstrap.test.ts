@@ -15,6 +15,8 @@ import {
   logDirectIpcError,
   logDirectIpcRequest,
   logDirectIpcResponse,
+  resolveInstalledAppLaunchTarget,
+  resolvePostInstallLaunchTarget,
   runLoggedTrayAction,
   resolveShortcutTriggerOverlayLayout,
   resolveShortcutTriggerOverlayAction,
@@ -27,7 +29,9 @@ import {
   createAuthenticatedIpcMainAdapter,
   createDevelopmentAwareBackendClient,
   createLazyUpdateService,
+  wireLoginSetupWindowVisibility,
   resolveDevelopmentRuntime,
+  resolveAuthDevicePlatform,
   runAuthenticatedDirectIpc,
   runStartupGate,
   resolveVersionCheckEndpoint,
@@ -43,6 +47,7 @@ vi.mock("electron", () => ({
     setAppUserModelId: vi.fn(),
     setName: vi.fn(),
     setLoginItemSettings: vi.fn(),
+    getAppPath: vi.fn(() => "D:/repo/aoa/apps/desktop"),
   },
   nativeTheme: {
     themeSource: "system",
@@ -79,6 +84,12 @@ describe("bootstrap runtime mode", () => {
         electronRendererUrl: undefined,
       }),
     ).toBe(false);
+  });
+
+  it("maps Node platforms to auth device platforms", () => {
+    expect(resolveAuthDevicePlatform("darwin")).toBe("mac");
+    expect(resolveAuthDevicePlatform("linux")).toBe("linux");
+    expect(resolveAuthDevicePlatform("win32")).toBe("windows");
   });
 });
 
@@ -423,6 +434,75 @@ describe("bootstrap overlay visibility", () => {
 });
 
 describe("installer launch handoff", () => {
+  it("resolves the packaged Windows installed app launch target", () => {
+    expect(
+      resolveInstalledAppLaunchTarget({
+        installDir: "C:/Tools/Voice Assistant",
+        platform: "win32",
+      }),
+    ).toEqual({
+      executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
+      args: ["--open-home"],
+    });
+  });
+
+  it("resolves the packaged macOS installed app launch target", () => {
+    expect(
+      resolveInstalledAppLaunchTarget({
+        installDir: "/Applications",
+        platform: "darwin",
+      }),
+    ).toEqual({
+      executablePath:
+        "/Applications/Voice Assistant.app/Contents/MacOS/Voice Assistant",
+      args: ["--open-home"],
+    });
+  });
+
+  it("accepts a packaged macOS app bundle as the install target", () => {
+    expect(
+      resolveInstalledAppLaunchTarget({
+        installDir: "/Applications/Voice Assistant.app",
+        platform: "darwin",
+      }),
+    ).toEqual({
+      executablePath:
+        "/Applications/Voice Assistant.app/Contents/MacOS/Voice Assistant",
+      args: ["--open-home"],
+    });
+  });
+
+  it("resolves macOS development launches through the current Electron runtime", () => {
+    expect(
+      resolvePostInstallLaunchTarget({
+        installDir: "/Applications/Voice Assistant",
+        isDevelopmentRuntime: true,
+        platform: "darwin",
+        appPath: "/Volumes/repo/aoa/apps/desktop",
+        execPath: "/Volumes/repo/aoa/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+      }),
+    ).toEqual({
+      executablePath:
+        "/Volumes/repo/aoa/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+      args: ["/Volumes/repo/aoa/apps/desktop", "--open-home"],
+    });
+  });
+
+  it("keeps Windows development installer handoff pointed at the installed app", () => {
+    expect(
+      resolvePostInstallLaunchTarget({
+        installDir: "C:/Tools/Voice Assistant",
+        isDevelopmentRuntime: true,
+        platform: "win32",
+        appPath: "D:/repo/aoa/apps/desktop",
+        execPath: "D:/repo/aoa/apps/desktop/.dev-electron/electron-dist/Voice Assistant Dev.exe",
+      }),
+    ).toEqual({
+      executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
+      args: ["--open-home"],
+    });
+  });
+
   it("parses the silent update install directory from installer-shell arguments", () => {
     expect(
       parseSilentUpdateInstallDir([
@@ -468,13 +548,25 @@ describe("installer launch handoff", () => {
     );
   });
 
-  it("starts the installed app with a home launch argument", () => {
-    const child = { unref: vi.fn() };
+  it("starts the installed app with a home launch argument", async () => {
+    const child = {
+      once: vi.fn((event: string, listener: () => void) => {
+        if (event === "spawn") {
+          listener();
+        }
+        return child;
+      }),
+      unref: vi.fn(),
+    };
     const spawnProcess = vi.fn(() => child);
 
-    launchInstalledAppHome({
-      installDir: "C:/Tools/Voice Assistant",
+    await launchInstalledAppHome({
+      target: {
+        executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
+        args: ["--open-home"],
+      },
       spawnProcess: spawnProcess as never,
+      existsSync: () => true,
     });
 
     expect(spawnProcess).toHaveBeenCalledWith(
@@ -486,38 +578,82 @@ describe("installer launch handoff", () => {
         windowsHide: false,
       }),
     );
+    expect(child.once).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(child.once).toHaveBeenCalledWith("spawn", expect.any(Function));
     expect(child.unref).toHaveBeenCalled();
   });
 
-  it("hides and destroys the installer window before deferred launch and immediate exit", () => {
-    vi.useFakeTimers();
+  it("checks the installed app executable before spawning", async () => {
+    const spawnProcess = vi.fn();
+
+    await expect(
+      launchInstalledAppHome({
+        target: {
+          executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
+          args: ["--open-home"],
+        },
+        spawnProcess: spawnProcess as never,
+        existsSync: () => false,
+      }),
+    ).rejects.toThrow(
+      "Installed app executable not found: C:/Tools/Voice Assistant/Voice Assistant.exe",
+    );
+    expect(spawnProcess).not.toHaveBeenCalled();
+  });
+
+  it("rejects installer handoff without closing the installer when the installed app is missing", async () => {
     const window = {
       isDestroyed: vi.fn(() => false),
       hide: vi.fn(),
       destroy: vi.fn(),
     };
-    const launch = vi.fn();
+    const launch = vi.fn(async () => {
+      throw new Error(
+        "Installed app executable not found: C:/Tools/Voice Assistant/Voice Assistant.exe",
+      );
+    });
     const exitApp = vi.fn();
 
-    handoffInstallerLaunch({
+    await expect(
+      handoffInstallerLaunch({
+        installerWindow: window,
+        installDir: "C:/Tools/Voice Assistant",
+        launch,
+        exitApp,
+      }),
+    ).rejects.toThrow("Installed app executable not found");
+
+    expect(window.hide).not.toHaveBeenCalled();
+    expect(window.destroy).not.toHaveBeenCalled();
+    expect(exitApp).not.toHaveBeenCalled();
+  });
+
+  it("hides and destroys the installer window after the installed app is launched", async () => {
+    const window = {
+      isDestroyed: vi.fn(() => false),
+      hide: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const launch = vi.fn(async () => undefined);
+    const exitApp = vi.fn();
+
+    await handoffInstallerLaunch({
       installerWindow: window,
       installDir: "C:/Tools/Voice Assistant",
+      platform: "win32",
       launch,
       exitApp,
     });
 
+    expect(launch).toHaveBeenCalledWith({
+      target: {
+        executablePath: "C:/Tools/Voice Assistant/Voice Assistant.exe",
+        args: ["--open-home"],
+      },
+    });
     expect(window.hide).toHaveBeenCalled();
     expect(window.destroy).toHaveBeenCalled();
-    expect(launch).not.toHaveBeenCalled();
-    expect(exitApp).not.toHaveBeenCalled();
-
-    vi.runOnlyPendingTimers();
-
-    expect(launch).toHaveBeenCalledWith({
-      installDir: "C:/Tools/Voice Assistant",
-    });
     expect(exitApp).toHaveBeenCalledWith(0);
-    vi.useRealTimers();
   });
 });
 
@@ -592,7 +728,7 @@ describe("startup auth gate", () => {
     expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
   });
 
-  it("can force login setup before runtime after authenticated restore", async () => {
+  it("can force login setup while runtime starts after authenticated restore", async () => {
     const { service } = createGateAuthService(authenticatedSnapshot);
     const startAuthenticatedRuntime = vi.fn();
     const stopAuthenticatedRuntime = vi.fn();
@@ -611,7 +747,7 @@ describe("startup auth gate", () => {
     });
 
     expect(showLoginSetupWindow).toHaveBeenCalledWith(authenticatedSnapshot);
-    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
 
     await completeLoginSetup?.();
 
@@ -641,7 +777,7 @@ describe("startup auth gate", () => {
     });
   });
 
-  it("starts runtime once after setup completion and ignores repeated authenticated broadcasts", async () => {
+  it("starts runtime once during setup and ignores repeated authenticated broadcasts", async () => {
     const { service, emit } = createGateAuthService({
       status: "unauthenticated",
     });
@@ -662,20 +798,22 @@ describe("startup auth gate", () => {
     emit(authenticatedSnapshot);
     emit(authenticatedSnapshot);
     await Promise.resolve();
-    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     await completeLoginSetup?.();
 
     expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
   });
 
-  it("waits for setup completion before starting runtime after login", async () => {
+  it("keeps setup open while runtime starts after login", async () => {
     const { service, emit } = createGateAuthService({
       status: "unauthenticated",
     });
     const startAuthenticatedRuntime = vi.fn();
     const stopAuthenticatedRuntime = vi.fn();
     const showLoginSetupWindow = vi.fn();
+    const openHomeWindowAfterLoginSetup = vi.fn();
     let completeLoginSetup: (() => Promise<void>) | undefined;
 
     await runStartupGate({
@@ -683,20 +821,85 @@ describe("startup auth gate", () => {
       startAuthenticatedRuntime,
       stopAuthenticatedRuntime,
       showLoginSetupWindow,
+      openHomeWindowAfterLoginSetup,
       onLoginSetupReady: (complete) => {
         completeLoginSetup = complete;
       },
     });
     emit(authenticatedSnapshot);
     await Promise.resolve();
+    await Promise.resolve();
 
     expect(showLoginSetupWindow).toHaveBeenCalledWith(authenticatedSnapshot);
-    expect(startAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
 
     await completeLoginSetup?.();
 
     expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(openHomeWindowAfterLoginSetup).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows setup completion after logout and second login while runtime remains active", async () => {
+    const { service, emit } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+    const hideLoginSetupWindow = vi.fn();
+    const openHomeWindowAfterLoginSetup = vi.fn();
+    let completeLoginSetup: (() => Promise<void>) | undefined;
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+      hideLoginSetupWindow,
+      openHomeWindowAfterLoginSetup,
+      onLoginSetupReady: (complete) => {
+        completeLoginSetup = complete;
+      },
+    });
+
+    emit({ status: "unauthenticated" });
+    emit(authenticatedSnapshot);
+    await Promise.resolve();
+    await Promise.resolve();
+    await completeLoginSetup?.();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+    expect(showLoginSetupWindow).toHaveBeenCalledWith({
+      status: "unauthenticated",
+    });
+    expect(showLoginSetupWindow).toHaveBeenCalledWith(authenticatedSnapshot);
+    expect(hideLoginSetupWindow).toHaveBeenCalledTimes(1);
+    expect(openHomeWindowAfterLoginSetup).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not open home when setup completion is not allowed", async () => {
+    const { service } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+    const openHomeWindowAfterLoginSetup = vi.fn();
+    let completeLoginSetup: (() => Promise<void>) | undefined;
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+      openHomeWindowAfterLoginSetup,
+      onLoginSetupReady: (complete) => {
+        completeLoginSetup = complete;
+      },
+    });
+
+    await completeLoginSetup?.();
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(openHomeWindowAfterLoginSetup).not.toHaveBeenCalled();
   });
 
   it("cleans up a runtime start that finishes after unauthenticated broadcast", async () => {
@@ -734,7 +937,7 @@ describe("startup auth gate", () => {
     });
   });
 
-  it("waits for setup completion when auth returns while runtime start is pending", async () => {
+  it("keeps the pending runtime when auth returns during setup", async () => {
     let resolveRuntimeStart: (() => void) | undefined;
     const { service, emit } = createGateAuthService(authenticatedSnapshot);
     const startAuthenticatedRuntime = vi.fn(
@@ -773,16 +976,77 @@ describe("startup auth gate", () => {
       status: "unauthenticated",
     });
     expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
-    expect(stopAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
     const completePromise = completeLoginSetup?.();
     await Promise.resolve();
-    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
-    resolveRuntimeStart?.();
     await completePromise;
     await Promise.resolve();
 
-    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(2);
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     expect(hideLoginSetupWindow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("login setup window visibility", () => {
+  function createWindowTarget() {
+    const windowListeners = new Map<string, () => void>();
+    const webContentsListeners = new Map<string, () => void>();
+    return {
+      target: {
+        once: vi.fn((event: string, listener: () => void) => {
+          windowListeners.set(event, listener);
+        }),
+        webContents: {
+          once: vi.fn((event: string, listener: () => void) => {
+            webContentsListeners.set(event, listener);
+          }),
+        },
+      },
+      emitWindow: (event: string) => windowListeners.get(event)?.(),
+      emitWebContents: (event: string) => webContentsListeners.get(event)?.(),
+    };
+  }
+
+  it("shows the login setup window after renderer load when ready-to-show is absent", () => {
+    const { target, emitWebContents } = createWindowTarget();
+    const showWindow = vi.fn();
+    const timer = { id: 1 };
+    const setTimeoutFn = vi.fn(() => timer.id);
+    const clearTimeoutFn = vi.fn();
+
+    wireLoginSetupWindowVisibility(target, showWindow, {
+      setTimeoutFn: setTimeoutFn as never,
+      clearTimeoutFn: clearTimeoutFn as never,
+    });
+    emitWebContents("did-finish-load");
+    emitWebContents("did-fail-load");
+
+    expect(showWindow).toHaveBeenCalledTimes(1);
+    expect(clearTimeoutFn).toHaveBeenCalledWith(timer.id);
+  });
+
+  it("uses a timeout fallback for hidden login setup windows", () => {
+    const { target, emitWindow } = createWindowTarget();
+    const showWindow = vi.fn();
+    let timeoutListener: (() => void) | undefined;
+    const setTimeoutFn = vi.fn((listener: () => void) => {
+      timeoutListener = listener;
+      return 7;
+    });
+    const clearTimeoutFn = vi.fn();
+
+    wireLoginSetupWindowVisibility(target, showWindow, {
+      setTimeoutFn: setTimeoutFn as never,
+      clearTimeoutFn: clearTimeoutFn as never,
+      timeoutMs: 25,
+    });
+
+    expect(setTimeoutFn).toHaveBeenCalledWith(expect.any(Function), 25);
+    timeoutListener?.();
+    emitWindow("ready-to-show");
+
+    expect(showWindow).toHaveBeenCalledTimes(1);
+    expect(clearTimeoutFn).toHaveBeenCalledWith(7);
   });
 });
 
@@ -820,6 +1084,31 @@ describe("lazy update service", () => {
     expect(firstService.restartToUpdate).toHaveBeenCalledTimes(1);
     expect(firstService.dispose).toHaveBeenCalledTimes(1);
     expect(secondService.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create the real update service while runtime guard disables checks", async () => {
+    const service = {
+      checkForUpdates: vi.fn(async () => ({ status: "up-to-date" as const })),
+      restartToUpdate: vi.fn(),
+      dispose: vi.fn(),
+    };
+    let disabled = true;
+    const factory = vi.fn(() => service);
+    const lazyService = createLazyUpdateService(factory, {
+      isDisabled: () => disabled,
+    });
+
+    await expect(lazyService.checkForUpdates()).resolves.toEqual({
+      status: "disabled",
+    });
+    expect(factory).not.toHaveBeenCalled();
+
+    disabled = false;
+    await expect(lazyService.checkForUpdates()).resolves.toEqual({
+      status: "up-to-date",
+    });
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(service.checkForUpdates).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -879,6 +1168,25 @@ describe("authenticated IPC gate", () => {
     await expect(invoke("voice:auth:logout")).resolves.toBe("auth-ok");
     expect(getAccessTokenForRequest).not.toHaveBeenCalled();
     expect(authHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not validate tokens for login setup completion IPC", async () => {
+    const { ipcMain, invoke } = createIpcMainAdapter();
+    const getAccessTokenForRequest = vi.fn(async () => {
+      throw new Error("expired");
+    });
+    const guarded = createAuthenticatedIpcMainAdapter(ipcMain, {
+      getAccessTokenForRequest,
+    });
+    const completeHandler = vi.fn(() => "complete-ok");
+
+    guarded.handle("voice:auth:complete-login-setup", completeHandler);
+
+    await expect(invoke("voice:auth:complete-login-setup")).resolves.toBe(
+      "complete-ok",
+    );
+    expect(getAccessTokenForRequest).not.toHaveBeenCalled();
+    expect(completeHandler).toHaveBeenCalledTimes(1);
   });
 
   it("does not validate tokens for login setup app info IPC", async () => {

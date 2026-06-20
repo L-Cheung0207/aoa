@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import type { AppSettings } from "@voice/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  AppSettings,
+  RecordingLanguage,
+  RecordingMode,
+} from "@voice/shared";
 import type { AuthSessionSnapshot } from "../../../main/auth/authTypes";
+import type { RecordingState } from "../../../preload/voiceApi";
+import {
+  detectShortcutDisplayPlatform,
+  formatShortcutLabel,
+} from "../../shared/keyboard/shortcutCapture";
 import { ThemedIcon } from "../../shared/ui/ThemedIcon";
 import {
   buildMicrophoneAudioConstraints,
@@ -17,28 +26,81 @@ import {
 import "./login-setup.css";
 
 type LoginSetupStep = "login" | "settings" | "experience" | "ready";
-type SetupContentStep = "privacy" | "permissions" | "microphone" | "ready";
+type SetupContentStep =
+  | "privacy"
+  | "permissions"
+  | "microphone"
+  | "voiceShortcut"
+  | "dictationLanguage"
+  | "dictationTry"
+  | "translateShortcut"
+  | "translationTargetLanguage"
+  | "translationTry"
+  | "rewriteShortcut"
+  | "rewriteTry"
+  | "ready";
+type TranslationTargetLanguage = AppSettings["translation"]["targetLanguage"];
 type LoginMode = "email" | "ldap";
 type MessageTone = "info" | "error";
 type MicrophoneLevelStatus = "idle" | "listening" | "error" | "unavailable";
 
 const SETUP_STEPS: Array<{ id: LoginSetupStep; label: string }> = [
-  { id: "login", label: "登录" },
-  { id: "settings", label: "设置" },
-  { id: "experience", label: "隐私" },
-  { id: "ready", label: "就绪" },
+  { id: "login", label: "登入" },
+  { id: "settings", label: "設定" },
+  { id: "experience", label: "體驗" },
+  { id: "ready", label: "就緒" },
 ];
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEVELOPMENT_LOGIN_EMAIL = "dev@example.test";
 const DEVELOPMENT_LOGIN_CODE = "000000";
 const LOGIN_SETUP_MICROPHONE_METER_BARS = 12;
+const SETUP_CONTENT_FLOW: SetupContentStep[] = [
+  "privacy",
+  "permissions",
+  "microphone",
+  "voiceShortcut",
+  "dictationLanguage",
+  "dictationTry",
+  "translateShortcut",
+  "translationTargetLanguage",
+  "translationTry",
+  "rewriteShortcut",
+  "rewriteTry",
+  "ready",
+];
+const LOGIN_SETUP_RECORDING_LANGUAGE_OPTIONS: Array<{
+  value: RecordingLanguage;
+  label: string;
+}> = [
+  { value: "auto", label: "自動" },
+  { value: "cantonese", label: "粵語" },
+  { value: "mandarin", label: "普通話" },
+  { value: "english", label: "英語" },
+  { value: "portuguese", label: "葡語" },
+  { value: "japanese", label: "日語" },
+  { value: "korean", label: "韓語" },
+  { value: "thai", label: "泰語" },
+  { value: "hindi", label: "印地語" },
+  { value: "indonesia", label: "印尼語" },
+];
+const LOGIN_SETUP_TRANSLATION_TARGET_OPTIONS: Array<{
+  value: TranslationTargetLanguage;
+  label: string;
+}> = [
+  { value: "en-US", label: "English（英語）" },
+  { value: "zh-CN", label: "中文（簡體）" },
+];
+const LOGIN_SETUP_VOICE_INPUT_SHORTCUT = "RightAlt";
+const LOGIN_SETUP_TRANSLATE_SHORTCUT = "RightAlt+RightShift";
+const REWRITE_SELECTED_TEXT =
+  "這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。這是一段測試智能改寫文本。";
 
 function resolveOuterStep(contentStep: SetupContentStep): LoginSetupStep {
   if (contentStep === "privacy" || contentStep === "permissions") {
     return "settings";
   }
-  if (contentStep === "microphone") {
+  if (contentStep !== "ready") {
     return "experience";
   }
   return "ready";
@@ -46,7 +108,7 @@ function resolveOuterStep(contentStep: SetupContentStep): LoginSetupStep {
 
 function WindowControls(): React.JSX.Element {
   return (
-    <div className="login-setup__window-controls" aria-label="窗口控制">
+    <div className="login-setup__window-controls" aria-label="視窗控制">
       <button
         className="login-setup__window-button"
         type="button"
@@ -58,7 +120,7 @@ function WindowControls(): React.JSX.Element {
       <button
         className="login-setup__window-button login-setup__window-button--close"
         type="button"
-        aria-label="关闭"
+        aria-label="關閉"
         onClick={() => window.voiceAI.controlHomeWindow("close")}
       >
         <span className="login-setup__window-button-close" />
@@ -79,14 +141,242 @@ function getStepIndex(step: LoginSetupStep): number {
   return SETUP_STEPS.findIndex((item) => item.id === step);
 }
 
+function getSetupPrimaryLabel(
+  step: SetupContentStep,
+  completingSetup: boolean,
+): string {
+  if (step === "privacy") {
+    return "下一步";
+  }
+  if (step === "permissions") {
+    return "同意";
+  }
+  if (
+    step === "microphone" ||
+    step === "voiceShortcut" ||
+    step === "translateShortcut" ||
+    step === "rewriteShortcut"
+  ) {
+    return "是的，繼續";
+  }
+  return "下一步";
+}
+
+function formatSetupShortcutLabel(shortcut: string): string {
+  const platform = detectShortcutDisplayPlatform();
+  return formatShortcutLabel(shortcut, platform)
+    .replaceAll("Right Alt", platform === "mac" ? "Right Cmd" : "Right Alt")
+    .replaceAll("Right Shift", platform === "mac" ? "Right Shift" : "Shift")
+    .replaceAll(" + ", "+");
+}
+
+function getLoginSetupRewriteShortcut(): string {
+  return detectShortcutDisplayPlatform() === "mac"
+    ? "RightAlt+/"
+    : "RightAlt+Space";
+}
+
+function normalizeSetupAccelerator(
+  accelerator: string,
+  platform = detectShortcutDisplayPlatform(),
+): string {
+  return accelerator
+    .split("+")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+    .map((part) => {
+      if (
+        part === "right alt" ||
+        part === "altgr" ||
+        (platform === "mac" &&
+          (part === "metaright" ||
+            part === "rightmeta" ||
+            part === "right meta" ||
+            part === "rightcmd" ||
+            part === "right cmd" ||
+            part === "rightcommand" ||
+            part === "right command"))
+      ) {
+        return "rightalt";
+      }
+      if (part === "right shift" || part === "shift") {
+        return "rightshift";
+      }
+      return part;
+    })
+    .join("+");
+}
+
+function matchesSetupAccelerator(accelerator: string, shortcut: string): boolean {
+  return (
+    normalizeSetupAccelerator(accelerator) === normalizeSetupAccelerator(shortcut)
+  );
+}
+
+function matchesShortcutEvent(event: KeyboardEvent, shortcut: string): boolean {
+  const parts = shortcut
+    .split("+")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+  const platform = detectShortcutDisplayPlatform();
+
+  if (parts.length === 0) {
+    return false;
+  }
+
+  return parts.every((part) => {
+    switch (part) {
+      case "rightalt":
+      case "right alt":
+      case "altgr":
+        return (
+          event.code === "AltRight" ||
+          (event.key === "Alt" && event.location === 2) ||
+          (event.key !== "Alt" && event.altKey) ||
+          (platform === "mac" &&
+            (event.code === "MetaRight" ||
+              (event.key === "Meta" && event.location === 2))) ||
+          event.getModifierState("AltGraph")
+        );
+      case "alt":
+        return event.key === "Alt" || event.altKey;
+      case "leftalt":
+      case "left alt":
+        return (
+          event.code === "AltLeft" ||
+          (event.key === "Alt" && event.location === 1)
+        );
+      case "rightshift":
+      case "right shift":
+        return (
+          event.code === "ShiftRight" ||
+          (event.key === "Shift" && event.location === 2) ||
+          (event.key !== "Shift" && event.shiftKey)
+        );
+      case "leftshift":
+      case "left shift":
+        return (
+          event.code === "ShiftLeft" ||
+          (event.key === "Shift" && event.location === 1)
+        );
+      case "rightwin":
+      case "right win":
+      case "rightmeta":
+      case "right meta":
+      case "metaright":
+      case "meta right":
+      case "rightcmd":
+      case "right cmd":
+      case "rightcommand":
+      case "right command":
+      case "rightsuper":
+      case "right super":
+        return (
+          event.code === "MetaRight" ||
+          (event.key === "Meta" && event.location === 2)
+        );
+      case "win":
+      case "meta":
+      case "super":
+      case "cmd":
+      case "command":
+        return event.key === "Meta" || event.metaKey;
+      case "space":
+        return event.code === "Space" || event.key === " ";
+      case "shift":
+        return event.key === "Shift" || event.shiftKey;
+      default:
+        return event.key.toLowerCase() === part;
+    }
+  });
+}
+
+function isSetupPhysicalRightAltEvent(event: KeyboardEvent): boolean {
+  const platform = detectShortcutDisplayPlatform();
+  if (platform === "mac") {
+    return event.code === "MetaRight" || (event.key === "Meta" && event.location === 2);
+  }
+  return (
+    event.code === "AltRight" ||
+    (event.key === "Alt" && event.location === 2) ||
+    event.getModifierState("AltGraph")
+  );
+}
+
+function isSetupRightAltHeld(event: KeyboardEvent): boolean {
+  const platform = detectShortcutDisplayPlatform();
+  if (platform === "mac") {
+    return event.metaKey;
+  }
+  return event.altKey || event.getModifierState("AltGraph");
+}
+
+function isSetupShortcutEvent(
+  event: KeyboardEvent,
+  shortcut: string,
+  rightAltDown: boolean,
+): boolean {
+  if (shortcut === "RightAlt") {
+    return isSetupPhysicalRightAltEvent(event);
+  }
+  if (shortcut === "RightAlt+RightShift") {
+    return (
+      rightAltDown &&
+      (event.code === "ShiftRight" || (event.key === "Shift" && event.location === 2))
+    );
+  }
+  if (shortcut === "RightAlt+Space") {
+    return rightAltDown && (event.code === "Space" || event.key === " ");
+  }
+  if (shortcut === "RightAlt+/") {
+    return (
+      rightAltDown &&
+      (event.code === "Slash" || event.key === "/" || event.key === "?")
+    );
+  }
+  return matchesShortcutEvent(event, shortcut);
+}
+
 function getErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   const authHttpErrorPrefix = "AuthHttpError:";
   const authHttpErrorIndex = message.lastIndexOf(authHttpErrorPrefix);
   if (authHttpErrorIndex >= 0) {
-    return message.slice(authHttpErrorIndex + authHttpErrorPrefix.length).trim();
+    return localizeErrorMessage(
+      message.slice(authHttpErrorIndex + authHttpErrorPrefix.length).trim(),
+    );
   }
-  return message;
+  return localizeErrorMessage(message);
+}
+
+function localizeErrorMessage(message: string): string {
+  const normalized = message.trim();
+  if (/[一-龥]/.test(normalized)) {
+    return normalized;
+  }
+  if (
+    normalized === "Network request failed" ||
+    normalized === "Network unavailable" ||
+    normalized === "fetch failed"
+  ) {
+    return "網路連線失敗，請檢查網路後再試。";
+  }
+  if (
+    normalized === "Authentication request failed" ||
+    normalized === "Backend returned invalid payload"
+  ) {
+    return "登入服務暫時不可用，請稍後再試。";
+  }
+  if (
+    normalized === "Session expired" ||
+    normalized === "Refresh token expired"
+  ) {
+    return "登入狀態已過期，請重新登入。";
+  }
+  if (normalized === "Not authenticated") {
+    return "尚未登入，請先登入。";
+  }
+  return "操作失敗，請稍後再試。";
 }
 
 export function LoginSetupPage(): React.JSX.Element {
@@ -97,7 +387,7 @@ export function LoginSetupPage(): React.JSX.Element {
   const [code, setCode] = useState("");
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [acceptedLicense, setAcceptedLicense] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [completingSetup, setCompletingSetup] = useState(false);
@@ -111,20 +401,43 @@ export function LoginSetupPage(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | undefined>(undefined);
   const [microphonePickerOpenSignal, setMicrophonePickerOpenSignal] =
     useState(0);
+  const [voiceShortcutPressed, setVoiceShortcutPressed] = useState(false);
+  const [setupTranslateShortcutPressed, setTranslateShortcutPressed] =
+    useState(false);
+  const [setupRewriteShortcutPressed, setRewriteShortcutPressed] = useState(false);
+  const [rewriteSelectedText, setRewriteSelectedText] =
+    useState(REWRITE_SELECTED_TEXT);
+  const [recordingState, setRecordingState] = useState<RecordingState>("idle");
+  const [recordingMode, setRecordingMode] = useState<RecordingMode | undefined>(
+    undefined,
+  );
+  const setupTryRecordingModeRef = useRef<RecordingMode | undefined>(undefined);
 
   const step = loginStepVisible ? "login" : resolveOuterStep(contentStep);
   const activeStepIndex = useMemo(() => getStepIndex(step), [step]);
   const selectedInputDeviceId = settings?.recording.inputDeviceId ?? "";
+  const selectedRecordingLanguage = settings?.recording.language ?? "cantonese";
+  const setupVoiceInputShortcut = LOGIN_SETUP_VOICE_INPUT_SHORTCUT;
+  const setupTranslateShortcut = LOGIN_SETUP_TRANSLATE_SHORTCUT;
+  const setupRewriteShortcut = getLoginSetupRewriteShortcut();
+  const selectedTranslationTargetLanguage =
+    settings?.translation.targetLanguage ?? "en-US";
   const canSendCode =
-    EMAIL_PATTERN.test(email.trim()) && cooldown <= 0 && !sendingCode && !submitting;
+    EMAIL_PATTERN.test(email.trim()) &&
+    cooldown <= 0 &&
+    !sendingCode &&
+    !submitting;
+  const hasLoginCredentials =
+    isDevelopmentMode ||
+    (mode === "email"
+      ? EMAIL_PATTERN.test(email.trim()) && code.trim().length > 0
+      : account.trim().length > 0 && password.length > 0);
   const canSubmit =
     !submitting &&
     !sendingCode &&
     !completingSetup &&
-    (isDevelopmentMode ||
-      (mode === "email"
-        ? EMAIL_PATTERN.test(email.trim()) && code.trim().length > 0
-        : account.trim().length > 0 && password.length > 0));
+    acceptedLicense &&
+    hasLoginCredentials;
   const statusMessage = message ? (
     <p
       className={
@@ -137,6 +450,7 @@ export function LoginSetupPage(): React.JSX.Element {
       {message}
     </p>
   ) : null;
+  const isReadyStep = !loginStepVisible && contentStep === "ready";
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +489,11 @@ export function LoginSetupPage(): React.JSX.Element {
         }
         if (snapshot.status === "offline") {
           setMessageTone("error");
-          setMessage(snapshot.message ?? "网络连接不可用，请稍后重试。");
+          setMessage(
+            snapshot.message
+              ? getErrorMessage(snapshot.message)
+              : "網路連線不可用，請稍後再試。",
+          );
         }
       })
       .catch((error: unknown) => {
@@ -195,10 +513,14 @@ export function LoginSetupPage(): React.JSX.Element {
         setMessage(undefined);
       } else if (snapshot.status === "offline") {
         setMessageTone("error");
-        setMessage(snapshot.message ?? "网络连接不可用，请稍后重试。");
+        setMessage(
+          snapshot.message
+            ? getErrorMessage(snapshot.message)
+            : "網路連線不可用，請稍後再試。",
+        );
       } else if (snapshot.message) {
         setMessageTone("info");
-        setMessage(snapshot.message);
+        setMessage(getErrorMessage(snapshot.message));
       }
     });
 
@@ -243,11 +565,213 @@ export function LoginSetupPage(): React.JSX.Element {
     return () => window.clearInterval(handle);
   }, [cooldown]);
 
+  useEffect(() => {
+    return window.voiceAI.onRecordingStateChanged((update) => {
+      setRecordingState(update.state);
+      setRecordingMode(update.mode);
+      if (
+        update.state === "idle" ||
+        update.state === "success" ||
+        update.state === "error" ||
+        update.state === "canceled"
+      ) {
+        setupTryRecordingModeRef.current = undefined;
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (contentStep !== "microphone") {
+      setMicrophonePickerOpenSignal(0);
+    }
+    if (contentStep === "voiceShortcut") {
+      setVoiceShortcutPressed(false);
+    }
+    if (contentStep === "translateShortcut") {
+      setTranslateShortcutPressed(false);
+    }
+    if (contentStep === "rewriteShortcut") {
+      setRewriteShortcutPressed(false);
+    }
+  }, [contentStep]);
+
+  useEffect(() => {
+    if (
+      loginStepVisible ||
+      (contentStep !== "voiceShortcut" &&
+        contentStep !== "dictationTry" &&
+        contentStep !== "translateShortcut" &&
+        contentStep !== "translationTry" &&
+        contentStep !== "rewriteShortcut" &&
+        contentStep !== "rewriteTry")
+    ) {
+      return undefined;
+    }
+
+    const shortcut =
+      contentStep === "translateShortcut" || contentStep === "translationTry"
+        ? setupTranslateShortcut
+        : contentStep === "rewriteShortcut" || contentStep === "rewriteTry"
+          ? setupRewriteShortcut
+          : setupVoiceInputShortcut;
+    const activeTryMode =
+      contentStep === "translationTry"
+        ? "translate"
+        : contentStep === "rewriteTry"
+          ? "processSelection"
+          : undefined;
+    const canStopActiveTryRecording =
+      activeTryMode !== undefined &&
+      (recordingMode === activeTryMode ||
+        setupTryRecordingModeRef.current === activeTryMode) &&
+      recordingState !== "idle" &&
+      recordingState !== "success" &&
+      recordingState !== "error" &&
+      recordingState !== "canceled";
+    const markPressed = (): void => {
+      if (contentStep === "voiceShortcut") {
+        setVoiceShortcutPressed(true);
+      } else if (contentStep === "translateShortcut") {
+        setTranslateShortcutPressed(true);
+      } else if (contentStep === "rewriteShortcut") {
+        setRewriteShortcutPressed(true);
+      }
+    };
+    const clearPressed = (): void => {
+      if (contentStep === "voiceShortcut") {
+        setVoiceShortcutPressed(false);
+      } else if (contentStep === "translateShortcut") {
+        setTranslateShortcutPressed(false);
+      } else if (contentStep === "rewriteShortcut") {
+        setRewriteShortcutPressed(false);
+      }
+    };
+    let disposed = false;
+    let suspended = false;
+    let lastTriggerAtMs = 0;
+    let rightAltDown = false;
+
+    void window.voiceAI
+      .setLoginSetupShortcutCaptureActive(true)
+      .then(() => {
+        suspended = true;
+        if (disposed) {
+          void window.voiceAI.setLoginSetupShortcutCaptureActive(false);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(
+          "[login-setup] Failed to suspend global shortcuts for setup",
+          error,
+        );
+      });
+
+    const triggerCurrentStep = (): void => {
+      const now = window.performance.now();
+      if (now - lastTriggerAtMs < 500) {
+        return;
+      }
+      lastTriggerAtMs = now;
+      if (contentStep === "dictationTry") {
+        window.voiceAI.triggerRecording({ mode: "direct" });
+      } else if (contentStep === "translationTry") {
+        setupTryRecordingModeRef.current = "translate";
+        window.voiceAI.triggerRecording({ mode: "translate" });
+      } else if (contentStep === "rewriteTry") {
+        setupTryRecordingModeRef.current = "processSelection";
+        window.voiceAI.triggerRecording({
+          mode: "processSelection",
+          previewSelectedText: rewriteSelectedText,
+        });
+      }
+    };
+
+    const stopActiveTryRecording = (): void => {
+      if (activeTryMode === undefined) {
+        return;
+      }
+      window.voiceAI.triggerRecording({ mode: activeTryMode });
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat) {
+        return;
+      }
+      if (isSetupPhysicalRightAltEvent(event)) {
+        rightAltDown = true;
+      } else if (!isSetupRightAltHeld(event)) {
+        rightAltDown = false;
+      }
+      if (
+        canStopActiveTryRecording &&
+        isSetupShortcutEvent(event, setupVoiceInputShortcut, rightAltDown)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        stopActiveTryRecording();
+        return;
+      }
+      if (isSetupShortcutEvent(event, shortcut, rightAltDown)) {
+        event.preventDefault();
+        event.stopPropagation();
+        markPressed();
+        triggerCurrentStep();
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent): void => {
+      if (isSetupPhysicalRightAltEvent(event)) {
+        rightAltDown = false;
+      }
+      clearPressed();
+    };
+    const handleBlur = (): void => {
+      rightAltDown = false;
+      clearPressed();
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", handleBlur);
+    const unsubscribeSetupShortcutCaptureAccelerator =
+      window.voiceAI.onLoginSetupShortcutCaptureAccelerator(({ accelerator }) => {
+        if (
+          canStopActiveTryRecording &&
+          matchesSetupAccelerator(accelerator, setupVoiceInputShortcut)
+        ) {
+          stopActiveTryRecording();
+          return;
+        }
+        if (matchesSetupAccelerator(accelerator, shortcut)) {
+          markPressed();
+          triggerCurrentStep();
+        }
+      });
+
+    return () => {
+      disposed = true;
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", handleBlur);
+      unsubscribeSetupShortcutCaptureAccelerator();
+      if (suspended) {
+        void window.voiceAI.setLoginSetupShortcutCaptureActive(false);
+      }
+    };
+  }, [
+    contentStep,
+    loginStepVisible,
+    recordingMode,
+    recordingState,
+    rewriteSelectedText,
+    setupRewriteShortcut,
+    setupTranslateShortcut,
+    setupVoiceInputShortcut,
+  ]);
+
   const sendCode = (): void => {
     const trimmedEmail = email.trim();
     if (!EMAIL_PATTERN.test(trimmedEmail)) {
       setMessageTone("error");
-      setMessage("请输入有效的邮箱地址。");
+      setMessage("請輸入有效的電子郵件地址。");
       return;
     }
     if (cooldown > 0) {
@@ -261,7 +785,7 @@ export function LoginSetupPage(): React.JSX.Element {
       .then((result) => {
         setCooldown(result.cooldownSeconds);
         setMessageTone("info");
-        setMessage("验证码已发送，请检查邮箱。");
+        setMessage("驗證碼已發送，請檢查電子郵件。");
       })
       .catch((error: unknown) => {
         setMessageTone("error");
@@ -271,11 +795,21 @@ export function LoginSetupPage(): React.JSX.Element {
   };
 
   const submitLogin = (): void => {
-    if (!canSubmit) {
+    if (!acceptedLicense) {
+      setMessageTone("error");
+      setMessage("請先同意用戶使用許可。");
+      return;
+    }
+    if (!hasLoginCredentials) {
       setMessageTone("error");
       setMessage(
-        mode === "email" ? "请输入邮箱和验证码。" : "请输入域账号和密码。",
+        mode === "email"
+          ? "請輸入電子郵件和驗證碼。"
+          : "請輸入網域帳號和密碼。",
       );
+      return;
+    }
+    if (submitting || sendingCode || completingSetup) {
       return;
     }
 
@@ -294,15 +828,16 @@ export function LoginSetupPage(): React.JSX.Element {
               isDevelopmentMode && code.trim().length === 0
                 ? DEVELOPMENT_LOGIN_CODE
                 : code.trim(),
-            rememberMe,
+            acceptedLicense,
           })
         : window.voiceAI.loginWithLdap({
             account:
               isDevelopmentMode && account.trim().length === 0
                 ? "dev-user"
                 : account.trim(),
-            password: isDevelopmentMode && password.length === 0 ? "dev" : password,
-            rememberMe,
+            password:
+              isDevelopmentMode && password.length === 0 ? "dev" : password,
+            acceptedLicense,
           });
 
     void login
@@ -317,7 +852,11 @@ export function LoginSetupPage(): React.JSX.Element {
           return;
         }
         setMessageTone("error");
-        setMessage(snapshot.message ?? "登录未完成，请检查账户信息。");
+        setMessage(
+          snapshot.message
+            ? getErrorMessage(snapshot.message)
+            : "登入未完成，請檢查帳戶資訊。",
+        );
       })
       .catch((error: unknown) => {
         setMessageTone("error");
@@ -334,21 +873,18 @@ export function LoginSetupPage(): React.JSX.Element {
   const continueSetup = (): void => {
     setMessageTone("info");
     setMessage(undefined);
-    if (contentStep === "privacy") {
-      setContentStep("permissions");
-      return;
-    }
-    if (contentStep === "permissions") {
-      setContentStep("microphone");
-      return;
-    }
-    if (contentStep === "microphone") {
-      setContentStep("ready");
+    if (contentStep !== "ready") {
+      const currentIndex = SETUP_CONTENT_FLOW.indexOf(contentStep);
+      setContentStep(
+        SETUP_CONTENT_FLOW[
+          Math.min(currentIndex + 1, SETUP_CONTENT_FLOW.length - 1)
+        ] ?? "ready",
+      );
       return;
     }
     if (contentStep === "ready") {
       setMessageTone("info");
-      setMessage("正在进入主应用。");
+      setMessage("正在進入主應用。");
       setCompletingSetup(true);
       void window.voiceAI
         .completeLoginSetup()
@@ -368,21 +904,14 @@ export function LoginSetupPage(): React.JSX.Element {
       setLoginStepVisible(true);
       return;
     }
-    if (contentStep === "permissions") {
-      setContentStep("privacy");
-      return;
-    }
-    if (contentStep === "microphone") {
-      setContentStep("permissions");
-      return;
-    }
-    if (contentStep === "ready") {
-      setContentStep("microphone");
-    }
+    const currentIndex = SETUP_CONTENT_FLOW.indexOf(contentStep);
+    setContentStep(
+      SETUP_CONTENT_FLOW[Math.max(currentIndex - 1, 0)] ?? "privacy",
+    );
   };
 
   const updateMicrophoneDevice = (deviceId: string): void => {
-    setSettings((current) =>
+    setSettings((current: AppSettings | undefined) =>
       current
         ? {
             ...current,
@@ -406,27 +935,81 @@ export function LoginSetupPage(): React.JSX.Element {
       });
   };
 
+  const updateRecordingLanguage = (language: RecordingLanguage): void => {
+    setSettings((current: AppSettings | undefined) =>
+      current
+        ? {
+            ...current,
+            recording: {
+              ...current.recording,
+              language,
+            },
+          }
+        : current,
+    );
+    void window.voiceAI
+      .updateSettings({
+        recording: {
+          language,
+        },
+      })
+      .then(setSettings)
+      .catch((error: unknown) => {
+        setMessageTone("error");
+        setMessage(getErrorMessage(error));
+      });
+  };
+
+  const updateTranslationTargetLanguage = (
+    targetLanguage: TranslationTargetLanguage,
+  ): void => {
+    setSettings((current: AppSettings | undefined) =>
+      current
+        ? {
+            ...current,
+            translation: {
+              ...current.translation,
+              targetLanguage,
+            },
+          }
+        : current,
+    );
+    void window.voiceAI
+      .updateSettings({
+        translation: {
+          targetLanguage,
+        },
+      })
+      .then(setSettings)
+      .catch((error: unknown) => {
+        setMessageTone("error");
+        setMessage(getErrorMessage(error));
+      });
+  };
+
   return (
     <main
-      className={
-        loginStepVisible
-          ? "login-setup login-setup--login"
-          : "login-setup login-setup--wizard"
-      }
+      className={[
+        "login-setup",
+        loginStepVisible ? "login-setup--login" : "login-setup--wizard",
+        isReadyStep ? "login-setup--ready" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <header className="login-setup__chrome">
-        <span className="login-setup__brand">Voice Assistant 安装向导</span>
+        <span className="login-setup__brand">Voice Assistant 安裝向導</span>
         <WindowControls />
       </header>
 
       <section className="login-setup__shell" aria-live="polite">
-        {loginStepVisible ? null : <AssistantMark />}
+        {loginStepVisible || isReadyStep ? <AssistantMark /> : null}
         <div className="login-setup__heading">
-          <p className="login-setup__eyebrow">Voice Assistant 登录向导</p>
-          <h1>登录您的账户</h1>
+          <p className="login-setup__eyebrow">Voice Assistant 登入向導</p>
+          <h1>登入您的帳戶</h1>
         </div>
 
-        <ol className="login-setup__steps" aria-label="登录设置步骤">
+        <ol className="login-setup__steps" aria-label="登入設定步驟">
           {SETUP_STEPS.map((item, index) => (
             <li
               className={[
@@ -448,29 +1031,54 @@ export function LoginSetupPage(): React.JSX.Element {
           {step === "login" ? (
             <>
               <header className="login-setup__login-header">
-                <h2>登录您的账号</h2>
-                <div className="login-setup__mode-tabs">
+                <h2>登入您的帳號</h2>
+                <div
+                  className="login-setup__mode-tabs"
+                  role="tablist"
+                  aria-label="登入方式"
+                >
                   <button
-                    className="login-setup__mode-tab"
+                    className={[
+                      "login-setup__mode-tab",
+                      mode === "email" ? "login-setup__mode-tab--active" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     type="button"
+                    role="tab"
+                    aria-selected={mode === "email"}
                     onClick={() => {
-                      setMode(mode === "email" ? "ldap" : "email");
+                      setMode("email");
                       setPassword("");
                       setMessage(undefined);
                     }}
                   >
-                    {mode === "email" ? "使用AD域登录" : "使用邮箱验证码登录"}
+                    電子郵件驗證碼
+                  </button>
+                  <button
+                    className={[
+                      "login-setup__mode-tab",
+                      mode === "ldap" ? "login-setup__mode-tab--active" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === "ldap"}
+                    onClick={() => {
+                      setMode("ldap");
+                      setPassword("");
+                      setMessage(undefined);
+                    }}
+                  >
+                    AD 網域登入
                   </button>
                 </div>
               </header>
-              <p className="login-setup__login-intro">
-                使用邮箱 + 验证码快速登录，云端同步配置与历史。
-              </p>
-
               {mode === "email" ? (
                 <div className="login-setup__form">
                   <label className="login-setup__field">
-                    <span>电子邮箱</span>
+                    <span>電子郵件</span>
                     <input
                       value={email}
                       type="email"
@@ -480,13 +1088,13 @@ export function LoginSetupPage(): React.JSX.Element {
                     />
                   </label>
                   <label className="login-setup__field">
-                    <span>验证码</span>
+                    <span>驗證碼</span>
                     <div className="login-setup__code-row">
                       <input
                         value={code}
                         inputMode="numeric"
                         autoComplete="one-time-code"
-                        placeholder="验证码"
+                        placeholder="驗證碼"
                         onChange={(event) => setCode(event.currentTarget.value)}
                       />
                       <button
@@ -495,67 +1103,63 @@ export function LoginSetupPage(): React.JSX.Element {
                         disabled={!canSendCode}
                         onClick={sendCode}
                       >
-                        {cooldown > 0 ? `${cooldown}s` : "发送验证码"}
+                        {cooldown > 0 ? `${cooldown}s` : "發送驗證碼"}
                       </button>
                     </div>
-                    <small>请在160秒内输入验证码。</small>
+                    {cooldown > 0 ? (
+                      <small>請在 {cooldown} 秒內輸入驗證碼。</small>
+                    ) : null}
+                  </label>
+                  <label className="login-setup__check login-setup__license">
+                    <input
+                      type="checkbox"
+                      checked={acceptedLicense}
+                      onChange={(event) =>
+                        setAcceptedLicense(event.currentTarget.checked)
+                      }
+                    />
+                    <span>同意用戶使用許可</span>
                   </label>
                 </div>
               ) : (
                 <div className="login-setup__form">
                   <label className="login-setup__field">
-                    <span>AD 域账号</span>
+                    <span>AD 網域帳號</span>
                     <input
                       value={account}
                       autoComplete="username"
                       placeholder="domain\\account"
-                      onChange={(event) => setAccount(event.currentTarget.value)}
+                      onChange={(event) =>
+                        setAccount(event.currentTarget.value)
+                      }
                     />
                   </label>
                   <label className="login-setup__field">
-                    <span>密码</span>
+                    <span>密碼</span>
                     <input
                       value={password}
                       type="password"
                       autoComplete="current-password"
-                      placeholder="输入密码"
-                      onChange={(event) => setPassword(event.currentTarget.value)}
+                      placeholder="輸入密碼"
+                      onChange={(event) =>
+                        setPassword(event.currentTarget.value)
+                      }
                     />
+                  </label>
+                  <label className="login-setup__check login-setup__license">
+                    <input
+                      type="checkbox"
+                      checked={acceptedLicense}
+                      onChange={(event) =>
+                        setAcceptedLicense(event.currentTarget.checked)
+                      }
+                    />
+                    <span>同意用戶使用許可</span>
                   </label>
                 </div>
               )}
 
               {statusMessage}
-
-              <div className="login-setup__form-footer">
-                <label className="login-setup__check">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(event) =>
-                      setRememberMe(event.currentTarget.checked)
-                    }
-                  />
-                  <span>记住登录状态</span>
-                </label>
-                <button
-                  className="login-setup__primary"
-                  type="button"
-                  disabled={!canSubmit}
-                  onClick={submitLogin}
-                >
-                  {submitting ? (
-                    "正在登录..."
-                  ) : (
-                    <>
-                      <span>登录</span>
-                      <span className="login-setup__primary-arrow" aria-hidden="true">
-                        →
-                      </span>
-                    </>
-                  )}
-                </button>
-              </div>
             </>
           ) : null}
 
@@ -563,21 +1167,79 @@ export function LoginSetupPage(): React.JSX.Element {
             <SetupWizardPage
               step={contentStep}
               inputDeviceId={selectedInputDeviceId}
-              language={settings?.ui.language}
+              recordingLanguage={selectedRecordingLanguage}
+              language={settings?.ui.language ?? "zh-TW"}
+              setupVoiceInputShortcut={setupVoiceInputShortcut}
+              setupTranslateShortcut={setupTranslateShortcut}
+              setupRewriteShortcut={setupRewriteShortcut}
+              rewriteSelectedText={rewriteSelectedText}
+              translationTargetLanguage={selectedTranslationTargetLanguage}
+              voiceShortcutPressed={voiceShortcutPressed}
+              setupTranslateShortcutPressed={setupTranslateShortcutPressed}
+              setupRewriteShortcutPressed={setupRewriteShortcutPressed}
               pickerOpenSignal={microphonePickerOpenSignal}
               completingSetup={completingSetup}
-              onBack={goBackSetup}
-              onNext={continueSetup}
-              onSkipMicrophone={() => setContentStep("ready")}
+              onReadyStart={continueSetup}
               onOpenMicrophonePicker={() =>
                 setMicrophonePickerOpenSignal((current) => current + 1)
               }
               onMicrophoneDeviceChange={updateMicrophoneDevice}
+              onRecordingLanguageChange={updateRecordingLanguage}
+              onTranslationTargetLanguageChange={
+                updateTranslationTargetLanguage
+              }
+              onRewriteSelectedTextChange={setRewriteSelectedText}
             />
           ) : null}
 
           {loginStepVisible ? null : statusMessage}
         </div>
+
+        {loginStepVisible ? (
+          <footer className="login-setup__action-row login-setup__action-row--login">
+            <span className="login-setup__action-spacer" aria-hidden="true" />
+            <div className="login-setup__footer-actions">
+              <button
+                className="login-setup__primary login-setup__primary--wide"
+                type="button"
+                disabled={!canSubmit}
+                onClick={submitLogin}
+              >
+                {submitting ? (
+                  "正在登入..."
+                ) : (
+                  <>
+                    <span>登入</span>
+                    <span aria-hidden="true">→</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </footer>
+        ) : isReadyStep ? null : (
+          <footer className="login-setup__action-row login-setup__action-row--wizard">
+            <button
+              className="login-setup__back-link"
+              type="button"
+              disabled={completingSetup}
+              onClick={goBackSetup}
+            >
+              <span aria-hidden="true">↩</span>
+              上一步
+            </button>
+            <div className="login-setup__footer-actions">
+              <button
+                className="login-setup__primary login-setup__primary--wide"
+                type="button"
+                disabled={completingSetup}
+                onClick={continueSetup}
+              >
+                {getSetupPrimaryLabel(contentStep, completingSetup)}
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
+          </footer>
+        )}
       </section>
     </main>
   );
@@ -586,105 +1248,132 @@ export function LoginSetupPage(): React.JSX.Element {
 function SetupWizardPage({
   step,
   inputDeviceId,
+  recordingLanguage,
   language,
+  setupVoiceInputShortcut,
+  setupTranslateShortcut,
+  setupRewriteShortcut,
+  rewriteSelectedText,
+  translationTargetLanguage,
+  voiceShortcutPressed,
+  setupTranslateShortcutPressed,
+  setupRewriteShortcutPressed,
   pickerOpenSignal,
   completingSetup,
-  onBack,
-  onNext,
-  onSkipMicrophone,
+  onReadyStart,
   onOpenMicrophonePicker,
   onMicrophoneDeviceChange,
+  onRecordingLanguageChange,
+  onTranslationTargetLanguageChange,
+  onRewriteSelectedTextChange,
 }: {
   step: SetupContentStep;
   inputDeviceId: string;
-  language: AppSettings["ui"]["language"] | undefined;
+  recordingLanguage: RecordingLanguage;
+  language: AppSettings["ui"]["language"];
+  setupVoiceInputShortcut: string;
+  setupTranslateShortcut: string;
+  setupRewriteShortcut: string;
+  rewriteSelectedText: string;
+  translationTargetLanguage: TranslationTargetLanguage;
+  voiceShortcutPressed: boolean;
+  setupTranslateShortcutPressed: boolean;
+  setupRewriteShortcutPressed: boolean;
   pickerOpenSignal: number;
   completingSetup: boolean;
-  onBack(): void;
-  onNext(): void;
-  onSkipMicrophone(): void;
+  onReadyStart(): void;
   onOpenMicrophonePicker(): void;
   onMicrophoneDeviceChange(deviceId: string): void;
+  onRecordingLanguageChange(language: RecordingLanguage): void;
+  onTranslationTargetLanguageChange(language: TranslationTargetLanguage): void;
+  onRewriteSelectedTextChange(value: string): void;
 }): React.JSX.Element {
-  const primaryLabel =
-    step === "privacy"
-      ? "开始"
-      : step === "permissions"
-        ? "同意"
-        : step === "ready"
-          ? completingSetup
-            ? "正在进入..."
-            : "进入主应用"
-          : "下一步";
-
   return (
-    <>
-      <div className="login-setup__wizard-content">
-        {step === "privacy" ? <PrivacyStep /> : null}
-        {step === "permissions" ? <PermissionsStep /> : null}
-        {step === "microphone" ? (
-          <MicrophoneSetupStep
-            inputDeviceId={inputDeviceId}
-            language={language}
-            pickerOpenSignal={pickerOpenSignal}
-            onOpenPicker={onOpenMicrophonePicker}
-            onDeviceChange={onMicrophoneDeviceChange}
-          />
-        ) : null}
-        {step === "ready" ? <ReadyStep /> : null}
-      </div>
-      <footer className="login-setup__wizard-footer">
-        <button
-          className="login-setup__back-link"
-          type="button"
-          disabled={completingSetup}
-          onClick={onBack}
-        >
-          <span aria-hidden="true">↩</span>
-          上一步
-        </button>
-        <div className="login-setup__footer-actions">
-          {step === "microphone" ? (
-            <button
-              className="login-setup__ghost"
-              type="button"
-              onClick={onSkipMicrophone}
-            >
-              跳过设置
-              <span aria-hidden="true">···›</span>
-            </button>
-          ) : null}
-          <button
-            className="login-setup__primary login-setup__primary--wide"
-            type="button"
-            disabled={completingSetup}
-            onClick={onNext}
-          >
-            {primaryLabel}
-            <span aria-hidden="true">→</span>
-          </button>
-        </div>
-      </footer>
-    </>
+    <div className="login-setup__wizard-content">
+      {step === "privacy" ? <PrivacyStep /> : null}
+      {step === "permissions" ? <PermissionsStep /> : null}
+      {step === "microphone" ? (
+        <MicrophoneSetupStep
+          inputDeviceId={inputDeviceId}
+          language={language}
+          pickerOpenSignal={pickerOpenSignal}
+          onOpenPicker={onOpenMicrophonePicker}
+          onDeviceChange={onMicrophoneDeviceChange}
+        />
+      ) : null}
+      {step === "voiceShortcut" ? (
+        <ShortcutExperienceStep
+          title="測試語音輸入快捷鍵"
+          shortcut={setupVoiceInputShortcut}
+          pressed={voiceShortcutPressed}
+        />
+      ) : null}
+      {step === "dictationLanguage" ? (
+        <DictationLanguageStep
+          language={recordingLanguage}
+          onLanguageChange={onRecordingLanguageChange}
+        />
+      ) : null}
+      {step === "dictationTry" ? (
+        <DictationTryStep setupVoiceInputShortcut={setupVoiceInputShortcut} />
+      ) : null}
+      {step === "translateShortcut" ? (
+        <ShortcutExperienceStep
+          title="體驗翻譯快捷鍵"
+          shortcut={setupTranslateShortcut}
+          pressed={setupTranslateShortcutPressed}
+        />
+      ) : null}
+      {step === "translationTargetLanguage" ? (
+        <TranslationTargetLanguageStep
+          language={translationTargetLanguage}
+          onLanguageChange={onTranslationTargetLanguageChange}
+        />
+      ) : null}
+      {step === "translationTry" ? (
+        <TranslationTryStep
+          setupTranslateShortcut={setupTranslateShortcut}
+          setupVoiceInputShortcut={setupVoiceInputShortcut}
+        />
+      ) : null}
+      {step === "rewriteShortcut" ? (
+        <ShortcutExperienceStep
+          title="體驗改寫快捷鍵"
+          shortcut={setupRewriteShortcut}
+          pressed={setupRewriteShortcutPressed}
+        />
+      ) : null}
+      {step === "rewriteTry" ? (
+        <RewriteTryStep
+          setupRewriteShortcut={setupRewriteShortcut}
+          setupVoiceInputShortcut={setupVoiceInputShortcut}
+          selectedText={rewriteSelectedText}
+          onSelectedTextChange={onRewriteSelectedTextChange}
+        />
+      ) : null}
+      {step === "ready" ? (
+        <ReadyStep completingSetup={completingSetup} onStart={onReadyStart} />
+      ) : null}
+    </div>
   );
 }
 
 function PrivacyStep(): React.JSX.Element {
   return (
-    <section className="login-setup__copy-page">
-      <h2>感谢您的信任，我们尊重您的隐私</h2>
+    <section className="login-setup__copy-page login-setup__copy-page--privacy">
+      <h2>感謝您的信任，我們尊重您的隱私</h2>
       <div className="login-setup__copy-list">
         <InfoBlock
-          title="零云数据保留"
-          description="您的语音输入是私密的，且没有数据保留。"
+          title="零雲端資料保留"
+          description="您的語音輸入是私密的，且不會保留資料。"
         />
         <InfoBlock
-          title="从不训练您的数据"
-          description="您的任何输入数据都不会被我们或第三方存储或用于模型训练。"
+          title="絕不訓練您的資料"
+          description="您的任何輸入資料都不會被我們或第三方儲存或用於模型訓練。"
         />
         <InfoBlock
-          title="设备内历史记录存储"
-          description="所有历史记录都保留在您的设备上。"
+          title="裝置內歷史記錄儲存"
+          description="所有歷史記錄都保留在您的裝置上。"
         />
       </div>
     </section>
@@ -693,24 +1382,20 @@ function PrivacyStep(): React.JSX.Element {
 
 function PermissionsStep(): React.JSX.Element {
   return (
-    <section className="login-setup__copy-page">
-      <h2>使用 Voice Assistant 的全部功能，需要您同意我们使用以下权限。</h2>
-      <div className="login-setup__permission-consent">
-        <span aria-hidden="true">☑</span>
-        <strong>自动写入权限</strong>
-      </div>
+    <section className="login-setup__copy-page login-setup__copy-page--permissions">
+      <h2>使用 Voice Assistant 的全部功能，需要您同意我們使用以下權限。</h2>
       <div className="login-setup__copy-list">
         <InfoBlock
-          title="自动写入权限"
-          description="允许 AOA 把结果放进当前选中输入框。"
+          title="自動寫入權限"
+          description="允許 AOA 把結果放進目前選取的輸入框。"
         />
         <InfoBlock
-          title="剪贴板/选中文本访问"
-          description="用于粘贴、改写、翻译选中的内容。"
+          title="剪貼簿／選取文字存取"
+          description="用於貼上、改寫、翻譯選取的內容。"
         />
         <InfoBlock
-          title="全局快捷键"
-          description="允许在其他应用中唤起 AOA。"
+          title="全域快捷鍵"
+          description="允許在其他應用程式中喚起 AOA。"
         />
       </div>
     </section>
@@ -736,16 +1421,16 @@ function MicrophoneSetupStep({
     <section className="login-setup__microphone-page">
       <header className="login-setup__microphone-header">
         <div>
-          <h2>测试您的麦克风</h2>
-          <p>选择麦克风并开始说话。</p>
+          <h2>測試您的麥克風</h2>
+          <p>選擇麥克風並開始說話。</p>
         </div>
         <button
           className="login-setup__device-link"
           type="button"
           onClick={onOpenPicker}
         >
-          <span aria-hidden="true">♩</span>
-          换一个麦克风
+          <ThemedIcon name="microphone" mode="image" />
+          換一個麥克風
         </button>
       </header>
       <MicrophoneDevicePicker
@@ -761,23 +1446,411 @@ function MicrophoneSetupStep({
           activeBars={micLevel.activeBars}
           active={micLevel.status === "listening"}
           barCount={LOGIN_SETUP_MICROPHONE_METER_BARS}
-          label="麦克风输入音量"
+          label="麥克風輸入音量"
         />
-        <strong>当您说话时是否看到蓝色条型图在移动</strong>
+        <strong>當您說話時是否看到藍色條形圖在移動</strong>
         {micLevel.message ? <p>{micLevel.message}</p> : null}
       </div>
     </section>
   );
 }
 
-function ReadyStep(): React.JSX.Element {
+function ShortcutExperienceStep({
+  title,
+  shortcut,
+  pressed,
+}: {
+  title: string;
+  shortcut: string;
+  pressed: boolean;
+}): React.JSX.Element {
+  const shortcutLabel = formatSetupShortcutLabel(shortcut);
+
+  return (
+    <section className="login-setup__experience-page login-setup__shortcut-page">
+      <header className="login-setup__experience-header">
+        <h2>{title}</h2>
+        <p>
+          按下右側
+          <ShortcutKey>{shortcutLabel}</ShortcutKey>鍵
+        </p>
+      </header>
+      <div className="login-setup__experience-center">
+        <ShortcutKeyboardDemo shortcut={shortcut} pressed={pressed} />
+        <strong>按下時，您見到按鈕變成藍色了麼？</strong>
+      </div>
+    </section>
+  );
+}
+
+function DictationLanguageStep({
+  language,
+  onLanguageChange,
+}: {
+  language: RecordingLanguage;
+  onLanguageChange(language: RecordingLanguage): void;
+}): React.JSX.Element {
+  return (
+    <section className="login-setup__experience-page login-setup__language-page">
+      <header className="login-setup__experience-header">
+        <h2>設定語音輸入時的語言</h2>
+        <p>將信息口述到文本框中</p>
+      </header>
+      <div className="login-setup__language-center">
+        <label className="login-setup__language-select">
+          <span className="login-setup__sr-only">選擇您的輸入語言</span>
+          <select
+            value={language}
+            onChange={(event) =>
+              onLanguageChange(event.currentTarget.value as RecordingLanguage)
+            }
+          >
+            {LOGIN_SETUP_RECORDING_LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <strong>選擇您的輸入語言</strong>
+      </div>
+    </section>
+  );
+}
+
+function TranslationTargetLanguageStep({
+  language,
+  onLanguageChange,
+}: {
+  language: TranslationTargetLanguage;
+  onLanguageChange(language: TranslationTargetLanguage): void;
+}): React.JSX.Element {
+  return (
+    <section className="login-setup__experience-page login-setup__language-page">
+      <header className="login-setup__experience-header">
+        <h2>設定翻譯目標語言</h2>
+        <p>即時將您口述的語言翻譯成目標語言</p>
+      </header>
+      <div className="login-setup__language-center">
+        <label className="login-setup__language-select login-setup__language-select--translation">
+          <span className="login-setup__sr-only">選擇您的翻譯目標語言</span>
+          <select
+            value={language}
+            onChange={(event) =>
+              onLanguageChange(
+                event.currentTarget.value as TranslationTargetLanguage,
+              )
+            }
+          >
+            {LOGIN_SETUP_TRANSLATION_TARGET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <strong>選擇您的翻譯目標語言</strong>
+      </div>
+    </section>
+  );
+}
+
+function DictationTryStep({
+  setupVoiceInputShortcut,
+}: {
+  setupVoiceInputShortcut: string;
+}): React.JSX.Element {
+  const shortcutLabel = formatSetupShortcutLabel(setupVoiceInputShortcut);
+  return (
+    <section className="login-setup__experience-page login-setup__dictation-page">
+      <header className="login-setup__experience-header">
+        <h2>試試語音輸入功能</h2>
+        <p>將信息口述到文本框中</p>
+      </header>
+      <div className="login-setup__dictation-layout">
+        <div className="login-setup__dictation-guide">
+          <ol>
+            <li>
+              輕按
+              <ShortcutKey>{shortcutLabel}</ShortcutKey>
+              鍵並鬆開
+            </li>
+            <li>朗讀下方的文本內容</li>
+            <li>
+              結束後輕按
+              <ShortcutKey>{shortcutLabel}</ShortcutKey>
+              鍵並鬆開
+            </li>
+          </ol>
+          <blockquote>這是一段測試文本。</blockquote>
+        </div>
+        <label className="login-setup__dictation-document">
+          <DocumentHeader title="文本文檔" />
+          <textarea placeholder={`按下${shortcutLabel}鍵一次，開始說話...`} />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function TranslationTryStep({
+  setupTranslateShortcut,
+  setupVoiceInputShortcut,
+}: {
+  setupTranslateShortcut: string;
+  setupVoiceInputShortcut: string;
+}): React.JSX.Element {
+  const shortcutLabel = formatSetupShortcutLabel(setupTranslateShortcut);
+  const stopShortcutLabel = formatSetupShortcutLabel(setupVoiceInputShortcut);
+  return (
+    <section className="login-setup__experience-page login-setup__dictation-page">
+      <header className="login-setup__experience-header">
+        <h2>試試翻譯功能</h2>
+        <p>即時將您口述的語言翻譯成目標語言</p>
+      </header>
+      <div className="login-setup__dictation-layout">
+        <div className="login-setup__dictation-guide">
+          <ol>
+            <li>
+              輕按
+              <ShortcutKey>{shortcutLabel}</ShortcutKey>
+              鍵並鬆開
+            </li>
+            <li>朗讀下方的文本內容</li>
+            <li>
+              結束後輕按
+              <ShortcutKey>{stopShortcutLabel}</ShortcutKey>
+              鍵並鬆開
+            </li>
+          </ol>
+          <blockquote>這是一段測試翻譯文本。</blockquote>
+        </div>
+        <label className="login-setup__dictation-document">
+          <DocumentHeader title="文本文檔" />
+          <textarea placeholder={`按下${shortcutLabel}鍵一次，開始說話...`} />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function RewriteTryStep({
+  setupRewriteShortcut,
+  setupVoiceInputShortcut,
+  selectedText,
+  onSelectedTextChange,
+}: {
+  setupRewriteShortcut: string;
+  setupVoiceInputShortcut: string;
+  selectedText: string;
+  onSelectedTextChange(value: string): void;
+}): React.JSX.Element {
+  const shortcutLabel = formatSetupShortcutLabel(setupRewriteShortcut);
+  const stopShortcutLabel = formatSetupShortcutLabel(setupVoiceInputShortcut);
+  return (
+    <section className="login-setup__experience-page login-setup__dictation-page login-setup__rewrite-page">
+      <header className="login-setup__experience-header">
+        <h2>試試智能改寫功能</h2>
+        <p>口述以改寫選定的文本</p>
+      </header>
+      <div className="login-setup__dictation-layout">
+        <div className="login-setup__dictation-guide">
+          <ol>
+            <li>選中右側文字</li>
+            <li>
+              輕按
+              <ShortcutKey>{shortcutLabel}</ShortcutKey>
+              鍵並鬆開
+            </li>
+            <li>朗讀下方的文本內容</li>
+            <li>
+              結束後輕按
+              <ShortcutKey>{stopShortcutLabel}</ShortcutKey>
+              鍵並鬆開
+            </li>
+          </ol>
+          <blockquote>改寫為正式彙報格式</blockquote>
+        </div>
+        <div className="login-setup__dictation-document">
+          <DocumentHeader title="選中下方文字" />
+          <textarea
+            className="login-setup__selected-document-textarea"
+            value={selectedText}
+            onChange={(event) =>
+              onSelectedTextChange(event.currentTarget.value)
+            }
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DocumentHeader({ title }: { title: string }): React.JSX.Element {
+  return (
+    <span>
+      <span className="login-setup__dictation-document-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" focusable="false">
+          <path d="M4 1.5h5.1L12.5 5v9.5h-8.5z" />
+          <path d="M9 1.5V5h3.5" />
+          <path d="M6 7.25h4.5M6 9.5h4.5M6 11.75h3" />
+        </svg>
+      </span>
+      {title}
+    </span>
+  );
+}
+
+function ShortcutKey({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return <kbd className="login-setup__shortcut-key">{children}</kbd>;
+}
+
+function ShortcutKeyboardDemo({
+  shortcut,
+  pressed,
+}: {
+  shortcut: string;
+  pressed: boolean;
+}): React.JSX.Element {
+  const shortcutParts = shortcut
+    .split("+")
+    .map((part) => part.trim().toLowerCase());
+  const displayPlatform = detectShortcutDisplayPlatform();
+  const usesRightAlt =
+    shortcutParts.includes("rightalt") ||
+    shortcutParts.includes("right alt") ||
+    shortcutParts.includes("altgr");
+  const rightAltDisplaysAsSystemKey = displayPlatform === "mac" && usesRightAlt;
+  const altActive =
+    pressed &&
+    !rightAltDisplaysAsSystemKey &&
+    (usesRightAlt || shortcutParts.includes("alt"));
+  const winActive =
+    pressed &&
+    (rightAltDisplaysAsSystemKey ||
+      shortcutParts.includes("rightwin") ||
+      shortcutParts.includes("right win") ||
+      shortcutParts.includes("rightmeta") ||
+      shortcutParts.includes("right meta") ||
+      shortcutParts.includes("metaright") ||
+      shortcutParts.includes("meta right") ||
+      shortcutParts.includes("rightsuper") ||
+      shortcutParts.includes("right super") ||
+      shortcutParts.includes("win") ||
+      shortcutParts.includes("meta") ||
+      shortcutParts.includes("super") ||
+      shortcutParts.includes("command"));
+  const showSystemKey =
+    rightAltDisplaysAsSystemKey ||
+    shortcutParts.includes("rightwin") ||
+    shortcutParts.includes("right win") ||
+    shortcutParts.includes("rightmeta") ||
+    shortcutParts.includes("right meta") ||
+    shortcutParts.includes("metaright") ||
+    shortcutParts.includes("meta right") ||
+    shortcutParts.includes("rightsuper") ||
+    shortcutParts.includes("right super") ||
+    shortcutParts.includes("win") ||
+    shortcutParts.includes("meta") ||
+    shortcutParts.includes("super") ||
+    shortcutParts.includes("command");
+  const winKeyLabel = displayPlatform === "mac" ? "cmd" : "win";
+  const shiftActive =
+    pressed &&
+    (shortcutParts.includes("rightshift") ||
+      shortcutParts.includes("right shift") ||
+      shortcutParts.includes("shift"));
+  const spaceActive = pressed && shortcutParts.includes("space");
+  const slashActive = pressed && shortcutParts.includes("/");
+  const showShiftKey =
+    shortcutParts.includes("rightshift") ||
+    shortcutParts.includes("right shift") ||
+    shortcutParts.includes("shift");
+  const showSlashKey = showShiftKey || shortcutParts.includes("/");
+
+  return (
+    <div className="login-setup__keyboard-demo" aria-hidden="true">
+      <div className="login-setup__keyboard-row login-setup__keyboard-row--top">
+        <KeyboardKey muted>M</KeyboardKey>
+        <KeyboardKey>,</KeyboardKey>
+        <KeyboardKey>.</KeyboardKey>
+        {showSlashKey ? <KeyboardKey active={slashActive}>/</KeyboardKey> : null}
+        {showShiftKey ? (
+          <KeyboardKey wide active={shiftActive}>
+            shift
+          </KeyboardKey>
+        ) : null}
+      </div>
+      <div className="login-setup__keyboard-row login-setup__keyboard-row--bottom">
+        <KeyboardKey wide active={spaceActive} muted={!spaceActive} />
+        <KeyboardKey active={altActive || winActive}>
+          {showSystemKey ? winKeyLabel : "alt"}
+        </KeyboardKey>
+        <KeyboardKey muted>ctrl</KeyboardKey>
+        <KeyboardKey compact>◀</KeyboardKey>
+        <KeyboardKey compact>▲</KeyboardKey>
+        <KeyboardKey compact muted>
+          ▶
+        </KeyboardKey>
+      </div>
+    </div>
+  );
+}
+
+function KeyboardKey({
+  children,
+  active = false,
+  muted = false,
+  wide = false,
+  compact = false,
+}: {
+  children?: React.ReactNode;
+  active?: boolean;
+  muted?: boolean;
+  wide?: boolean;
+  compact?: boolean;
+}): React.JSX.Element {
+  return (
+    <span
+      className={[
+        "login-setup__keyboard-key",
+        active ? "login-setup__keyboard-key--active" : "",
+        muted ? "login-setup__keyboard-key--muted" : "",
+        wide ? "login-setup__keyboard-key--wide" : "",
+        compact ? "login-setup__keyboard-key--compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ReadyStep({
+  completingSetup,
+  onStart,
+}: {
+  completingSetup: boolean;
+  onStart(): void;
+}): React.JSX.Element {
   return (
     <section className="login-setup__ready-page">
-      <div className="login-setup__ready-icon" aria-hidden="true">
-        ✓
-      </div>
-      <h2>准备就绪</h2>
-      <p>账户、权限说明和麦克风设置已经完成。进入主应用后即可继续配置和使用。</p>
+      <h2>讓每一次表達，都清晰高效</h2>
+      <p>Voice Assistant 已準備就緒，開始語音優先的工作流。</p>
+      <button
+        className="login-setup__primary login-setup__ready-primary"
+        type="button"
+        disabled={completingSetup}
+        onClick={onStart}
+      >
+        {completingSetup ? "正在進入..." : "開始使用"}
+        <span aria-hidden="true">→</span>
+      </button>
     </section>
   );
 }
@@ -814,7 +1887,7 @@ function useLoginSetupMicrophoneLevel(inputDeviceId: string): {
     ) {
       setActiveBars(0);
       setStatus("unavailable");
-      setMessage("当前环境无法读取麦克风。");
+      setMessage("目前環境無法讀取麥克風。");
       return;
     }
 
@@ -825,7 +1898,7 @@ function useLoginSetupMicrophoneLevel(inputDeviceId: string): {
     if (!AudioContextConstructor) {
       setActiveBars(0);
       setStatus("unavailable");
-      setMessage("当前环境无法检测音量。");
+      setMessage("目前環境無法偵測音量。");
       return;
     }
 
@@ -888,9 +1961,7 @@ function useLoginSetupMicrophoneLevel(inputDeviceId: string): {
         if (!cancelled) {
           setActiveBars(0);
           setStatus("error");
-          setMessage(
-            `麦克风检测失败：${error instanceof Error ? error.message : String(error)}`,
-          );
+          setMessage(`麥克風偵測失敗：${getErrorMessage(error)}`);
         }
       }
     };

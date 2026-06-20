@@ -118,7 +118,9 @@ import { createUninstallWindow } from "./windows/createUninstallWindow";
 import { resolveRuntimeAppIconPath } from "./windows/appIcon";
 import {
   blockHomeWindowAltSpaceMenu,
+  ensureLoginSetupShortcutCaptureWindowGuards,
   ensureShortcutCaptureWindowGuards,
+  wireLoginSetupShortcutCaptureWindowGuard,
   wireShortcutCaptureWindowGuard,
 } from "./windows/shortcutCaptureWindowGuard";
 import { registerWindowControlIpc } from "./windows/windowControlIpc";
@@ -372,6 +374,11 @@ const POST_INSTALL_LOGIN_ARGS = new Set([
 ]);
 const SILENT_UPDATE_ARGS = new Set(["--silent-update", "/silent-update"]);
 
+export interface AppLaunchTarget {
+  executablePath: string;
+  args: string[];
+}
+
 export function configureAppIdentity(
   platform: NodeJS.Platform = process.platform,
 ): void {
@@ -458,23 +465,94 @@ export function parseSilentUpdateInstallDir(
   return undefined;
 }
 
-export function launchInstalledAppHome(input: {
+export function resolveInstalledAppLaunchTarget(input: {
   installDir: string;
+  platform?: NodeJS.Platform;
   productName?: string;
-  spawnProcess?: typeof spawn;
-}): void {
-  const spawnProcess = input.spawnProcess ?? spawn;
+}): AppLaunchTarget {
   const productName = input.productName ?? INSTALL_TARGET_PRODUCT_NAME;
-  const child = spawnProcess(
-    join(input.installDir, `${productName}.exe`),
-    ["--open-home"],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: false,
-    } satisfies SpawnOptions,
-  );
-  child.unref();
+  if ((input.platform ?? process.platform) === "darwin") {
+    const appBundlePath = input.installDir.endsWith(".app")
+      ? input.installDir
+      : join(input.installDir, `${productName}.app`);
+    return {
+      executablePath: join(appBundlePath, "Contents", "MacOS", productName),
+      args: ["--open-home"],
+    };
+  }
+
+  return {
+    executablePath: join(input.installDir, `${productName}.exe`),
+    args: ["--open-home"],
+  };
+}
+
+export function resolvePostInstallLaunchTarget(input: {
+  installDir: string;
+  isDevelopmentRuntime: boolean;
+  platform: NodeJS.Platform;
+  appPath: string;
+  execPath: string;
+  productName?: string;
+}): AppLaunchTarget {
+  if (input.isDevelopmentRuntime && input.platform !== "win32") {
+    return {
+      executablePath: input.execPath,
+      args: [input.appPath, "--open-home"],
+    };
+  }
+
+  return resolveInstalledAppLaunchTarget({
+    installDir: input.installDir,
+    platform: input.platform,
+    productName: input.productName,
+  });
+}
+
+export function launchInstalledAppHome(input: {
+  target: AppLaunchTarget;
+  spawnProcess?: typeof spawn;
+  existsSync?: typeof existsSync;
+}): Promise<void> {
+  const spawnProcess = input.spawnProcess ?? spawn;
+  const fileExists = input.existsSync ?? existsSync;
+  const executablePath = input.target.executablePath;
+  if (!fileExists(executablePath)) {
+    return Promise.reject(
+      new Error(`Installed app executable not found: ${executablePath}`),
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess(
+      executablePath,
+      input.target.args,
+      {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      } satisfies SpawnOptions,
+    );
+    let settled = false;
+    const settleOk = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+    const settleError = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    };
+
+    child.once?.("error", settleError);
+    child.once?.("spawn", settleOk);
+    child.unref();
+  });
 }
 
 interface InstallerLaunchWindow {
@@ -486,21 +564,30 @@ interface InstallerLaunchWindow {
 export function handoffInstallerLaunch(input: {
   installerWindow?: InstallerLaunchWindow | null;
   installDir: string;
-  launch?: (input: { installDir: string }) => void;
+  isDevelopmentRuntime?: boolean;
+  platform?: NodeJS.Platform;
+  appPath?: string;
+  execPath?: string;
+  launch?: (input: { target: AppLaunchTarget }) => Promise<void>;
   exitApp?: (exitCode: number) => void;
-}): void {
-  const installerWindow = input.installerWindow;
-  if (installerWindow && !installerWindow.isDestroyed()) {
-    installerWindow.hide();
-    installerWindow.destroy();
-  }
-
+}): Promise<void> {
   const launch = input.launch ?? launchInstalledAppHome;
   const exitApp = input.exitApp ?? ((exitCode: number) => app.exit(exitCode));
-  setTimeout(() => {
-    launch({ installDir: input.installDir });
+  const target = resolvePostInstallLaunchTarget({
+    installDir: input.installDir,
+    isDevelopmentRuntime: input.isDevelopmentRuntime ?? false,
+    platform: input.platform ?? process.platform,
+    appPath: input.appPath ?? app.getAppPath(),
+    execPath: input.execPath ?? process.execPath,
+  });
+  return launch({ target }).then(() => {
+    const installerWindow = input.installerWindow;
+    if (installerWindow && !installerWindow.isDestroyed()) {
+      installerWindow.hide();
+      installerWindow.destroy();
+    }
     exitApp(0);
-  }, 0);
+  });
 }
 
 const AUTH_IPC_CHANNELS = new Set([
@@ -509,6 +596,7 @@ const AUTH_IPC_CHANNELS = new Set([
   "voice:auth:send-email-code",
   "voice:auth:login-email-code",
   "voice:auth:login-ldap",
+  "voice:auth:complete-login-setup",
   // Logout is idempotent in AuthService and safe before authentication.
   "voice:auth:logout",
 ]);
@@ -539,6 +627,9 @@ export async function runAuthenticatedDirectIpc<T>(
 
 export function createLazyUpdateService(
   factory: () => UpdateService,
+  options: {
+    isDisabled?: () => boolean;
+  } = {},
 ): UpdateService {
   let service: UpdateService | undefined;
   const getService = (): UpdateService => {
@@ -546,7 +637,13 @@ export function createLazyUpdateService(
     return service;
   };
   return {
-    checkForUpdates: (options) => getService().checkForUpdates(options),
+    checkForUpdates: (checkOptions) => {
+      if (options.isDisabled?.() ?? false) {
+        console.log("[update] check disabled by runtime guard");
+        return Promise.resolve({ status: "disabled" });
+      }
+      return getService().checkForUpdates(checkOptions);
+    },
     restartToUpdate: () => {
       getService().restartToUpdate();
     },
@@ -563,8 +660,52 @@ export interface StartupGateOptions {
   stopAuthenticatedRuntime(): void;
   showLoginSetupWindow(snapshot: AuthSessionSnapshot): void;
   hideLoginSetupWindow?(): void;
+  openHomeWindowAfterLoginSetup?(): void;
   forceLoginSetupOnAuthenticatedRestore?: boolean;
   onLoginSetupReady?(complete: () => Promise<void>): void;
+}
+
+export interface LoginSetupWindowVisibilityTarget {
+  once(event: "ready-to-show", listener: () => void): unknown;
+  webContents: {
+    once(
+      event: "did-finish-load" | "did-fail-load",
+      listener: () => void,
+    ): unknown;
+  };
+}
+
+export function wireLoginSetupWindowVisibility(
+  window: LoginSetupWindowVisibilityTarget,
+  showWindow: () => void,
+  options: {
+    setTimeoutFn?: typeof setTimeout;
+    clearTimeoutFn?: typeof clearTimeout;
+    timeoutMs?: number;
+  } = {},
+): void {
+  const setTimeoutFn = options.setTimeoutFn ?? setTimeout;
+  const clearTimeoutFn = options.clearTimeoutFn ?? clearTimeout;
+  const timeoutMs = options.timeoutMs ?? 1200;
+  let shown = false;
+  let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const showOnce = (): void => {
+    if (shown) {
+      return;
+    }
+    shown = true;
+    if (fallbackTimer) {
+      clearTimeoutFn(fallbackTimer);
+      fallbackTimer = undefined;
+    }
+    showWindow();
+  };
+
+  window.once("ready-to-show", showOnce);
+  window.webContents.once("did-finish-load", showOnce);
+  window.webContents.once("did-fail-load", showOnce);
+  fallbackTimer = setTimeoutFn(showOnce, timeoutMs);
 }
 
 export async function runStartupGate(
@@ -583,7 +724,7 @@ export async function runStartupGate(
       await options.startAuthenticatedRuntime();
       if (desiredAuthenticated) {
         runtimeStarted = true;
-        if (loginSetupVisible) {
+        if (loginSetupVisible && !loginSetupCanComplete) {
           options.hideLoginSetupWindow?.();
           loginSetupVisible = false;
         }
@@ -610,7 +751,16 @@ export async function runStartupGate(
       return Promise.resolve();
     }
     desiredAuthenticated = true;
-    return scheduleTransition();
+    return scheduleTransition().then(() => {
+      if (desiredAuthenticated && runtimeStarted) {
+        if (loginSetupVisible) {
+          options.hideLoginSetupWindow?.();
+          loginSetupVisible = false;
+        }
+        loginSetupCanComplete = false;
+        options.openHomeWindowAfterLoginSetup?.();
+      }
+    });
   };
 
   options.onLoginSetupReady?.(completeLoginSetup);
@@ -619,15 +769,13 @@ export async function runStartupGate(
     snapshot: AuthSessionSnapshot,
   ): Promise<void> | void => {
     if (snapshot.status === "authenticated") {
-      if (
-        (loginSetupVisible || forceLoginSetupOnAuthenticatedRestore) &&
-        !runtimeStarted
-      ) {
+      if (loginSetupVisible || forceLoginSetupOnAuthenticatedRestore) {
         forceLoginSetupOnAuthenticatedRestore = false;
         loginSetupCanComplete = true;
         loginSetupVisible = true;
+        desiredAuthenticated = true;
         options.showLoginSetupWindow(snapshot);
-        return undefined;
+        return scheduleTransition();
       }
       loginSetupCanComplete = false;
       desiredAuthenticated = true;
@@ -681,7 +829,11 @@ export async function bootstrap(): Promise<void> {
           launchAtLogin: false,
           updated: true,
         });
-        launchInstalledAppHome({ installDir: silentUpdateInstallDir });
+        await launchInstalledAppHome({
+          target: resolveInstalledAppLaunchTarget({
+            installDir: silentUpdateInstallDir,
+          }),
+        });
         app.exit(0);
       } catch (error) {
         console.warn("[bootstrap] silent update install failed", error);
@@ -763,7 +915,7 @@ export async function bootstrap(): Promise<void> {
     device: {
       installationId,
       deviceName: os.hostname(),
-      platform: "windows",
+      platform: resolveAuthDevicePlatform(process.platform),
       appVersion: app.getVersion(),
       locale: configStore.get().ui.language,
     },
@@ -822,6 +974,8 @@ export async function bootstrap(): Promise<void> {
   let openHomeWindowForUpdateReady = (_payload: {
     version?: string;
   }): void => {};
+  let openHomeWindowAfterLoginSetup = (): void => {};
+  let loginSetupActive = false;
   const historyStore = createFileHistoryStore({
     rootDir: join(app.getPath("userData"), "history"),
     audioEncryptionKey: getOrCreateHistoryAudioEncryptionKey({
@@ -886,35 +1040,42 @@ export async function bootstrap(): Promise<void> {
     ),
   });
   const versionPhase = resolvePackagedVersionPhase(__AOA_VERSION_PHASE__);
+  const allowDevelopmentBackendUpdateCheck =
+    process.env.AOA_DEV_BACKEND_UPDATE_CHECK === "1";
   console.log(
     `[bootstrap] update versionCheckEndpoint=${
       versionCheckEndpoint ? redactUrlForLog(versionCheckEndpoint) : "disabled"
-    } phase=${versionPhase}`,
+    } phase=${versionPhase} devBackendCheck=${allowDevelopmentBackendUpdateCheck}`,
   );
-  const updateService = createLazyUpdateService(() =>
-    createUpdateService({
-      allowDevelopmentBackendCheck: Boolean(versionCheckEndpoint),
-      autoUpdater: electronUpdater.autoUpdater,
-      currentInstallDir: dirname(app.getPath("exe")),
-      currentVersion: app.getVersion(),
-      isPackaged: app.isPackaged,
-      platform: resolveVersionPlatform(process.platform),
-      quitApp: () => app.quit(),
-      updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
-      versionCheckClient: createHttpVersionCheckClient({
-        endpoint: versionCheckEndpoint,
-        phase: versionPhase,
+  const updateService = createLazyUpdateService(
+    () =>
+      createUpdateService({
+        allowDevelopmentBackendCheck:
+          allowDevelopmentBackendUpdateCheck && Boolean(versionCheckEndpoint),
+        autoUpdater: electronUpdater.autoUpdater,
+        currentInstallDir: dirname(app.getPath("exe")),
+        currentVersion: app.getVersion(),
+        isPackaged: app.isPackaged,
+        platform: resolveVersionPlatform(process.platform),
+        quitApp: () => app.quit(),
+        updateFeedUrl: process.env.AOA_UPDATE_FEED_URL,
+        versionCheckClient: createHttpVersionCheckClient({
+          endpoint: versionCheckEndpoint,
+          phase: versionPhase,
+        }),
+        onUpdateReady: (payload) => {
+          broadcastUpdateReady(payload);
+        },
+        onDownloadProgress: (payload) => {
+          broadcastUpdateDownloadProgress(payload);
+        },
+        onError: (error) => {
+          console.warn("[bootstrap] update check failed", error);
+        },
       }),
-      onUpdateReady: (payload) => {
-        broadcastUpdateReady(payload);
-      },
-      onDownloadProgress: (payload) => {
-        broadcastUpdateDownloadProgress(payload);
-      },
-      onError: (error) => {
-        console.warn("[bootstrap] update check failed", error);
-      },
-    }),
+    {
+      isDisabled: () => loginSetupActive,
+    },
   );
 
   registerIpcRoutes(createAuthenticatedIpcMainAdapter(ipcMain, authService), {
@@ -958,6 +1119,7 @@ export async function bootstrap(): Promise<void> {
     "voice:auth:complete-login-setup",
     async () => {
       await completeLoginSetup?.();
+      loginSetupActive = false;
     },
   );
 
@@ -988,6 +1150,7 @@ export async function bootstrap(): Promise<void> {
     );
   };
   const openLoginSetupWindow = (snapshot: AuthSessionSnapshot): void => {
+    loginSetupActive = true;
     latestLoginSetupSnapshot = snapshot;
     if (loginSetupWindow && !loginSetupWindow.isDestroyed()) {
       showLoginSetupWindowWithLatestSnapshot();
@@ -997,19 +1160,17 @@ export async function bootstrap(): Promise<void> {
     loginSetupWindow = createLoginSetupWindow({
       route: openPostInstallLoginOnLaunch ? "postInstallLogin" : "loginSetup",
     });
-    loginSetupWindow.once(
-      "ready-to-show",
-      showLoginSetupWindowWithLatestSnapshot,
-    );
-    loginSetupWindow.webContents.once(
-      "did-fail-load",
+    wireLoginSetupWindowVisibility(
+      loginSetupWindow,
       showLoginSetupWindowWithLatestSnapshot,
     );
     loginSetupWindow.on("closed", () => {
       loginSetupWindow = undefined;
+      loginSetupActive = false;
     });
   };
   const hideLoginSetupWindow = (): void => {
+    loginSetupActive = false;
     if (loginSetupWindow && !loginSetupWindow.isDestroyed()) {
       loginSetupWindow.close();
     }
@@ -1020,9 +1181,6 @@ export async function bootstrap(): Promise<void> {
   async function startAuthenticatedRuntime(): Promise<void> {
     if (stopAuthenticatedRuntime) {
       return;
-    }
-    if (loginSetupWindow && !loginSetupWindow.isDestroyed()) {
-      loginSetupWindow.close();
     }
 
     const overlayWindow = createOverlayWindow({
@@ -1150,8 +1308,18 @@ export async function bootstrap(): Promise<void> {
     };
     app.on("will-quit", willQuitHandler);
 
-    const handleToggle = (mode: RecordingMode): void => {
-      if (shortcutCaptureDepth > 0) {
+    const handleToggle = (
+      mode: RecordingMode,
+      options: {
+        allowDuringShortcutCapture?: boolean;
+        selectedText?: string;
+        previewSelectedText?: string;
+      } = {},
+    ): void => {
+      if (
+        shortcutCaptureDepth > 0 &&
+        options.allowDuringShortcutCapture !== true
+      ) {
         console.log(`[bootstrap] 快捷鍵錄入中，忽略 toggle mode=${mode}`);
         return;
       }
@@ -1217,7 +1385,15 @@ export async function bootstrap(): Promise<void> {
         } else {
           applyOverlayWindowLayout(overlayWindow, layout);
         }
-        overlayWindow.webContents.send("voice:toggle-recording", { mode });
+        overlayWindow.webContents.send("voice:toggle-recording", {
+          mode,
+          ...(options.selectedText !== undefined
+            ? { selectedText: options.selectedText }
+            : {}),
+          ...(options.previewSelectedText !== undefined
+            ? { previewSelectedText: options.previewSelectedText }
+            : {}),
+        });
         console.log(`[bootstrap] 已傳送 voice:toggle-recording，mode=${mode}`);
       })();
     };
@@ -1257,6 +1433,7 @@ export async function bootstrap(): Promise<void> {
         onShortcutHelp: handleShortcutHelp,
         onShortcutHelpDismiss: handleShortcutHelpDismiss,
       });
+      registeredShortcutCount = shortcutResult.registered.length;
       console.log(
         `[bootstrap] 快捷鍵註冊結果：ok=${shortcutResult.ok}` +
           (shortcutResult.ok
@@ -1273,15 +1450,42 @@ export async function bootstrap(): Promise<void> {
 
     let shortcutCaptureDepth = 0;
     let shortcutCaptureTargetWindow: BrowserWindow | undefined;
+    let loginSetupShortcutCaptureDepth = 0;
+    let loginSetupSuspendedGlobalShortcuts = false;
+    let registeredShortcutCount = 0;
+
+    const resumeSuspendedShortcuts = (options: {
+      broadcastConflicts: boolean;
+    }): void => {
+      const resumeResult = shortcutManager.resume();
+      registeredShortcutCount = resumeResult?.registered.length ?? 0;
+      console.log(
+        `[bootstrap] 已恢復全域性快捷鍵 ok=${resumeResult?.ok ?? false}`,
+      );
+      if (options.broadcastConflicts && resumeResult && !resumeResult.ok) {
+        broadcastShortcutConflict(
+          resumeResult.conflicts.map((c) => c.accelerator),
+        );
+      } else if (!options.broadcastConflicts && resumeResult && !resumeResult.ok) {
+        console.warn(
+          `[bootstrap] 安裝向導恢復全域性快捷鍵失敗，已忽略設定頁衝突廣播 conflicts=${resumeResult.conflicts
+            .map((c) => c.accelerator)
+            .join(",")}`,
+        );
+      }
+    };
 
     function setShortcutCaptureActive(
       active: boolean,
       targetWindow: BrowserWindow | undefined,
     ): void {
       if (active) {
+        if (shortcutCaptureDepth === 0 && loginSetupShortcutCaptureDepth === 0) {
+          shortcutManager.suspend();
+          registeredShortcutCount = 0;
+        }
         if (shortcutCaptureDepth === 0) {
           shortcutCaptureTargetWindow = targetWindow;
-          shortcutManager.suspend();
           ensureShortcutCaptureWindowGuards(
             BrowserWindow.getAllWindows(),
             () => shortcutCaptureDepth > 0,
@@ -1292,11 +1496,8 @@ export async function bootstrap(): Promise<void> {
             shortcutCaptureDepth = 1;
           } catch (error) {
             shortcutCaptureSession.stop();
-            const resumeResult = shortcutManager.resume();
-            if (resumeResult && !resumeResult.ok) {
-              broadcastShortcutConflict(
-                resumeResult.conflicts.map((c) => c.accelerator),
-              );
+            if (loginSetupShortcutCaptureDepth === 0) {
+              resumeSuspendedShortcuts({ broadcastConflicts: true });
             }
             throw error;
           }
@@ -1317,15 +1518,45 @@ export async function bootstrap(): Promise<void> {
       if (shortcutCaptureDepth === 0) {
         shortcutCaptureTargetWindow = undefined;
         shortcutCaptureSession.stop();
-        const resumeResult = shortcutManager.resume();
-        console.log(
-          `[bootstrap] 快捷鍵錄入模式：已恢復全域性快捷鍵 ok=${resumeResult?.ok ?? false}`,
-        );
-        if (resumeResult && !resumeResult.ok) {
-          broadcastShortcutConflict(
-            resumeResult.conflicts.map((c) => c.accelerator),
-          );
+        if (loginSetupShortcutCaptureDepth === 0) {
+          resumeSuspendedShortcuts({ broadcastConflicts: true });
         }
+      }
+    }
+
+    function setLoginSetupShortcutCaptureActive(active: boolean): void {
+      if (active) {
+        if (shortcutCaptureDepth === 0 && loginSetupShortcutCaptureDepth === 0) {
+          if (registeredShortcutCount > 0) {
+            shortcutManager.suspend();
+            registeredShortcutCount = 0;
+            loginSetupSuspendedGlobalShortcuts = true;
+          } else {
+            loginSetupSuspendedGlobalShortcuts = false;
+          }
+        }
+        loginSetupShortcutCaptureDepth += 1;
+        ensureLoginSetupShortcutCaptureWindowGuards(
+          BrowserWindow.getAllWindows(),
+          () => loginSetupShortcutCaptureDepth > 0,
+          () => loginSetupWindow,
+        );
+        console.log("[bootstrap] 安裝向導快捷鍵試用：已暫停全域性快捷鍵");
+        return;
+      }
+
+      if (loginSetupShortcutCaptureDepth === 0) {
+        return;
+      }
+
+      loginSetupShortcutCaptureDepth -= 1;
+      if (
+        loginSetupShortcutCaptureDepth === 0 &&
+        shortcutCaptureDepth === 0 &&
+        loginSetupSuspendedGlobalShortcuts
+      ) {
+        loginSetupSuspendedGlobalShortcuts = false;
+        resumeSuspendedShortcuts({ broadcastConflicts: false });
       }
     }
 
@@ -1333,6 +1564,20 @@ export async function bootstrap(): Promise<void> {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
           window.webContents.send("voice:shortcut-conflict", { conflicts });
+        }
+      }
+    }
+
+    function broadcastRecordingStateChanged(update: {
+      state: string;
+      mode?: RecordingMode | undefined;
+      reason?: string | undefined;
+      recordingLimitWarning?: boolean;
+      busyHintVisible?: boolean;
+    }): void {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send("voice:recording-state-changed", update);
         }
       }
     }
@@ -1495,6 +1740,11 @@ export async function bootstrap(): Promise<void> {
         homeWindow,
         () => shortcutCaptureDepth > 0,
       );
+      wireLoginSetupShortcutCaptureWindowGuard(
+        homeWindow,
+        () => loginSetupShortcutCaptureDepth > 0,
+        () => loginSetupWindow,
+      );
       homeWindow.once("ready-to-show", () => {
         homeWindow?.show();
         homeWindow?.focus();
@@ -1523,6 +1773,9 @@ export async function bootstrap(): Promise<void> {
     }
     openHomeWindowForUpdateReady = (payload) => {
       openHomeWindow({ section: "about", updateReady: payload });
+    };
+    openHomeWindowAfterLoginSetup = () => {
+      openHomeWindow();
     };
 
     const runAuthenticatedDirectIpcRequest = (
@@ -1627,6 +1880,17 @@ export async function bootstrap(): Promise<void> {
         withDirectIpcLogging("voice:report-recording-state", update, () => {
           const state =
             typeof update?.state === "string" ? update.state : "idle";
+          const recordingStateUpdate = {
+            state,
+            ...(update?.mode !== undefined ? { mode: update.mode } : {}),
+            ...(update?.reason !== undefined ? { reason: update.reason } : {}),
+            ...(update?.recordingLimitWarning !== undefined
+              ? { recordingLimitWarning: update.recordingLimitWarning }
+              : {}),
+            ...(update?.busyHintVisible !== undefined
+              ? { busyHintVisible: update.busyHintVisible }
+              : {}),
+          };
           lastRecordingState = state;
           lastRecordingMode =
             state === "idle" || state === "success" ? undefined : update?.mode;
@@ -1635,6 +1899,7 @@ export async function bootstrap(): Promise<void> {
             state,
             mode: update?.mode,
           });
+          broadcastRecordingStateChanged(recordingStateUpdate);
           if (state !== "idle" && state !== "shortcutHelp") {
             shortcutHelpVisible = false;
           }
@@ -1676,6 +1941,36 @@ export async function bootstrap(): Promise<void> {
     };
     ipcMain.on("voice:report-recording-state", reportRecordingStateHandler);
 
+    const triggerRecordingHandler = (
+      _event: IpcMainEvent,
+      input:
+        | {
+            mode?: RecordingMode;
+            selectedText?: string;
+            previewSelectedText?: string;
+          }
+        | undefined,
+    ) => {
+      runAuthenticatedDirectIpcRequest("voice:trigger-recording", () => {
+        withDirectIpcLogging("voice:trigger-recording", input, () => {
+          const mode =
+            input?.mode === "processSelection" || input?.mode === "translate"
+              ? input.mode
+              : "direct";
+          handleToggle(mode, {
+            allowDuringShortcutCapture: true,
+            ...(typeof input?.selectedText === "string"
+              ? { selectedText: input.selectedText }
+              : {}),
+            ...(typeof input?.previewSelectedText === "string"
+              ? { previewSelectedText: input.previewSelectedText }
+              : {}),
+          });
+        });
+      });
+    };
+    ipcMain.on("voice:trigger-recording", triggerRecordingHandler);
+
     const setShortcutCaptureActiveHandler = (
       event: IpcMainInvokeEvent,
       payload: { active?: boolean } | undefined,
@@ -1696,6 +1991,25 @@ export async function bootstrap(): Promise<void> {
     ipcMain.handle(
       "voice:set-shortcut-capture-active",
       setShortcutCaptureActiveHandler,
+    );
+
+    const setLoginSetupShortcutCaptureActiveHandler = (
+      _event: IpcMainInvokeEvent,
+      payload: { active?: boolean } | undefined,
+    ) => {
+      return runAuthenticatedDirectIpc(authService, () =>
+        withDirectIpcLogging(
+          "voice:set-login-setup-shortcut-capture-active",
+          payload,
+          () => {
+            setLoginSetupShortcutCaptureActive(payload?.active === true);
+          },
+        ),
+      );
+    };
+    ipcMain.handle(
+      "voice:set-login-setup-shortcut-capture-active",
+      setLoginSetupShortcutCaptureActiveHandler,
     );
 
     if (!initialShortcutResult.ok) {
@@ -1745,7 +2059,9 @@ export async function bootstrap(): Promise<void> {
         "voice:report-recording-state",
         reportRecordingStateHandler,
       );
+      ipcMain.removeListener("voice:trigger-recording", triggerRecordingHandler);
       ipcMain.removeHandler("voice:set-shortcut-capture-active");
+      ipcMain.removeHandler("voice:set-login-setup-shortcut-capture-active");
       if (homeWindow && !homeWindow.isDestroyed()) {
         homeWindow.close();
       }
@@ -1763,6 +2079,7 @@ export async function bootstrap(): Promise<void> {
       openHomeWindowForUpdateReady = (_payload: {
         version?: string;
       }): void => {};
+      openHomeWindowAfterLoginSetup = (): void => {};
       updateService.dispose?.();
       lastRecordingState = "idle";
       lastRecordingMode = undefined;
@@ -1782,6 +2099,7 @@ export async function bootstrap(): Promise<void> {
     },
     showLoginSetupWindow: openLoginSetupWindow,
     hideLoginSetupWindow,
+    openHomeWindowAfterLoginSetup: () => openHomeWindowAfterLoginSetup(),
     forceLoginSetupOnAuthenticatedRestore: openPostInstallLoginOnLaunch,
     onLoginSetupReady: (complete) => {
       completeLoginSetup = complete;
@@ -1797,6 +2115,18 @@ function resolveVersionPlatform(platform: NodeJS.Platform): VersionPlatform {
     return "LINUX";
   }
   return "WINDOWS";
+}
+
+export function resolveAuthDevicePlatform(
+  platform: NodeJS.Platform,
+): "windows" | "mac" | "linux" {
+  if (platform === "darwin") {
+    return "mac";
+  }
+  if (platform === "linux") {
+    return "linux";
+  }
+  return "windows";
 }
 
 export function resolvePackagedVersionPhase(
@@ -2134,11 +2464,17 @@ function registerInstallerOnlyIpc(installerService: InstallerService): void {
         typeof input.installDir === "string"
           ? input.installDir
           : installerService.getDefaults().installDir;
-      handoffInstallerLaunch({
+      return handoffInstallerLaunch({
         installerWindow: BrowserWindow.fromWebContents(event.sender),
         installDir,
+        isDevelopmentRuntime: resolveDevelopmentRuntime({
+          isPackaged: app.isPackaged,
+          electronRendererUrl: process.env.ELECTRON_RENDERER_URL,
+        }),
+        platform: process.platform,
+        appPath: app.getAppPath(),
+        execPath: process.execPath,
       });
-      return undefined;
     });
   });
 }

@@ -76,6 +76,7 @@ coverage/
 
 # ===== OS =====
 .DS_Store
+._*
 Thumbs.db
 ehthumbs.db
 Desktop.ini

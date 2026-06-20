@@ -51,7 +51,7 @@ export function createAuthHttpClient(
         body: {
           email: input.email,
           code: input.code,
-          rememberMe: input.rememberMe,
+          acceptedLicense: input.acceptedLicense,
           ...toAuthDeviceBody(input.device)
         },
         normalize: normalizeAuthTokenResponse
@@ -75,7 +75,7 @@ export function createAuthHttpClient(
           keyId: input.keyId,
           nonce: input.nonce,
           timestamp: input.timestamp,
-          rememberMe: input.rememberMe,
+          acceptedLicense: input.acceptedLicense,
           ...toAuthDeviceBody(input.device)
         },
         normalize: normalizeAuthTokenResponse

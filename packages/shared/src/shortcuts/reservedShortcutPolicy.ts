@@ -37,7 +37,7 @@ const SYSTEM_RESERVED_SHORTCUTS = new Set([
   "SUPER+SPACE",
   "SUPER+TAB",
   "SUPER+SHIFT+S",
-  "SUPER+PRINTSCREEN"
+  "SUPER+PRINTSCREEN",
 ]);
 
 const COMMON_RESERVED_SHORTCUTS = new Set([
@@ -72,20 +72,20 @@ const COMMON_RESERVED_SHORTCUTS = new Set([
   "F5",
   "CTRL+F5",
   "PRINTSCREEN",
-  "ALT+PRINTSCREEN"
+  "ALT+PRINTSCREEN",
 ]);
 
 const PRODUCT_ALLOWED_SHORTCUTS = new Set([
   "RIGHTALT",
   "RIGHTALT+SPACE",
-  "RIGHTALT+RIGHTSHIFT"
+  "RIGHTALT+RIGHTSHIFT",
 ]);
 
 const RIGHT_ALT_RESERVED_KEYS = new Set(["TAB", "ESC"]);
 
 export function validateShortcut(
   shortcut: string,
-  platformOrOptions: string | ShortcutValidationOptions = "win32"
+  platformOrOptions: string | ShortcutValidationOptions = "win32",
 ): ShortcutValidationResult {
   const options =
     typeof platformOrOptions === "string"
@@ -97,7 +97,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "single_key",
-      message: "请按下快捷键"
+      message: "请按下快捷键",
     };
   }
 
@@ -106,7 +106,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "alphanumeric_only",
-      message: "此快捷键已保留供系统使用"
+      message: "此快捷键已保留供系统使用",
     };
   }
 
@@ -114,7 +114,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "too_many_keys",
-      message: "快捷键最多支持 3 个按键"
+      message: "快捷键最多支持 3 个按键",
     };
   }
 
@@ -122,7 +122,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "already_in_use",
-      message: "此快捷键已被使用"
+      message: "此快捷键已被使用",
     };
   }
 
@@ -134,7 +134,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "reserved",
-      message: "此快捷键已保留供系统使用"
+      message: "此快捷键已保留供系统使用",
     };
   }
 
@@ -142,7 +142,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "reserved",
-      message: "此快捷键已保留供系统使用"
+      message: "此快捷键已保留供系统使用",
     };
   }
 
@@ -154,7 +154,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "reserved",
-      message: "此快捷键已保留供系统使用"
+      message: "此快捷键已保留供系统使用",
     };
   }
 
@@ -166,7 +166,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "consecutive_letters",
-      message: "请避免连续字母组合"
+      message: "请避免连续字母组合",
     };
   }
 
@@ -174,7 +174,7 @@ export function validateShortcut(
     return {
       ok: false,
       reason: "consecutive_numbers",
-      message: "请避免连续数字组合"
+      message: "请避免连续数字组合",
     };
   }
 
@@ -183,7 +183,7 @@ export function validateShortcut(
 
 export function isReservedShortcut(
   shortcut: string,
-  platform: string = "win32"
+  platform: string = "win32",
 ): boolean {
   return validateShortcut(shortcut, platform).reason === "reserved";
 }
@@ -208,13 +208,18 @@ export function normalizeShortcut(shortcut: string): string {
     "COMMAND",
     "META",
     "CMD",
-    "RIGHTALT"
+    "METARIGHT",
+    "RIGHTSHIFT",
+    "RIGHTALT",
   ].filter((modifier) => modifiers.includes(modifier));
   return [...orderedModifiers, ...keys].join("+");
 }
 
 function isWindowsReservedShortcut(normalized: string): boolean {
-  return SYSTEM_RESERVED_SHORTCUTS.has(normalized) || COMMON_RESERVED_SHORTCUTS.has(normalized);
+  return (
+    SYSTEM_RESERVED_SHORTCUTS.has(normalized) ||
+    COMMON_RESERVED_SHORTCUTS.has(normalized)
+  );
 }
 
 function includesWindowsSystemReservedShortcut(parts: string[]): boolean {
@@ -240,7 +245,9 @@ function isShortcutModifier(part: string): boolean {
     "COMMAND",
     "META",
     "CMD",
-    "RIGHTALT"
+    "METARIGHT",
+    "RIGHTSHIFT",
+    "RIGHTALT",
   ].includes(part);
 }
 
@@ -284,7 +291,7 @@ function hasAdjacentValues(values: number[]): boolean {
 
 function isAlreadyInUse(
   normalized: string,
-  options: ShortcutValidationOptions
+  options: ShortcutValidationOptions,
 ): boolean {
   return (options.existingShortcuts ?? [])
     .map((shortcut) => normalizeShortcut(shortcut))
@@ -316,6 +323,13 @@ function normalizeShortcutPart(part: string): string | undefined {
       return "COMMAND";
     case "META":
       return "META";
+    case "RIGHT COMMAND":
+    case "RIGHTCOMMAND":
+    case "RIGHT CMD":
+    case "RIGHTCMD":
+    case "METARIGHT":
+    case "META RIGHT":
+      return "METARIGHT";
     case "RIGHT ALT":
     case "RIGHTALT":
     case "ALTGR":

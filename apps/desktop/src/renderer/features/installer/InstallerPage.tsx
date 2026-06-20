@@ -4,14 +4,33 @@ type InstallerState = "loading" | "ready" | "installing" | "done" | "error";
 
 const INSTALL_PROGRESS_START = 8;
 const INSTALL_PROGRESS_STEPS = [
-  { percent: 12, label: "正在准备安装环境..." },
-  { percent: 24, label: "正在校验安装位置..." },
-  { percent: 42, label: "正在解压应用文件..." },
-  { percent: 68, label: "正在写入程序组件..." },
-  { percent: 86, label: "正在创建快捷方式..." },
-  { percent: 94, label: "正在完成最后配置..." },
+  { percent: 12, label: "正在準備安裝環境..." },
+  { percent: 24, label: "正在校驗安裝位置..." },
+  { percent: 42, label: "正在解壓應用檔案..." },
+  { percent: 68, label: "正在寫入程式元件..." },
+  { percent: 86, label: "正在建立捷徑..." },
+  { percent: 94, label: "正在完成最後設定..." },
 ] as const;
 const FIRST_INSTALL_PROGRESS_LABEL = INSTALL_PROGRESS_STEPS[0].label;
+
+function getInstallerErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.trim();
+  if (/[一-龥]/.test(normalized)) {
+    return normalized;
+  }
+  if (
+    normalized === "Network request failed" ||
+    normalized === "Network unavailable" ||
+    normalized === "fetch failed"
+  ) {
+    return "網路連線失敗，請檢查網路後再試。";
+  }
+  if (normalized === "Backend returned invalid payload") {
+    return "安裝服務暫時不可用，請稍後再試。";
+  }
+  return "操作失敗，請稍後再試。";
+}
 
 function AssistantMark(): React.JSX.Element {
   return (
@@ -34,7 +53,7 @@ function AssistantMark(): React.JSX.Element {
 
 function WindowControls(): React.JSX.Element {
   return (
-    <div className="installer-window-controls" aria-label="窗口控制">
+    <div className="installer-window-controls" aria-label="視窗控制">
       <button
         className="installer-window-button"
         type="button"
@@ -46,7 +65,7 @@ function WindowControls(): React.JSX.Element {
       <button
         className="installer-window-button installer-window-button--close"
         type="button"
-        aria-label="关闭"
+        aria-label="關閉"
         onClick={() => window.voiceAI.controlHomeWindow("close")}
       >
         <span className="installer-window-button__close" />
@@ -63,6 +82,7 @@ export function InstallerPage(): React.JSX.Element {
   const [createDesktopShortcut, setCreateDesktopShortcut] = useState(true);
   const [launchAtLogin, setLaunchAtLogin] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [launching, setLaunching] = useState(false);
   const [progressPercent, setProgressPercent] = useState(INSTALL_PROGRESS_START);
   const [progressLabel, setProgressLabel] = useState<string>(
     FIRST_INSTALL_PROGRESS_LABEL,
@@ -70,7 +90,7 @@ export function InstallerPage(): React.JSX.Element {
   const canInstall = state === "ready" && agreed && installDir.trim().length > 0;
 
   const diskHint = useMemo(
-    () => "需要至少 200MB 可用空间，建议保留 500MB 以上可用空间。",
+    () => "需要至少 200MB 可用空間，建議保留 500MB 以上可用空間。",
     [],
   );
 
@@ -91,7 +111,7 @@ export function InstallerPage(): React.JSX.Element {
         if (cancelled) {
           return;
         }
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setError(getInstallerErrorMessage(loadError));
         setState("error");
       });
     return () => {
@@ -136,9 +156,7 @@ export function InstallerPage(): React.JSX.Element {
         }
       })
       .catch((browseError: unknown) => {
-        setError(
-          browseError instanceof Error ? browseError.message : String(browseError),
-        );
+        setError(getInstallerErrorMessage(browseError));
         setState("error");
       });
   };
@@ -148,6 +166,7 @@ export function InstallerPage(): React.JSX.Element {
       return;
     }
     setError(undefined);
+    setLaunching(false);
     setProgressPercent(INSTALL_PROGRESS_START);
     setProgressLabel(FIRST_INSTALL_PROGRESS_LABEL);
     setState("installing");
@@ -160,21 +179,26 @@ export function InstallerPage(): React.JSX.Element {
       .then((result) => {
         setInstallDir(result.installDir);
         setProgressPercent(100);
-        setProgressLabel("安装完成");
+        setProgressLabel("安裝完成");
         setState("done");
       })
       .catch((installError: unknown) => {
-        setError(
-          installError instanceof Error
-            ? installError.message
-            : String(installError),
-        );
+        setError(getInstallerErrorMessage(installError));
         setState("error");
       });
   };
 
   const launchInstalledApp = (): void => {
-    void window.voiceAI.launchInstalledApp(installDir);
+    setError(undefined);
+    setLaunching(true);
+    void window.voiceAI
+      .launchInstalledApp(installDir)
+      .catch((launchError: unknown) => {
+        setError(getInstallerErrorMessage(launchError));
+      })
+      .finally(() => {
+        setLaunching(false);
+      });
   };
 
   return (
@@ -187,7 +211,7 @@ export function InstallerPage(): React.JSX.Element {
 
       <section className="installer-stage" aria-live="polite">
         <AssistantMark />
-        <h1 className="installer-title">欢迎使用 Voice Assistant Service</h1>
+        <h1 className="installer-title">歡迎使用 Voice Assistant Service</h1>
 
         {state === "installing" ? (
           <div className="installer-progress-panel">
@@ -198,7 +222,7 @@ export function InstallerPage(): React.JSX.Element {
             <div
               className="installer-progress"
               role="progressbar"
-              aria-label="安装进度"
+              aria-label="安裝進度"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={progressPercent}
@@ -213,14 +237,16 @@ export function InstallerPage(): React.JSX.Element {
 
         {state === "done" ? (
           <div className="installer-done">
-            <p>安装完成</p>
+            <p>安裝完成</p>
             <button
               className="installer-primary installer-primary--compact"
               type="button"
+              disabled={launching}
               onClick={launchInstalledApp}
             >
-              立即体验
+              {launching ? "正在啟動..." : "立即體驗"}
             </button>
+            {error ? <p className="installer-error">{error}</p> : null}
           </div>
         ) : null}
 
@@ -234,14 +260,14 @@ export function InstallerPage(): React.JSX.Element {
                     value={installDir}
                     onChange={(event) => setInstallDir(event.currentTarget.value)}
                     spellCheck={false}
-                    aria-label="安装路径"
+                    aria-label="安裝路徑"
                   />
                   <button
                     className="installer-browse"
                     type="button"
                     onClick={browseInstallDir}
                   >
-                    选择安装位置
+                    選擇安裝位置
                   </button>
                 </div>
                 <p className="installer-hint">{diskHint}</p>
@@ -254,7 +280,7 @@ export function InstallerPage(): React.JSX.Element {
                         setCreateDesktopShortcut(event.currentTarget.checked)
                       }
                     />
-                    <span>创建桌面图标</span>
+                    <span>建立桌面圖示</span>
                   </label>
                   <label className="installer-check">
                     <input
@@ -264,7 +290,7 @@ export function InstallerPage(): React.JSX.Element {
                         setLaunchAtLogin(event.currentTarget.checked)
                       }
                     />
-                    <span>开机自启动</span>
+                    <span>開機自動啟動</span>
                   </label>
                 </div>
               </div>
@@ -275,7 +301,7 @@ export function InstallerPage(): React.JSX.Element {
                 disabled={!canInstall}
                 onClick={startInstall}
               >
-                一键安装
+                一鍵安裝
               </button>
             )}
 
@@ -292,7 +318,7 @@ export function InstallerPage(): React.JSX.Element {
               checked={agreed}
               onChange={(event) => setAgreed(event.currentTarget.checked)}
             />
-            <span>同意《用户使用协议》</span>
+            <span>同意《用戶使用協議》</span>
           </label>
         ) : (
           <span />
@@ -313,7 +339,7 @@ export function InstallerPage(): React.JSX.Element {
               disabled={!canInstall}
               onClick={startInstall}
             >
-              立即安装
+              立即安裝
             </button>
           </div>
         ) : state === "ready" || state === "error" ? (
@@ -322,7 +348,7 @@ export function InstallerPage(): React.JSX.Element {
             type="button"
             onClick={() => setCustomOpen(true)}
           >
-            自定义安装
+            自訂安裝
           </button>
         ) : (
           <span />

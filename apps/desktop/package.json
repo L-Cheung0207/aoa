@@ -10,6 +10,7 @@
     "dist": "node scripts/dist-win.mjs",
     "dist:payload": "electron-builder --win nsis --config electron-builder.yml",
     "dist:installer-shell": "node scripts/dist-win.mjs --installer-shell",
+    "dist:mac": "node scripts/dist-mac.mjs",
     "dist:win": "pnpm run dist",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

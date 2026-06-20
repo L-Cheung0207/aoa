@@ -50,10 +50,10 @@ describe("createLoginSetupWindow", () => {
 
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        width: 947,
-        height: 670,
+        width: 960,
+        height: 680,
         minWidth: 900,
-        minHeight: 640,
+        minHeight: 600,
         frame: false,
         autoHideMenuBar: true,
         show: false,

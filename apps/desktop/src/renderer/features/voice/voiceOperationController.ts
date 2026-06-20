@@ -68,7 +68,10 @@ export interface VoiceOperationController {
   getSnapshot(): RecordingSnapshot;
   getSnapshotRevision(): number;
   getRecordingRemainingSeconds(): number | undefined;
-  handleToggle(mode: RecordingMode): Promise<void>;
+  handleToggle(
+    mode: RecordingMode,
+    options?: { selectedText?: string; previewSelectedText?: string },
+  ): Promise<void>;
   /** 使用者主動取消（懸浮窗左側 × 按鈕）：在 listening/processing/inserting/error 下拆掉會話並重置狀態機。 */
   cancel(): Promise<void>;
   /** 使用者主動確認（懸浮窗右側 ✓ 按鈕）：僅在 listening 下按當前 mode 的完整流程收尾。 */
@@ -81,6 +84,7 @@ export interface VoiceOperationController {
 interface ActiveSession {
   mode: RecordingMode;
   selectedText: string;
+  previewSelectedText?: string;
   startedAt: string;
   startedAtMs: number;
   audioFrames: Int16Array[];
@@ -319,7 +323,7 @@ export function createVoiceOperationController(
         language: options.settings.language,
         sampleRate: options.settings.sampleRate,
         mode: session.mode,
-        selectedText: session.selectedText,
+        selectedText: session.previewSelectedText ?? session.selectedText,
         targetLanguage: options.settings.targetLanguage,
         postprocessMode: resolveSessionPostprocessMode(options, session),
         appContext,
@@ -356,15 +360,22 @@ export function createVoiceOperationController(
     }
   };
 
-  const startSession = async (mode: RecordingMode): Promise<void> => {
+  const startSession = async (
+    mode: RecordingMode,
+    startOptions: { selectedText?: string; previewSelectedText?: string } = {},
+  ): Promise<void> => {
     console.log(`[voice] 開始會話 mode=${mode}`);
     let selectedText = "";
     if (mode === "processSelection") {
-      selectedText = await options.textTarget.getSelectedText();
+      selectedText =
+        startOptions.selectedText ?? (await options.textTarget.getSelectedText());
       console.log(
         `[voice] processSelection 選中文本長度=${selectedText.length}`,
       );
-      if (!selectedText.trim()) {
+      if (
+        !selectedText.trim() &&
+        !startOptions.previewSelectedText?.trim()
+      ) {
         console.warn("[voice] processSelection 無選中文本，取消啟動");
         fail("no_selection");
         return;
@@ -375,6 +386,9 @@ export function createVoiceOperationController(
     activeSession = {
       mode,
       selectedText,
+      ...(startOptions.previewSelectedText !== undefined
+        ? { previewSelectedText: startOptions.previewSelectedText }
+        : {}),
       startedAt: startedAt.toISOString(),
       startedAtMs: startedAt.getTime(),
       audioFrames: [],
@@ -640,7 +654,7 @@ export function createVoiceOperationController(
     getSnapshot,
     getSnapshotRevision: () => snapshotRevision,
     getRecordingRemainingSeconds,
-    handleToggle: async (mode) => {
+    handleToggle: async (mode, handleOptions = {}) => {
       const snapshot = machine.getSnapshot();
       console.log(
         `[voice] handleToggle：收到 mode=${mode} 當前狀態=${snapshot.state} starting=${starting}`,
@@ -675,7 +689,7 @@ export function createVoiceOperationController(
         snapshot.state === "success"
       ) {
         try {
-          await startSession(mode);
+          await startSession(mode, handleOptions);
         } catch (error) {
           // startSession 的失敗已經通過 fail() 推到 error 狀態，這裡只是兜底阻止 unhandled rejection。
           console.warn("[voice] handleToggle：startSession 拋錯已吞下", error);
@@ -905,7 +919,37 @@ async function applyFinalText(
       console.log("[voice] 服務端最終文本為空，跳過插入與展示");
       return "";
     }
-    if (session.mode === "processSelection" && session.selectedText) {
+    if (
+      session.mode === "processSelection" &&
+      session.previewSelectedText !== undefined
+    ) {
+      if (!options.onPostprocessResult) {
+        return result.finalText;
+      }
+      options.onPostprocessResult({
+        mode: "processSelection",
+        rawText,
+        selectedText: session.previewSelectedText,
+        result,
+      });
+    } else if (
+      session.mode === "processSelection" &&
+      result.action === "show_result"
+    ) {
+      if (!options.onPostprocessResult) {
+        return result.finalText;
+      }
+      options.onPostprocessResult({
+        mode: "processSelection",
+        rawText,
+        selectedText: session.selectedText,
+        result,
+      });
+    } else if (
+      session.mode === "processSelection" &&
+      result.action === "replace_selection" &&
+      session.selectedText
+    ) {
       setStage("insertion");
       try {
         await options.textTarget.replaceSelection(

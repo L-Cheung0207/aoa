@@ -872,47 +872,58 @@ function buildController(input: BuildControllerInput): ControllerBundle {
     },
   });
 
-  const unsubscribeToggle = window.voiceAI.onToggleRecording(({ mode }) => {
-    console.log(`[voice] toggle recording received mode=${mode}`);
-    const snapshot = controller.getSnapshot();
-    const pendingStartMode = input.getPendingStartMode();
-    if (
-      pendingStartMode &&
-      (snapshot.state === "idle" ||
-        snapshot.state === "success" ||
-        snapshot.state === "listening") &&
-      (mode === "direct" || mode === pendingStartMode)
-    ) {
-      input.onStopAccepted(pendingStartMode);
-      void controller.handleToggle(mode);
-      return;
-    }
-    if (snapshot.state === "processing" || snapshot.state === "inserting") {
-      input.onBusyDuringProcessing();
-      return;
-    }
-    if (
-      snapshot.state === "idle" ||
-      snapshot.state === "success" ||
-      snapshot.state === "error"
-    ) {
-      input.onClearResult();
-      if (mode !== "processSelection") {
-        input.onToggleAccepted(mode);
+  const unsubscribeToggle = window.voiceAI.onToggleRecording(
+    ({ mode, selectedText, previewSelectedText }) => {
+      console.log(`[voice] toggle recording received mode=${mode}`);
+      const snapshot = controller.getSnapshot();
+      const pendingStartMode = input.getPendingStartMode();
+      const handleOptions =
+        selectedText !== undefined || previewSelectedText !== undefined
+          ? {
+              ...(selectedText !== undefined ? { selectedText } : {}),
+              ...(previewSelectedText !== undefined
+                ? { previewSelectedText }
+                : {}),
+            }
+          : undefined;
+      if (
+        pendingStartMode &&
+        (snapshot.state === "idle" ||
+          snapshot.state === "success" ||
+          snapshot.state === "listening") &&
+        (mode === "direct" || mode === pendingStartMode)
+      ) {
+        input.onStopAccepted(pendingStartMode);
+        void controller.handleToggle(mode);
+        return;
       }
-      void controller.handleToggle(mode);
-      return;
-    } else if (
-      snapshot.state === "listening" &&
-      (mode === "direct" || mode === snapshot.mode)
-    ) {
-      input.onStopAccepted(snapshot.mode ?? mode);
-      void controller.handleToggle(mode);
-      return;
-    }
-    input.onClearResult();
-    void controller.handleToggle(mode);
-  });
+      if (snapshot.state === "processing" || snapshot.state === "inserting") {
+        input.onBusyDuringProcessing();
+        return;
+      }
+      if (
+        snapshot.state === "idle" ||
+        snapshot.state === "success" ||
+        snapshot.state === "error"
+      ) {
+        input.onClearResult();
+        if (mode !== "processSelection") {
+          input.onToggleAccepted(mode);
+        }
+        void controller.handleToggle(mode, handleOptions);
+        return;
+      } else if (
+        snapshot.state === "listening" &&
+        (mode === "direct" || mode === snapshot.mode)
+      ) {
+        input.onStopAccepted(snapshot.mode ?? mode);
+        void controller.handleToggle(mode);
+        return;
+      }
+      input.onClearResult();
+      void controller.handleToggle(mode, handleOptions);
+    },
+  );
 
   // Recorder is also observed here for UI level/waveform rendering.
   // Controller owns the business subscription; this listener is display-only.

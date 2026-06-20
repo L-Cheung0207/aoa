@@ -42,6 +42,8 @@ export interface StartRecordingInput {
   mode: RecordingMode;
   /** 仅 processSelection 模式传入，由主进程/原生 helper 读取后填充 */
   selectedText?: string;
+  /** 安裝向導示例文本，只作 LLM 上下文，不替換真實選區 */
+  previewSelectedText?: string;
 }
 
 export interface RecordingStateUpdate {
@@ -68,6 +70,8 @@ export interface ConnectivityTestResult {
 
 export interface ToggleRecordingPayload {
   mode: RecordingMode;
+  selectedText?: string;
+  previewSelectedText?: string;
 }
 
 export interface BootstrapClientResponse extends ClientBootstrapSnapshot {
@@ -129,13 +133,13 @@ export interface SendEmailCodeInput {
 export interface EmailCodeLoginInput {
   email: string;
   code: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
 }
 
 export interface LdapLoginInput {
   account: string;
   password: string;
-  rememberMe: boolean;
+  acceptedLicense: boolean;
 }
 
 export interface UpdateReadyPayload {
@@ -176,6 +180,7 @@ export interface VoiceAIAPI {
   startRecording(input: StartRecordingInput): Promise<void>;
   stopRecording(): Promise<void>;
   cancelRecording(): Promise<void>;
+  triggerRecording(input: StartRecordingInput): void;
   copyText(text: string): Promise<void>;
   insertText(text: string): Promise<InsertResult>;
   replaceSelectedText(
@@ -235,12 +240,17 @@ export interface VoiceAIAPI {
   openMicrophoneHelp(): void;
   /** 录入快捷键时暂停/恢复全局 Right Alt 快捷键，避免与语音功能冲突。 */
   setShortcutCaptureActive(active: boolean): Promise<void>;
+  /** 安裝向導試用快捷鍵時暫停/恢復全域快捷鍵，不進入設定頁快捷鍵錄入通道。 */
+  setLoginSetupShortcutCaptureActive(active: boolean): Promise<void>;
   onToggleRecording(callback: (payload: ToggleRecordingPayload) => void): () => void;
   onRecordingStateChanged(callback: (update: RecordingStateUpdate) => void): () => void;
   onPartialTranscript(callback: (text: string) => void): () => void;
   onError(callback: (error: ClientFacingError) => void): () => void;
   onShortcutConflict(callback: (payload: ShortcutConflictPayload) => void): () => void;
   onShortcutCaptureAccelerator(
+    callback: (payload: ShortcutCaptureAcceleratorPayload) => void
+  ): () => void;
+  onLoginSetupShortcutCaptureAccelerator(
     callback: (payload: ShortcutCaptureAcceleratorPayload) => void
   ): () => void;
   onShortcutHelp(callback: (payload: ShortcutHelpPayload) => void): () => void;
@@ -273,6 +283,9 @@ export const voiceAI: VoiceAIAPI = {
   startRecording: (input) => ipcRenderer.invoke("voice:start-recording", input),
   stopRecording: () => ipcRenderer.invoke("voice:stop-recording"),
   cancelRecording: () => ipcRenderer.invoke("voice:cancel-recording"),
+  triggerRecording: (input) => {
+    ipcRenderer.send("voice:trigger-recording", input);
+  },
   copyText: (text) => ipcRenderer.invoke("voice:copy-text", { text }),
   insertText: (text) => ipcRenderer.invoke("voice:insert-text", { text }),
   replaceSelectedText: (text, expectedSelectedText) => {
@@ -347,6 +360,8 @@ export const voiceAI: VoiceAIAPI = {
   },
   setShortcutCaptureActive: (active) =>
     ipcRenderer.invoke("voice:set-shortcut-capture-active", { active }),
+  setLoginSetupShortcutCaptureActive: (active) =>
+    ipcRenderer.invoke("voice:set-login-setup-shortcut-capture-active", { active }),
   onToggleRecording: (callback) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
@@ -401,6 +416,20 @@ export const voiceAI: VoiceAIAPI = {
     ipcRenderer.on("voice:shortcut-capture-accelerator", listener);
     return () =>
       ipcRenderer.removeListener("voice:shortcut-capture-accelerator", listener);
+  },
+  onLoginSetupShortcutCaptureAccelerator: (callback) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ShortcutCaptureAcceleratorPayload
+    ): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("voice:login-setup-shortcut-capture-accelerator", listener);
+    return () =>
+      ipcRenderer.removeListener(
+        "voice:login-setup-shortcut-capture-accelerator",
+        listener
+      );
   },
   onShortcutHelp: (callback) => {
     const listener = (

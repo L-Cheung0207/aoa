@@ -132,7 +132,7 @@ describe("auth http client", () => {
     const result = await client.loginWithEmailCode({
       email: "user@example.com",
       code: "123456",
-      rememberMe: true,
+      acceptedLicense: true,
       device
     });
 
@@ -154,7 +154,7 @@ describe("auth http client", () => {
         body: JSON.stringify({
           email: "user@example.com",
           code: "123456",
-          rememberMe: true,
+          acceptedLicense: true,
           deviceName: "ALEX-PC",
           platform: "windows",
           appVersion: "0.1.0",
@@ -215,7 +215,7 @@ describe("auth http client", () => {
       keyId: "key-1",
       nonce: "nonce-1",
       timestamp: "2026-06-17T09:00:00.000Z",
-      rememberMe: true,
+      acceptedLicense: true,
       device
     });
 
@@ -239,7 +239,7 @@ describe("auth http client", () => {
           keyId: "key-1",
           nonce: "nonce-1",
           timestamp: "2026-06-17T09:00:00.000Z",
-          rememberMe: true,
+          acceptedLicense: true,
           deviceName: "ALEX-PC",
           platform: "windows",
           appVersion: "0.1.0",
@@ -321,7 +321,7 @@ describe("auth http client", () => {
       client.loginWithEmailCode({
         email: "user@example.com",
         code: "000000",
-        rememberMe: false,
+        acceptedLicense: true,
         device
       })
     ).rejects.toMatchObject({
@@ -414,7 +414,7 @@ describe("auth http client", () => {
       client.loginWithEmailCode({
         email: "user@example.com",
         code: "123456",
-        rememberMe: true,
+        acceptedLicense: true,
         device
       })
     ).rejects.toMatchObject({

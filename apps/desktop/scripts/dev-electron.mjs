@@ -8,6 +8,7 @@ const PRODUCT_NAME = "Voice Assistant";
 export function createDevElectronPaths(
   packageRoot = fileURLToPath(new URL("..", import.meta.url)),
   workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url)),
+  platform = process.platform,
 ) {
   const sourceElectronDir = join(
     workspaceRoot,
@@ -16,15 +17,32 @@ export function createDevElectronPaths(
     "dist",
   );
   const devElectronDir = join(packageRoot, ".dev-electron", "electron-dist");
+  const isWindows = platform === "win32";
+  const electronExecutableRelativePath = isWindows
+    ? "electron.exe"
+    : join("Electron.app", "Contents", "MacOS", "Electron");
+  const sourceElectronExe = join(sourceElectronDir, electronExecutableRelativePath);
   return {
     sourceElectronDir,
-    sourceElectronExe: join(sourceElectronDir, "electron.exe"),
+    sourceElectronExe,
     devElectronDir,
-    devElectronExe: join(devElectronDir, `${PRODUCT_NAME} Dev.exe`),
+    devElectronExe: isWindows
+      ? join(devElectronDir, `${PRODUCT_NAME} Dev.exe`)
+      : sourceElectronExe,
     sourceConfigPath: join(packageRoot, "config.json"),
-    devResourcesDir: join(devElectronDir, "resources"),
-    devConfigPath: join(devElectronDir, "resources", "config.json"),
+    devResourcesDir: join(
+      devElectronDir,
+      ...(isWindows ? ["resources"] : ["Electron.app", "Contents", "Resources"]),
+    ),
+    devConfigPath: join(
+      devElectronDir,
+      ...(isWindows
+        ? ["resources", "config.json"]
+        : ["Electron.app", "Contents", "Resources", "config.json"]),
+    ),
     iconPath: join(packageRoot, "resources", "app-icon.ico"),
+    shouldPrepareExecutable: isWindows,
+    shouldBrandExecutable: isWindows,
   };
 }
 
@@ -36,6 +54,11 @@ export function createDevElectronEnv(
     ...baseEnv,
     ELECTRON_EXEC_PATH: devElectronExe,
   };
+}
+
+export function createElectronViteDevArgs(extraArgs = []) {
+  const forwardedArgs = extraArgs[0] === "--" ? extraArgs.slice(1) : extraArgs;
+  return ["dev", ...forwardedArgs];
 }
 
 export function buildAppBuilderRceditArgs({
@@ -96,6 +119,8 @@ export function prepareDevElectronExecutable({
   mkdirSync,
   rceditPath,
   readdirSync,
+  shouldPrepareExecutable = true,
+  shouldBrandExecutable = true,
   spawnSync,
   sourceElectronExe,
   sourceElectronDir,
@@ -105,14 +130,24 @@ export function prepareDevElectronExecutable({
   devResourcesDir,
   devConfigPath,
 }) {
+  if (!shouldPrepareExecutable) {
+    return;
+  }
+
   if (!existsSync(devElectronExe)) {
     mkdirSync(devElectronDir, { recursive: true });
     cpSync(sourceElectronDir, devElectronDir, { recursive: true, force: true });
-    copyFileSync(sourceElectronExe, devElectronExe);
+    if (shouldBrandExecutable) {
+      copyFileSync(sourceElectronExe, devElectronExe);
+    }
   }
   if (sourceConfigPath && devResourcesDir && devConfigPath) {
     mkdirSync(devResourcesDir, { recursive: true });
     copyFileSync(sourceConfigPath, devConfigPath);
+  }
+
+  if (!shouldBrandExecutable) {
+    return;
   }
 
   const resolvedRceditPath =
@@ -151,9 +186,11 @@ export function runDevElectron(scriptUrl = import.meta.url) {
     sourceConfigPath: paths.sourceConfigPath,
     devResourcesDir: paths.devResourcesDir,
     devConfigPath: paths.devConfigPath,
+    shouldPrepareExecutable: paths.shouldPrepareExecutable,
+    shouldBrandExecutable: paths.shouldBrandExecutable,
   });
 
-  const result = spawnSync("electron-vite", ["dev"], {
+  const result = spawnSync("electron-vite", createElectronViteDevArgs(process.argv.slice(2)), {
     cwd: packageRoot,
     env: createDevElectronEnv(process.env, paths.devElectronExe),
     shell: true,

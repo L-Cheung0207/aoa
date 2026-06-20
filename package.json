@@ -8,6 +8,7 @@
     "dev": "pnpm --filter @voice/desktop dev",
     "build": "pnpm -r build",
     "dist": "pnpm build && pnpm --filter @voice/desktop dist",
+    "dist:mac": "pnpm --filter @voice/desktop dist:mac",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",

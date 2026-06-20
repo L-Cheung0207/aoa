@@ -32,7 +32,14 @@ export interface ConfigStore {
 }
 
 export function createConfigStore(options: CreateConfigStoreOptions): ConfigStore {
-  let currentSettings = readPersistedSettings(options.adapter, options.defaults);
+  const persistedSettings = readPersistedSettings(
+    options.adapter,
+    options.defaults
+  );
+  let currentSettings = persistedSettings.settings;
+  if (persistedSettings.migrated) {
+    options.adapter.set(settingsKey, currentSettings);
+  }
 
   return {
     get: () => currentSettings,
@@ -52,20 +59,22 @@ export function createConfigStore(options: CreateConfigStoreOptions): ConfigStor
 function readPersistedSettings(
   adapter: ConfigStorageAdapter,
   defaults: AppSettings
-): AppSettings {
+): { settings: AppSettings; migrated: boolean } {
   const persisted = adapter.get(settingsKey);
 
   if (!isAppSettings(persisted)) {
-    return defaults;
+    return { settings: defaults, migrated: false };
   }
 
   let merged = mergeSettingsPatch(defaults, persisted);
+  let migrated = false;
 
   if (merged.ws.servers.length === 0 && defaults.ws.servers.length > 0) {
     merged = {
       ...merged,
       ws: defaults.ws
     };
+    migrated = true;
   }
 
   if (merged.llm.models.length === 0 && defaults.llm.models.length > 0) {
@@ -73,6 +82,7 @@ function readPersistedSettings(
       ...merged,
       llm: defaults.llm
     };
+    migrated = true;
   }
 
   if (
@@ -83,6 +93,7 @@ function readPersistedSettings(
       ...merged,
       ws: defaults.ws
     };
+    migrated = true;
   }
 
   if (!SUPPORTED_WAVEFORM_STYLES.includes(merged.recording.waveformStyle)) {
@@ -93,7 +104,57 @@ function readPersistedSettings(
         waveformStyle: defaults.recording.waveformStyle
       }
     };
+    migrated = true;
   }
 
-  return merged;
+  const normalizedShortcuts = normalizeLegacyShortcuts(merged.shortcuts);
+  if (normalizedShortcuts !== merged.shortcuts) {
+    merged = {
+      ...merged,
+      shortcuts: normalizedShortcuts
+    };
+    migrated = true;
+  }
+
+  return { settings: merged, migrated };
+}
+
+function normalizeLegacyShortcuts(
+  shortcuts: AppSettings["shortcuts"]
+): AppSettings["shortcuts"] {
+  const normalized = {
+    ...shortcuts,
+    toggleRecording: normalizeLegacyShortcut(shortcuts.toggleRecording),
+    processSelection: normalizeLegacyShortcut(shortcuts.processSelection),
+    translateDictation: normalizeLegacyShortcut(shortcuts.translateDictation),
+    holdToTalk: normalizeLegacyShortcut(shortcuts.holdToTalk)
+  };
+  if (
+    normalized.toggleRecording === shortcuts.toggleRecording &&
+    normalized.processSelection === shortcuts.processSelection &&
+    normalized.translateDictation === shortcuts.translateDictation &&
+    normalized.holdToTalk === shortcuts.holdToTalk
+  ) {
+    return shortcuts;
+  }
+  return normalized;
+}
+
+function normalizeLegacyShortcut(shortcut: string): string {
+  return shortcut
+    .split("+")
+    .filter(Boolean)
+    .map((part) => {
+      switch (part) {
+        case "MetaRight":
+          return "RightAlt";
+        case "Slash":
+          return "/";
+        case "ShiftRight":
+          return "RightShift";
+        default:
+          return part;
+      }
+    })
+    .join("+");
 }

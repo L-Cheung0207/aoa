@@ -354,7 +354,7 @@ export function createAuthService(
         ...input,
         device: options.device,
       });
-      return applyTokenResponse(response, input.rememberMe, loginEpoch);
+      return applyTokenResponse(response, true, loginEpoch);
     },
 
     loginWithLdap: async (input) => {
@@ -378,11 +378,11 @@ export function createAuthService(
         keyId: encryptedPassword.keyId,
         nonce: encryptedPassword.nonce,
         timestamp: encryptedPassword.timestamp,
-        rememberMe: input.rememberMe,
+        acceptedLicense: input.acceptedLicense,
         device: options.device,
       });
 
-      return applyTokenResponse(response, input.rememberMe, loginEpoch);
+      return applyTokenResponse(response, true, loginEpoch);
     },
 
     logout: async () => {

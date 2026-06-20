@@ -10,6 +10,10 @@ import {
   shouldOpenInstallerShell,
 } from "./installerService";
 
+function normalizePathSeparators(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
 describe("installer shell service", () => {
   it("uses a per-user Programs directory as the default install location", () => {
     expect(
@@ -56,6 +60,15 @@ describe("installer shell service", () => {
         "installer-shell.json",
       ),
     );
+  });
+
+  it("lets explicit app launch arguments override the installer marker", () => {
+    expect(
+      shouldOpenInstallerShell(["app.exe", "--open-home"], true),
+    ).toBe(false);
+    expect(
+      shouldOpenInstallerShell(["app.exe", "--post-install-login"], true),
+    ).toBe(false);
   });
 
   it("runs the inner installer silently with UI-selected options", async () => {
@@ -163,8 +176,8 @@ describe("installer shell service", () => {
     child.stderr.emit("data", Buffer.from("native crash"));
     child.emit("close", 3221225477, "SIGSEGV");
 
-    await expect(installPromise).rejects.toThrow(
-      "Installer failed (code 3221225477 / 0xc0000005, signal SIGSEGV). Payload: C:\\app\\resources\\installer-shell-payload\\app-setup.exe. Install dir: C:\\Tools\\Voice Assistant. Output: native crash",
+    await expect(installPromise).rejects.toThrowError(
+      /Installer failed \(code 3221225477 \/ 0xc0000005, signal SIGSEGV\)\. Payload: C:[\\/]app[\\/]resources[\\/]installer-shell-payload[\\/]app-setup\.exe\. Install dir: C:\\Tools\\Voice Assistant\. Output: native crash/,
     );
   });
 
@@ -198,8 +211,8 @@ describe("installer shell service", () => {
     child.emit("close", 1);
 
     await expect(installPromise).rejects.toThrow("Installer failed");
-    expect(logs).toContain(
-      "[installer] install started payloadPath=C:\\app\\resources\\installer-shell-payload\\app-setup.exe installDir=C:\\Tools\\Voice Assistant createDesktopShortcut=false launchAtLogin=true updated=false",
+    expect(logs.map(normalizePathSeparators)).toContain(
+      "[installer] install started payloadPath=C:/app/resources/installer-shell-payload/app-setup.exe installDir=C:/Tools/Voice Assistant createDesktopShortcut=false launchAtLogin=true updated=false",
     );
     expect(warnings).toContain(
       "[installer] install failed exitCode=1 signal=none outputLength=20 installDir=C:\\Tools\\Voice Assistant",
@@ -227,8 +240,8 @@ describe("installer shell service", () => {
         launchAtLogin: true,
       }),
     ).rejects.toThrow("Installer payload not found");
-    expect(warnings).toEqual([
-      "[installer] payload missing payloadPath=C:\\app\\resources\\installer-shell-payload\\app-setup.exe",
+    expect(warnings.map(normalizePathSeparators)).toEqual([
+      "[installer] payload missing payloadPath=C:/app/resources/installer-shell-payload/app-setup.exe",
     ]);
   });
 });

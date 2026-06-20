@@ -135,7 +135,7 @@ export function MicrophoneDevicePicker({
       setDevices(nextDevices);
       setStatus(undefined);
     } catch (error) {
-      setStatus(`${text.deviceListFailedPrefix}${formatError(error)}`);
+      setStatus(`${text.deviceListFailedPrefix}${formatError(error, language)}`);
     }
   }, [text]);
 
@@ -214,7 +214,7 @@ export function MicrophoneDevicePicker({
         tick();
       } catch (error) {
         setActiveBars(0);
-        setStatus(`${text.volumeFailedPrefix}${formatError(error)}`);
+        setStatus(`${text.volumeFailedPrefix}${formatError(error, language)}`);
       }
     };
 
@@ -442,6 +442,16 @@ function describeDevice(label: string, text: MicrophonePickerText): string {
   return /usb|ugreen|audio/i.test(label) ? text.externalMicrophone : text.microphone;
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function formatError(error: unknown, language: InterfaceLanguage | undefined): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/[一-龥]/.test(message)) {
+    return message;
+  }
+  if (language === "en-US") {
+    return message.trim() || "Unknown error";
+  }
+  if (language === "zh-TW") {
+    return "請檢查麥克風權限後再試。";
+  }
+  return "请检查麦克风权限后再试。";
 }

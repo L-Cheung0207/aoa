@@ -4,13 +4,14 @@ import {
   buildAppBuilderRceditArgs,
   createDevElectronEnv,
   createDevElectronPaths,
+  createElectronViteDevArgs,
   prepareDevElectronExecutable,
   resolveCachedRceditPath,
 } from "./dev-electron.mjs";
 
 describe("desktop development Electron launcher", () => {
   it("uses a branded Electron executable in development", () => {
-    const paths = createDevElectronPaths("D:/repo/apps/desktop", "D:/repo");
+    const paths = createDevElectronPaths("D:/repo/apps/desktop", "D:/repo", "win32");
 
     expect(paths.sourceElectronExe).toBe(
       join("D:/repo", "node_modules", "electron", "dist", "electron.exe"),
@@ -47,6 +48,26 @@ describe("desktop development Electron launcher", () => {
     expect(paths.iconPath).toBe(
       join("D:/repo/apps/desktop", "resources", "app-icon.ico"),
     );
+    expect(paths.shouldBrandExecutable).toBe(true);
+  });
+
+  it("uses the Electron app bundle executable on macOS", () => {
+    const paths = createDevElectronPaths("/repo/apps/desktop", "/repo", "darwin");
+    const sourceElectronExe = join(
+      "/repo",
+      "node_modules",
+      "electron",
+      "dist",
+      "Electron.app",
+      "Contents",
+      "MacOS",
+      "Electron",
+    );
+
+    expect(paths.sourceElectronExe).toBe(sourceElectronExe);
+    expect(paths.devElectronExe).toBe(sourceElectronExe);
+    expect(paths.shouldPrepareExecutable).toBe(false);
+    expect(paths.shouldBrandExecutable).toBe(false);
   });
 
   it("passes the branded executable path to electron-vite", () => {
@@ -60,6 +81,24 @@ describe("desktop development Electron launcher", () => {
       ELECTRON_EXEC_PATH:
         "D:/repo/apps/desktop/.dev-electron/Voice Assistant Dev.exe",
     });
+  });
+
+  it("passes extra development launcher arguments to electron-vite", () => {
+    expect(
+      createElectronViteDevArgs([
+        "--",
+        "--remoteDebuggingPort",
+        "9444",
+        "--",
+        "--open-home",
+      ]),
+    ).toEqual([
+      "dev",
+      "--remoteDebuggingPort",
+      "9444",
+      "--",
+      "--open-home",
+    ]);
   });
 
   it("builds rcedit args that replace the dev executable icon", () => {
@@ -201,6 +240,45 @@ describe("desktop development Electron launcher", () => {
       ],
       expect.objectContaining({ stdio: "inherit" }),
     );
+  });
+
+  it("skips preparing Electron when the platform does not need a dev executable copy", () => {
+    const copyFileSync = vi.fn();
+    const cpSync = vi.fn();
+    const mkdirSync = vi.fn();
+    const spawnSync = vi.fn(() => ({ status: 0 }));
+    const existsSync = vi.fn((path: string) => !path.endsWith("Contents/MacOS/Electron"));
+
+    prepareDevElectronExecutable({
+      copyFileSync,
+      cpSync,
+      existsSync,
+      iconPath: "app-icon.ico",
+      mkdirSync,
+      rceditPath: undefined,
+      readdirSync: () => [],
+      shouldPrepareExecutable: false,
+      shouldBrandExecutable: false,
+      spawnSync,
+      sourceElectronDir: "electron-dist",
+      sourceElectronExe: join("electron-dist", "Electron.app", "Contents", "MacOS", "Electron"),
+      devElectronDir: ".dev-electron",
+      devElectronExe: join(".dev-electron", "Electron.app", "Contents", "MacOS", "Electron"),
+      sourceConfigPath: "config.json",
+      devResourcesDir: join(".dev-electron", "Electron.app", "Contents", "Resources"),
+      devConfigPath: join(
+        ".dev-electron",
+        "Electron.app",
+        "Contents",
+        "Resources",
+        "config.json",
+      ),
+    });
+
+    expect(cpSync).not.toHaveBeenCalled();
+    expect(copyFileSync).not.toHaveBeenCalled();
+    expect(mkdirSync).not.toHaveBeenCalled();
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 
   it("brands an existing dev executable to recover from stale Electron icons", () => {

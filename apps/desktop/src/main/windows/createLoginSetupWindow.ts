@@ -7,10 +7,10 @@ export function createLoginSetupWindow(
   options: { route?: "loginSetup" | "postInstallLogin" } = {},
 ): BrowserWindow {
   const window = new BrowserWindow({
-    width: 947,
-    height: 670,
+    width: 960,
+    height: 680,
     minWidth: 900,
-    minHeight: 640,
+    minHeight: 600,
     show: false,
     icon: resolveRuntimeAppIconPath(),
     backgroundColor: "#efefef",
