@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { InterfaceLanguage } from "@voice/shared";
 
 export interface ResultOverlayContent {
@@ -89,6 +89,13 @@ export function getResultCopyTooltipLabel(
   return copied ? text.copied : text.copy;
 }
 
+function preventOverlayButtonFocus(
+  event: MouseEvent<HTMLButtonElement>,
+): void {
+  event.preventDefault();
+  window.voiceAI.notifyOverlayInteraction();
+}
+
 export function ResultOverlayPanel({
   result,
   text,
@@ -147,6 +154,7 @@ export function ResultOverlayPanel({
             className="result-panel__icon-btn"
             aria-label={text.closeAnswer}
             title={text.close}
+            onMouseDown={preventOverlayButtonFocus}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -189,6 +197,7 @@ export function ResultOverlayPanel({
                   type="button"
                   className="result-panel__icon-btn"
                   aria-label={copied ? text.copied : text.copyAnswer}
+                  onMouseDown={preventOverlayButtonFocus}
                   onClick={copyAnswer}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

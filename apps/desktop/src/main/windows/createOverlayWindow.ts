@@ -190,6 +190,9 @@ export function createOverlayWindow(
 ): BrowserWindow {
   const window = new BrowserWindow({
     title: "",
+    ...(process.platform === "darwin"
+      ? { acceptFirstMouse: true, type: "panel" }
+      : {}),
     width: OVERLAY_LAYOUT_SIZE.pill.width,
     height: OVERLAY_LAYOUT_SIZE.pill.height,
     show: false,
@@ -213,6 +216,7 @@ export function createOverlayWindow(
 
   window.setMenu(null);
   window.setTitle("");
+  window.setFocusable(false);
   window.on("page-title-updated", (event) => {
     event.preventDefault();
     window.setTitle("");

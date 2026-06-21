@@ -29,6 +29,11 @@ export function MicrophoneHelpDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="microphone-help-dialog-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <section className="microphone-help-dialog__window">
         <header className="microphone-help-dialog__header">

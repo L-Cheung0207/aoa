@@ -475,7 +475,15 @@ function HistoryAnswerDialog({
   const result = toHistoryResultOverlayContent(record, text);
 
   return (
-    <div className="history-answer-modal" role="presentation">
+    <div
+      className="history-answer-modal"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <ResultOverlayPanel
         result={result}
         text={getResultOverlayText(language)}
@@ -571,7 +579,15 @@ function DeleteHistoryConfirmDialog({
   const preview = record.finalText || record.transcript || text.statusLabels[record.status];
 
   return (
-    <div className="history-delete-modal" role="presentation">
+    <div
+      className="history-delete-modal"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!deleting && event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
       <section
         className="history-delete-dialog"
         role="dialog"
@@ -632,7 +648,15 @@ function HistoryRetentionConfirmDialog({
   const isDeleting = retention !== "forever";
 
   return (
-    <div className="history-delete-modal" role="presentation">
+    <div
+      className="history-delete-modal"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!applying && event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
       <section
         className="history-delete-dialog"
         role="dialog"

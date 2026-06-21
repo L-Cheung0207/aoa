@@ -179,7 +179,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
         "开启后可填写 Java 语音服务 API 地址；关闭时使用内置 Java 语音服务。",
       asrWebSocketDescription: "语音识别即时转写连接地址。",
       apiAddress: "API地址",
-      apiAddressDescription: "Java 语音服务地址，由服务端完成识别与 LLM 后处理。",
+      apiAddressDescription:
+        "Java 语音服务地址，由服务端完成识别与 LLM 后处理。",
       apiDisplayName: "API 显示名称",
       apiDisplayNameDescription: "仅用于界面展示，可选。",
       wsProxyOptional: "WS 代理（可选）",
@@ -207,8 +208,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     options: {
       interfaceLanguages: [
-        { key: "简体中文", value: "zh-CN" },
         { key: "繁體中文", value: "zh-TW" },
+        { key: "简体中文", value: "zh-CN" },
         { key: "English", value: "en-US" },
       ],
       recordingLanguages: [
@@ -300,7 +301,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
         "開啟後可填寫 Java 語音服務 API 地址；關閉時使用內置 Java 語音服務。",
       asrWebSocketDescription: "語音識別即時轉寫連線地址。",
       apiAddress: "API 地址",
-      apiAddressDescription: "Java 語音服務地址，由服務端完成識別與 LLM 後處理。",
+      apiAddressDescription:
+        "Java 語音服務地址，由服務端完成識別與 LLM 後處理。",
       apiDisplayName: "API 顯示名稱",
       apiDisplayNameDescription: "僅用於介面展示，可選。",
       wsProxyOptional: "WS 代理（可選）",
@@ -328,8 +330,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     options: {
       interfaceLanguages: [
-        { key: "簡體中文", value: "zh-CN" },
         { key: "繁體中文", value: "zh-TW" },
+        { key: "簡體中文", value: "zh-CN" },
         { key: "English", value: "en-US" },
       ],
       recordingLanguages: [
@@ -381,8 +383,7 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     appearance: {
       theme: "Theme",
-      themeDescription:
-        "Light is the default; dark works better at night.",
+      themeDescription: "Light is the default; dark works better at night.",
       darkTheme: "Dark",
       lightTheme: "Light (Default)",
     },
@@ -462,8 +463,8 @@ const SETTINGS_TEXT: Record<InterfaceLanguage, SettingsText> = {
     },
     options: {
       interfaceLanguages: [
-        { key: "Simplified Chinese", value: "zh-CN" },
         { key: "Traditional Chinese", value: "zh-TW" },
+        { key: "Simplified Chinese", value: "zh-CN" },
         { key: "English", value: "en-US" },
       ],
       recordingLanguages: [

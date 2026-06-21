@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
 import type { AppSettings } from "@voice/shared";
+import { APP_PRODUCT_NAME } from "../appIdentity";
 import { resolveRuntimeAppIconPath } from "./appIcon";
 import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 
@@ -25,6 +26,7 @@ export function createHomeWindow(
   options: CreateHomeWindowOptions = {},
 ): BrowserWindow {
   const window = new BrowserWindow({
+    title: APP_PRODUCT_NAME,
     width: 1080,
     height: 748,
     minWidth: 920,

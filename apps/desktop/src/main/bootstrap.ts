@@ -56,6 +56,7 @@ import {
 } from "./config/appConfig";
 import { createElectronStoreAdapter } from "./config/electronStoreAdapter";
 import { applyLocalEnvFiles } from "./config/localEnv";
+import { APP_PRODUCT_NAME } from "./appIdentity";
 import { getOrCreateInstallationId } from "./installation/installationId";
 import { createFileHistoryStore } from "./history/historyStore";
 import {
@@ -308,6 +309,109 @@ export function resolveShortcutTriggerOverlayLayout(
   });
 }
 
+export interface ElectronNativeWindowHandleSource {
+  isDestroyed(): boolean;
+  getNativeWindowHandle(): Buffer;
+}
+
+export function normalizeNativeWindowHandleToken(
+  windowHandle: string | undefined,
+): string | undefined {
+  const trimmed = windowHandle?.trim().toLowerCase();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    if (/^\d+$/.test(trimmed)) {
+      return BigInt(trimmed).toString(10);
+    }
+    if (/^0x[0-9a-f]+$/.test(trimmed)) {
+      return BigInt(trimmed).toString(10);
+    }
+    if (/^[0-9a-f]+$/.test(trimmed)) {
+      return BigInt(`0x${trimmed}`).toString(10);
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+export function createElectronNativeWindowHandleCandidates(
+  nativeWindowHandle: Buffer,
+): Set<string> {
+  const candidates = new Set<string>();
+  const addNumericCandidate = (value: bigint): void => {
+    candidates.add(value.toString(10));
+    candidates.add(value.toString(16));
+    candidates.add(`0x${value.toString(16)}`);
+  };
+  const addTokenCandidate = (token: string): void => {
+    const normalized = normalizeNativeWindowHandleToken(token);
+    if (normalized) {
+      candidates.add(normalized);
+    }
+    candidates.add(token.toLowerCase());
+  };
+
+  if (nativeWindowHandle.length === 0) {
+    return candidates;
+  }
+
+  addTokenCandidate(nativeWindowHandle.toString("hex"));
+  addTokenCandidate(Buffer.from(nativeWindowHandle).reverse().toString("hex"));
+
+  if (nativeWindowHandle.length >= 4) {
+    addNumericCandidate(BigInt(nativeWindowHandle.readUInt32LE(0)));
+    addNumericCandidate(BigInt(nativeWindowHandle.readUInt32BE(0)));
+  }
+  if (nativeWindowHandle.length >= 8) {
+    addNumericCandidate(nativeWindowHandle.readBigUInt64LE(0));
+    addNumericCandidate(nativeWindowHandle.readBigUInt64BE(0));
+  }
+
+  return candidates;
+}
+
+export function isCurrentAppWindowHandle(
+  windowHandle: string | undefined,
+  options: {
+    windows?: ElectronNativeWindowHandleSource[];
+    processIds?: number[];
+    matchProcessIds?: boolean;
+  } = {},
+): boolean {
+  const normalizedHandle = normalizeNativeWindowHandleToken(windowHandle);
+  if (!normalizedHandle) {
+    return false;
+  }
+
+  if (options.matchProcessIds ?? process.platform === "darwin") {
+    const processIds = options.processIds ?? getCurrentAppProcessIds();
+    if (processIds.some((processId) => `${processId}` === normalizedHandle)) {
+      return true;
+    }
+  }
+
+  const windows = options.windows ?? BrowserWindow.getAllWindows();
+  for (const window of windows) {
+    if (window.isDestroyed()) {
+      continue;
+    }
+    if (
+      createElectronNativeWindowHandleCandidates(
+        window.getNativeWindowHandle(),
+      ).has(normalizedHandle)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function formatShortcutHelpLabel(shortcut: string): string {
   const shortcutParts = shortcut.split("+").map((part) => part.trim());
   const usesRightCommand = shortcutParts.includes("MetaRight");
@@ -370,7 +474,7 @@ export function applyLaunchAtLogin(launchAtLogin: boolean): void {
 
 const OVERLAY_HIDE_DELAY_MS = 0;
 const SELECTION_COPY_DELAY_MS = 80;
-const INSTALL_TARGET_PRODUCT_NAME = "Voice Assistant";
+const INSTALL_TARGET_PRODUCT_NAME = APP_PRODUCT_NAME;
 const WINDOWS_APP_USER_MODEL_ID = "com.ctm.voice-assistant";
 const OPEN_HOME_ON_LAUNCH_ARGS = new Set(["--open-home", "/open-home"]);
 const POST_INSTALL_LOGIN_ARGS = new Set([
@@ -401,6 +505,14 @@ export function resolveDevelopmentRuntime({
   electronRendererUrl?: string | undefined;
 }): boolean {
   return !isPackaged || Boolean(electronRendererUrl);
+}
+
+export function resolvePackagedResourceRuntime({
+  isDevelopmentRuntime,
+}: {
+  isDevelopmentRuntime: boolean;
+}): boolean {
+  return !isDevelopmentRuntime;
 }
 
 export function createDevelopmentAwareBackendClient({
@@ -654,6 +766,7 @@ export interface StartupGateOptions {
   showLoginSetupWindow(snapshot: AuthSessionSnapshot): void;
   hideLoginSetupWindow?(): void;
   openHomeWindowAfterLoginSetup?(): void;
+  openHomeWindowOnAuthenticatedRestore?: boolean;
   forceLoginSetupOnAuthenticatedRestore?: boolean;
   onLoginSetupReady?(complete: () => Promise<void>): void;
 }
@@ -861,7 +974,14 @@ export async function runStartupGate(
       }
       loginSetupCanComplete = false;
       desiredAuthenticated = true;
-      return scheduleTransition();
+      return scheduleTransition().then(() => {
+        if (
+          options.openHomeWindowOnAuthenticatedRestore === true &&
+          runtimeStarted
+        ) {
+          options.openHomeWindowAfterLoginSetup?.();
+        }
+      });
     }
     loginSetupCanComplete = false;
     if (runtimeStarted || runtimeStarting || desiredAuthenticated) {
@@ -956,8 +1076,11 @@ export async function bootstrap(): Promise<void> {
   console.log("[bootstrap] 啟動中…");
   const electronStore = new ElectronStore();
   const storeAdapter = createElectronStoreAdapter(electronStore);
+  const isPackagedResourceRuntime = resolvePackagedResourceRuntime({
+    isDevelopmentRuntime,
+  });
   const appConfigPath = resolveAppConfigPath({
-    isPackaged: app.isPackaged,
+    isPackaged: isPackagedResourceRuntime,
     appPath: app.getAppPath(),
     resourcesPath: process.resourcesPath,
   });
@@ -975,7 +1098,7 @@ export async function bootstrap(): Promise<void> {
   });
   applyPendingInstallOptions({
     installOptionsPath: resolvePendingInstallOptionsPath({
-      isPackaged: app.isPackaged,
+      isPackaged: isPackagedResourceRuntime,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
     }),
@@ -1286,6 +1409,7 @@ export async function bootstrap(): Promise<void> {
     });
     blockHomeWindowAltSpaceMenu(overlayWindow);
     const overlayWindowFollower = createOverlayWindowFollower(overlayWindow);
+    let homeWindow: import("electron").BrowserWindow | undefined;
     console.log("[bootstrap] 懸浮窗已建立");
 
     const cancelPendingOverlayHide = (): void => {
@@ -1296,13 +1420,44 @@ export async function bootstrap(): Promise<void> {
       pendingHideTimer = undefined;
     };
 
+    const hideHomeWindowDuringExternalOverlay = (): void => {
+      if (
+        !insertTargetWindowHandle ||
+        isCurrentAppWindowHandle(insertTargetWindowHandle) ||
+        !homeWindow ||
+        homeWindow.isDestroyed() ||
+        !homeWindow.isVisible()
+      ) {
+        return;
+      }
+      homeWindow.hide();
+    };
+
     const showOverlayWithLayout = (layout: OverlayWindowLayout): void => {
       cancelPendingOverlayHide();
+      hideHomeWindowDuringExternalOverlay();
       applyOverlayWindowLayout(overlayWindow, layout);
+      overlayWindow.setFocusable(false);
       if (!overlayWindow.isVisible()) {
         overlayWindow.showInactive();
       }
       overlayWindowFollower.start(layout);
+    };
+
+    const restoreInsertTargetFocusForOverlayInteraction = (): void => {
+      const targetWindowHandle = insertTargetWindowHandle;
+      if (
+        !targetWindowHandle ||
+        isCurrentAppWindowHandle(targetWindowHandle)
+      ) {
+        return;
+      }
+      void nativeBridge.focusWindow(targetWindowHandle).catch((error) => {
+        console.warn(
+          `[bootstrap] 懸浮窗點擊後恢復目標焦點失敗 handle=${targetWindowHandle}`,
+          error,
+        );
+      });
     };
 
     const scheduleOverlayHide = (state: string): void => {
@@ -1495,10 +1650,18 @@ export async function bootstrap(): Promise<void> {
           lastRecordingState === "error"
         ) {
           try {
-            insertTargetWindowHandle =
+            const foregroundWindowHandle =
               await nativeBridge.getForegroundWindowHandle();
+            insertTargetWindowHandle = isCurrentAppWindowHandle(
+              foregroundWindowHandle,
+            )
+              ? undefined
+              : foregroundWindowHandle;
             console.log(
-              `[bootstrap] 已記錄插入目標視窗 handle=${insertTargetWindowHandle ?? "none"}`,
+              `[bootstrap] 已記錄插入目標視窗 handle=${insertTargetWindowHandle ?? "none"}` +
+                (foregroundWindowHandle && !insertTargetWindowHandle
+                  ? "（已忽略本應用視窗）"
+                  : ""),
             );
           } catch (error) {
             insertTargetWindowHandle = undefined;
@@ -1792,7 +1955,6 @@ export async function bootstrap(): Promise<void> {
     refreshTrayTooltip("idle");
 
     // 首頁視窗採用單例模式：托盤雙擊開啟首頁；托盤選單「設定」開啟首頁並喚起設定彈層。
-    let homeWindow: import("electron").BrowserWindow | undefined;
     function openHomeWindow(
       options: {
         section?: "home" | "history" | "settings" | "about";
@@ -1956,6 +2118,10 @@ export async function bootstrap(): Promise<void> {
       "voice:open-microphone-help-request",
       openMicrophoneHelpRequestHandler,
     );
+    const overlayInteractionHandler = (): void => {
+      restoreInsertTargetFocusForOverlayInteraction();
+    };
+    ipcMain.on("voice:overlay-interaction", overlayInteractionHandler);
 
     if (shouldOpenHomeOnLaunch(process.argv)) {
       runLoggedBootstrapAction(
@@ -2168,6 +2334,10 @@ export async function bootstrap(): Promise<void> {
         openMicrophoneHelpRequestHandler,
       );
       ipcMain.removeListener(
+        "voice:overlay-interaction",
+        overlayInteractionHandler,
+      );
+      ipcMain.removeListener(
         "voice:report-recording-state",
         reportRecordingStateHandler,
       );
@@ -2213,6 +2383,7 @@ export async function bootstrap(): Promise<void> {
     hideLoginSetupWindow,
     openHomeWindowAfterLoginSetup: () => openHomeWindowAfterLoginSetup(),
     forceLoginSetupOnAuthenticatedRestore: openPostInstallLoginOnLaunch,
+    openHomeWindowOnAuthenticatedRestore: isDevelopmentRuntime,
     onLoginSetupReady: (complete) => {
       completeLoginSetup = complete;
     },

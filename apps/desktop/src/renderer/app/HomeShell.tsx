@@ -4,6 +4,7 @@ import { HistoryPage } from "../features/history/HistoryPage";
 import { HomePage } from "../features/home/HomePage";
 import { MicrophoneHelpDialog } from "../features/home/MicrophoneHelpDialog";
 import { OnboardingGuide } from "../features/home/components/OnboardingGuide";
+import contactIllustration from "../features/home/contact-illustration.png";
 import { buildHomeUsageStats } from "../features/home/homeUsageStats";
 import privacyPolicyMarkdown from "../features/home/legal-documents/privacy-policy.md?raw";
 import userAgreementMarkdown from "../features/home/legal-documents/user-agreement.md?raw";
@@ -203,6 +204,7 @@ export function HomeShell({
   );
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [microphoneHelpOpen, setMicrophoneHelpOpen] = useState(false);
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
   const [legalDocument, setLegalDocument] = useState<
     LegalDocumentKind | undefined
   >(undefined);
@@ -486,7 +488,13 @@ export function HomeShell({
   return (
     <main className="home-page">
       <WindowControls
-        modalOpen={onboardingOpen || updateDialogOpen || microphoneHelpOpen}
+        modalOpen={
+          onboardingOpen ||
+          updateDialogOpen ||
+          microphoneHelpOpen ||
+          contactDialogOpen ||
+          legalDocument !== undefined
+        }
         text={shellText}
       />
       <aside className="home-sidebar">
@@ -587,7 +595,7 @@ export function HomeShell({
             text={shellText}
             versionLabel={versionLabel}
             onCheckUpdates={openUpdateDialog}
-            onContact={() => {}}
+            onContact={() => setContactDialogOpen(true)}
             onOpenAgreement={() => setLegalDocument("agreement")}
             onOpenPrivacy={() => setLegalDocument("privacy")}
           />
@@ -602,7 +610,7 @@ export function HomeShell({
               setOnboardingOpen(true);
             }}
             onCheckUpdates={openUpdateDialog}
-            onContact={() => setToast(shellText.contactPending)}
+            onContact={() => setContactDialogOpen(true)}
           />
         ) : null}
       </section>
@@ -649,6 +657,12 @@ export function HomeShell({
           onClose={() => setMicrophoneHelpOpen(false)}
         />
       ) : null}
+      {contactDialogOpen ? (
+        <ContactDialog
+          closeLabel={shellText.close}
+          onClose={() => setContactDialogOpen(false)}
+        />
+      ) : null}
       {legalDocument ? (
         <LegalDocumentDialog
           title={
@@ -666,6 +680,60 @@ export function HomeShell({
         />
       ) : null}
     </main>
+  );
+}
+
+function ContactDialog({
+  closeLabel,
+  onClose,
+}: {
+  closeLabel: string;
+  onClose(): void;
+}): React.JSX.Element {
+  return (
+    <div
+      className="contact-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="contact-dialog-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section className="contact-dialog__window">
+        <button
+          type="button"
+          className="contact-dialog__close"
+          aria-label={closeLabel}
+          onClick={onClose}
+        >
+          <ThemedIcon name="close" />
+        </button>
+        <div className="contact-dialog__copy">
+          <h1 id="contact-dialog-title">
+            <span>Get in touch</span>
+            <span aria-hidden="true">📩</span>
+          </h1>
+          <section className="contact-dialog__section">
+            <h2>Email</h2>
+            <a href="mailto:your@teleone.com">your@teleone.com</a>
+          </section>
+          <section className="contact-dialog__section">
+            <h2>About us</h2>
+            <p>
+              Voice Assistant transforms your naturally spoken words into
+              ready-to-send text in any application. No keyboard needed. 4x
+              faster than typing.
+            </p>
+          </section>
+        </div>
+        <div className="contact-dialog__art" aria-hidden="true">
+          <img src={contactIllustration} alt="" />
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -731,7 +799,7 @@ function AboutPage({
           <AboutActionRow
             icon="aboutContactEmail"
             label={text.contact}
-            onClick={() => runWithToast(text.contactPendingToast, onContact)}
+            onClick={onContact}
           />
           <AboutActionRow
             icon="aboutUserAgreement"
@@ -800,6 +868,11 @@ function LegalDocumentDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="legal-document-dialog-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <section className="legal-document-dialog__window">
         <header className="legal-document-dialog__header">
@@ -883,11 +956,16 @@ function formatVersionLabel(appVersion: string): string {
 }
 
 export function isRightCommandEvent(event: KeyboardEvent): boolean {
-  return event.code === "MetaRight" || (event.key === "Meta" && event.location === 2);
+  return (
+    event.code === "MetaRight" || (event.key === "Meta" && event.location === 2)
+  );
 }
 
 export function isRightShiftEvent(event: KeyboardEvent): boolean {
-  return event.code === "ShiftRight" || (event.key === "Shift" && event.location === 2);
+  return (
+    event.code === "ShiftRight" ||
+    (event.key === "Shift" && event.location === 2)
+  );
 }
 
 export function isSlashEvent(event: KeyboardEvent): boolean {

@@ -59,6 +59,7 @@ describe("createHomeWindow", () => {
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         icon: join(__dirname, "../../../resources/app-icon.ico"),
+        title: "Voice Assistant",
       }),
     );
   });

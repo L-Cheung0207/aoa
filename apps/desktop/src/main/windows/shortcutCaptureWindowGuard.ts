@@ -22,6 +22,8 @@ interface WindowAltSpaceGuardState {
   rightAltDown: boolean;
   rightAltSyntheticCtrlDown: boolean;
   rightCommandCapturedAccelerator: string | undefined;
+  rightCommandCapturedReleaseSent: boolean;
+  rightCommandCapturedKeysDown: Set<string>;
   rightCommandAcceleratorCaptured: boolean;
   rightCommandCaptureStarted: boolean;
   rightCommandDown: boolean;
@@ -39,6 +41,7 @@ const SYMBOL_KEY_ACCELERATORS: Record<string, string> = {
   Comma: ",",
   Period: ".",
   Slash: "/",
+  NumpadDivide: "/",
   Backslash: "\\",
   Semicolon: ";",
   Quote: "'",
@@ -106,6 +109,8 @@ function getOrCreateGuardState(window: BrowserWindow): WindowAltSpaceGuardState 
     rightAltDown: false,
     rightAltSyntheticCtrlDown: false,
     rightCommandCapturedAccelerator: undefined,
+    rightCommandCapturedReleaseSent: false,
+    rightCommandCapturedKeysDown: new Set<string>(),
     rightCommandAcceleratorCaptured: false,
     rightCommandCaptureStarted: false,
     rightCommandDown: false,
@@ -203,48 +208,53 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
       return;
     }
 
-    if (
-      input.type === "keyUp" &&
-      isRightCommandInput(input) &&
+    const rightCommandReleased =
       getActiveCaptureKind(state) === "loginSetup" &&
+      isRightCommandReleaseInput(state, input);
+    const rightCommandCapturedKeyReleased =
+      getActiveCaptureKind(state) === "loginSetup" &&
+      isRightCommandCapturedKeyReleaseInput(state, input);
+
+    if (
+      (rightCommandReleased || rightCommandCapturedKeyReleased) &&
       state.rightCommandAcceleratorCaptured
     ) {
       event.preventDefault();
-      if (state.rightCommandCapturedAccelerator) {
+      if (
+        state.rightCommandCapturedAccelerator &&
+        !state.rightCommandCapturedReleaseSent
+      ) {
         sendShortcutCaptureAccelerator(
           window,
           state,
           state.rightCommandCapturedAccelerator,
           "up",
         );
+        state.rightCommandCapturedReleaseSent = true;
       }
-      resetRightCommandCaptureState(state);
+      if (rightCommandReleased) {
+        resetRightCommandCaptureState(state);
+      } else {
+        state.rightCommandCapturedAccelerator = undefined;
+        state.rightCommandCapturedKeysDown.clear();
+        state.rightCommandAcceleratorCaptured = false;
+        state.rightCommandCaptureStarted = input.meta === true;
+        state.rightCommandDown = input.meta === true;
+      }
       return;
     }
 
     if (
-      input.type === "keyUp" &&
-      input.code === "ShiftRight" &&
       getActiveCaptureKind(state) === "loginSetup" &&
       state.rightCommandAcceleratorCaptured &&
-      state.rightCommandCapturedAccelerator === "MetaRight+RightShift"
+      isRightCommandCapturedKeyPressInput(state, input)
     ) {
       event.preventDefault();
-      sendShortcutCaptureAccelerator(
-        window,
-        state,
-        state.rightCommandCapturedAccelerator,
-        "up",
-      );
-      resetRightCommandCaptureState(state);
-      state.shiftDown = false;
       return;
     }
 
     if (
-      input.type === "keyUp" &&
-      isRightCommandInput(input) &&
-      getActiveCaptureKind(state) === "loginSetup" &&
+      rightCommandReleased &&
       state.rightCommandCaptureStarted &&
       !state.rightCommandAcceleratorCaptured
     ) {
@@ -294,19 +304,19 @@ function ensureRendererAltSpaceHooks(window: BrowserWindow): void {
     }
 
     if (
-      input.type === "keyDown" &&
+      isKeyPressInput(input) &&
       getActiveCaptureKind(state) === "loginSetup" &&
       isRightCommandChordInput(state, input) &&
       !state.rightCommandAcceleratorCaptured
     ) {
-      if (input.code === "ShiftRight") {
+      if (isRightShiftInput(input)) {
         event.preventDefault();
         captureRightCommandAccelerator(window, state, "MetaRight+RightShift");
         state.rightCommandAcceleratorCaptured = true;
         return;
       }
 
-      const accelerator = buildRightCommandAccelerator(state, input.code);
+      const accelerator = buildRightCommandAccelerator(state, input);
       if (accelerator) {
         event.preventDefault();
         captureRightCommandAccelerator(window, state, accelerator);
@@ -352,6 +362,10 @@ function captureRightCommandAccelerator(
   accelerator: string
 ): void {
   state.rightCommandCapturedAccelerator = accelerator;
+  state.rightCommandCapturedReleaseSent = false;
+  state.rightCommandCapturedKeysDown = new Set(
+    accelerator.split("+").filter((key) => key.length > 0)
+  );
   state.rightCommandAcceleratorCaptured = true;
   sendShortcutCaptureAccelerator(window, state, accelerator, "down");
 }
@@ -407,6 +421,8 @@ function resetKeyboardState(state: WindowAltSpaceGuardState): void {
   state.rightAltDown = false;
   state.rightAltSyntheticCtrlDown = false;
   state.rightCommandCapturedAccelerator = undefined;
+  state.rightCommandCapturedReleaseSent = false;
+  state.rightCommandCapturedKeysDown.clear();
   state.rightCommandAcceleratorCaptured = false;
   state.rightCommandCaptureStarted = false;
   state.rightCommandDown = false;
@@ -421,11 +437,16 @@ function resetRightAltCaptureState(state: WindowAltSpaceGuardState): void {
   state.rightAltSyntheticCtrlDown = false;
 }
 
-function resetRightCommandCaptureState(state: WindowAltSpaceGuardState): void {
+function resetRightCommandCaptureState(
+  state: WindowAltSpaceGuardState,
+  options: { rightCommandDown?: boolean } = {}
+): void {
   state.rightCommandCapturedAccelerator = undefined;
+  state.rightCommandCapturedReleaseSent = false;
+  state.rightCommandCapturedKeysDown.clear();
   state.rightCommandAcceleratorCaptured = false;
-  state.rightCommandCaptureStarted = false;
-  state.rightCommandDown = false;
+  state.rightCommandDown = options.rightCommandDown ?? false;
+  state.rightCommandCaptureStarted = state.rightCommandDown;
 }
 
 function trackModifierState(
@@ -452,6 +473,11 @@ function trackModifierState(
       state.rightCommandCaptureStarted = true;
       state.rightCommandAcceleratorCaptured = false;
     }
+    return;
+  }
+
+  if (isRightShiftInput(input)) {
+    state.shiftDown = isDown;
     return;
   }
 
@@ -514,7 +540,8 @@ function isRightCommandChordInput(
   return (
     state.rightCommandDown ||
     isRightCommandInput(input) ||
-    (input.meta === true && isRightSideModifierInput(input))
+    (input.meta === true &&
+      (isRightSideModifierInput(input) || keyFromInput(input) === "/"))
   );
 }
 
@@ -526,11 +553,88 @@ function isRightCommandInput(input: Electron.Input): boolean {
   );
 }
 
+function isRightCommandReleaseInput(
+  state: WindowAltSpaceGuardState,
+  input: Electron.Input
+): boolean {
+  return (
+    (isRightCommandInput(input) && input.type === "keyUp") ||
+    (state.rightCommandDown &&
+      input.meta === false &&
+      (isRightCommandInput(input) ||
+        input.key === "Meta" ||
+        (input.key === "" && input.code === "")))
+  );
+}
+
+function isRightCommandCapturedKeyPressInput(
+  state: WindowAltSpaceGuardState,
+  input: Electron.Input
+): boolean {
+  if (!isKeyPressInput(input) || isRightCommandInput(input)) {
+    return false;
+  }
+  const pressedKey = isRightShiftInput(input) ? "RightShift" : keyFromInput(input);
+  return Boolean(pressedKey && state.rightCommandCapturedKeysDown.has(pressedKey));
+}
+
+function isRightCommandCapturedKeyReleaseInput(
+  state: WindowAltSpaceGuardState,
+  input: Electron.Input
+): boolean {
+  if (!state.rightCommandCapturedAccelerator || isRightCommandInput(input)) {
+    return false;
+  }
+
+  const releasedKey = rightCommandCapturedReleaseKey(state, input);
+  if (!releasedKey || !state.rightCommandCapturedKeysDown.has(releasedKey)) {
+    return false;
+  }
+
+  state.rightCommandCapturedKeysDown.delete(releasedKey);
+  if (releasedKey === "RightShift") {
+    state.shiftDown = false;
+  }
+  return true;
+}
+
+function rightCommandCapturedReleaseKey(
+  state: WindowAltSpaceGuardState,
+  input: Electron.Input
+): string | undefined {
+  if (
+    state.rightCommandCapturedKeysDown.has("RightShift") &&
+    ((state.shiftDown && input.shift === false) ||
+      (input.type === "keyUp" && isRightShiftInput(input)))
+  ) {
+    return "RightShift";
+  }
+
+  const inputKey = keyFromInput(input);
+  if (
+    input.type === "keyUp" &&
+    inputKey &&
+    state.rightCommandCapturedKeysDown.has(inputKey)
+  ) {
+    return inputKey;
+  }
+
+  if (
+    state.rightCommandCapturedKeysDown.has("/") &&
+    input.type === "keyUp" &&
+    input.meta === true
+  ) {
+    return "/";
+  }
+
+  return undefined;
+}
+
 function buildRightCommandAccelerator(
   state: WindowAltSpaceGuardState,
-  code: string
+  input: Electron.Input
 ): string | undefined {
-  const key = keyFromInputCode(code);
+  const key = keyFromInput(input);
   if (!key) {
     return undefined;
   }
@@ -553,6 +657,10 @@ function buildRightCommandAccelerator(
   return [...new Set(parts), key].join("+");
 }
 
+function isKeyPressInput(input: Electron.Input): boolean {
+  return input.type === "keyDown" || input.type === "char";
+}
+
 function isRightAltChordInput(
   state: WindowAltSpaceGuardState,
   input: Electron.Input
@@ -571,6 +679,14 @@ function isRightAltChordInput(
 
 function isRightSideModifierInput(input: Electron.Input): boolean {
   return Array.isArray(input.modifiers) && input.modifiers.includes("right");
+}
+
+function isRightShiftInput(input: Electron.Input): boolean {
+  return (
+    input.code === "ShiftRight" ||
+    (input.key === "Shift" &&
+      (input.location === 2 || isRightSideModifierInput(input)))
+  );
 }
 
 function buildRightAltAccelerator(
@@ -598,6 +714,10 @@ function buildRightAltAccelerator(
   });
   parts.push("AltGr");
   return [...new Set(parts), key].join("+");
+}
+
+function keyFromInput(input: Electron.Input): string | undefined {
+  return keyFromInputCode(input.code) ?? keyFromInputKey(input.key);
 }
 
 function keyFromInputCode(code: string): string | undefined {
@@ -638,6 +758,25 @@ function keyFromInputCode(code: string): string | undefined {
     default:
       return SYMBOL_KEY_ACCELERATORS[code];
   }
+}
+
+function keyFromInputKey(key: string): string | undefined {
+  if (key.length !== 1) {
+    return undefined;
+  }
+  if (/^[a-z]$/i.test(key)) {
+    return key.toUpperCase();
+  }
+  if (/^[0-9]$/.test(key)) {
+    return key;
+  }
+  if (key === "?") {
+    return "/";
+  }
+  if (key === "／" || key === "∕" || key === "÷") {
+    return "/";
+  }
+  return Object.values(SYMBOL_KEY_ACCELERATORS).includes(key) ? key : undefined;
 }
 
 function ensureSystemContextMenuBlocked(window: BrowserWindow): void {

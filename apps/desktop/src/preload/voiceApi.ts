@@ -240,6 +240,7 @@ export interface VoiceAIAPI {
    */
   reportRecordingState(update: RecordingStateUpdate): void;
   controlHomeWindow(action: HomeWindowControlAction): void;
+  notifyOverlayInteraction(): void;
   openHomeSection(input: OpenHomeSectionInput): void;
   openMicrophoneHelp(): void;
   /** 录入快捷键时暂停/恢复全局 Right Alt 快捷键，避免与语音功能冲突。 */
@@ -355,6 +356,9 @@ export const voiceAI: VoiceAIAPI = {
   },
   controlHomeWindow: (action) => {
     ipcRenderer.send("voice:home-window-control", action);
+  },
+  notifyOverlayInteraction: () => {
+    ipcRenderer.send("voice:overlay-interaction");
   },
   openHomeSection: (input) => {
     ipcRenderer.send("voice:open-home-section-request", input);

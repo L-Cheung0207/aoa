@@ -1,10 +1,12 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
+import { APP_PRODUCT_NAME } from "../appIdentity";
 import { resolveRuntimeAppIconPath } from "./appIcon";
 import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 
 export function createInstallerWindow(): BrowserWindow {
   const window = new BrowserWindow({
+    title: APP_PRODUCT_NAME,
     width: 663,
     height: 491,
     resizable: false,

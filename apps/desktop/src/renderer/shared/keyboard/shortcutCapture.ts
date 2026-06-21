@@ -137,7 +137,7 @@ export interface CreateShortcutCaptureHandlersOptions {
   existingShortcuts?: string[];
   onCapture(accelerator: string): void;
   onCancel(): void;
-  onInvalid?(message: string): void;
+  onInvalid?(message: string, accelerator?: string): void;
   platform?: ShortcutDisplayPlatform;
 }
 
@@ -174,17 +174,28 @@ export function createShortcutCaptureHandlers(
     clearRightAltFallback();
 
     const platform = options.platform ?? detectShortcutDisplayPlatform();
-    const normalizedAccelerator = normalizeShortcutForStorage(accelerator, platform);
-    const validation = validateShortcut(normalizeShortcutForValidation(accelerator), {
-      platform: "win32",
-      currentShortcut:
-        options.currentShortcut !== undefined
-          ? normalizeShortcutForValidation(options.currentShortcut)
-          : undefined,
-      existingShortcuts: options.existingShortcuts?.map(normalizeShortcutForValidation),
-    });
+    const normalizedAccelerator = normalizeShortcutForStorage(
+      accelerator,
+      platform,
+    );
+    const validation = validateShortcut(
+      normalizeShortcutForValidation(accelerator),
+      {
+        platform: "win32",
+        currentShortcut:
+          options.currentShortcut !== undefined
+            ? normalizeShortcutForValidation(options.currentShortcut)
+            : undefined,
+        existingShortcuts: options.existingShortcuts?.map(
+          normalizeShortcutForValidation,
+        ),
+      },
+    );
     if (!validation.ok) {
-      options.onInvalid?.(validation.message ?? INVALID_SHORTCUT_MESSAGE);
+      options.onInvalid?.(
+        validation.message ?? INVALID_SHORTCUT_MESSAGE,
+        normalizedAccelerator,
+      );
       return;
     }
 
@@ -292,8 +303,10 @@ export function createShortcutCaptureHandlers(
 }
 
 function normalizeShortcutForValidation(value: string): string {
-  return normalizeShortcutForStorage(value, "windows")
-    .replaceAll("MetaRight", "RightAlt");
+  return normalizeShortcutForStorage(value, "windows").replaceAll(
+    "MetaRight",
+    "RightAlt",
+  );
 }
 
 function modifierFromEvent(event: KeyboardEvent): string | undefined {

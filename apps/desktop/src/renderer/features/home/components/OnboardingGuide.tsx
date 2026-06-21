@@ -397,6 +397,11 @@ export function OnboardingGuide({
       role="dialog"
       aria-modal="true"
       aria-label={text.ariaLabel}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <div className="onboarding-guide__chrome">
         <ol className="onboarding-guide__steps" aria-label={text.progressLabel}>

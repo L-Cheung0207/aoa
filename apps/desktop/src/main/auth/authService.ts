@@ -300,6 +300,17 @@ export function createAuthService(
       if (!storedSession) {
         runtimeSession = undefined;
         refreshInFlight = undefined;
+        if (options.allowDevelopmentBypass) {
+          runtimeSession = buildRuntimeSession(
+            createDevelopmentTokenResponse({
+              email: "dev@example.test",
+              code: "dev",
+              acceptedLicense: true,
+            }),
+            false,
+          );
+          return createAuthenticatedSnapshot(runtimeSession);
+        }
         return createUnauthenticatedSnapshot();
       }
 

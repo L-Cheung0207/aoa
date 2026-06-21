@@ -8,6 +8,7 @@ const electronMock = vi.hoisted(() => {
     on: ReturnType<typeof vi.fn>;
     setAlwaysOnTop: ReturnType<typeof vi.fn>;
     setBounds: ReturnType<typeof vi.fn>;
+    setFocusable: ReturnType<typeof vi.fn>;
     setMenu: ReturnType<typeof vi.fn>;
     setTitle: ReturnType<typeof vi.fn>;
   }> = [];
@@ -18,6 +19,7 @@ const electronMock = vi.hoisted(() => {
       on: vi.fn(),
       setAlwaysOnTop: vi.fn(),
       setBounds: vi.fn(),
+      setFocusable: vi.fn(),
       setMenu: vi.fn(),
       setTitle: vi.fn()
     };
@@ -149,6 +151,7 @@ describe("overlay window bounds", () => {
     );
     expect(electronMock.instances[0]?.setMenu).toHaveBeenCalledWith(null);
     expect(electronMock.instances[0]?.setTitle).toHaveBeenCalledWith("");
+    expect(electronMock.instances[0]?.setFocusable).toHaveBeenCalledWith(false);
     expect(electronMock.instances[0]?.on).toHaveBeenCalledWith(
       "page-title-updated",
       expect.any(Function)
@@ -161,6 +164,23 @@ describe("overlay window bounds", () => {
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         icon: join(__dirname, "../../../resources/app-icon.ico")
+      })
+    );
+  });
+
+  it("uses a non-activating panel style on macOS so overlay clicks do not raise the home window", () => {
+    const platform = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+    try {
+      createOverlayWindow();
+    } finally {
+      platform.mockRestore();
+    }
+
+    expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acceptFirstMouse: true,
+        focusable: false,
+        type: "panel"
       })
     );
   });

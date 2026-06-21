@@ -524,14 +524,26 @@
 }
 
 .home-footer__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: rgba(226, 232, 240, 0.72);
   background: transparent;
   border: 0;
   padding: 0;
   font: inherit;
   cursor: pointer;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
   transition: color 160ms ease;
+}
+
+.home-footer__link-icon,
+.home-footer__link-icon .themed-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 
 :root[data-theme="light"] .home-footer {

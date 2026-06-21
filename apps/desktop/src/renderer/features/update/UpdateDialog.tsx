@@ -251,7 +251,17 @@ export function UpdateDialog({
   };
 
   return (
-    <div className="update-dialog" role="dialog" aria-modal="true" aria-label="检查更新">
+    <div
+      className="update-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="检查更新"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          close();
+        }
+      }}
+    >
       <div className="update-dialog__window">
         {canClose ? (
           <button

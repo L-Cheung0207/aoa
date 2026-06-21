@@ -1,9 +1,11 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
+import { APP_PRODUCT_NAME } from "../appIdentity";
 import { resolveRuntimeAppIconPath } from "./appIcon";
 
 export function createSettingsWindow(): BrowserWindow {
   const window = new BrowserWindow({
+    title: APP_PRODUCT_NAME,
     width: 920,
     height: 680,
     show: false,

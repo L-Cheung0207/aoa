@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createDefaultSettings } from "@voice/shared";
 import type {
   AppSettings,
   InterfaceLanguage,
@@ -39,15 +40,26 @@ type ShortcutSettingKey =
   | "translateDictation"
   | "processSelection";
 
+function getDefaultSettingsPlatform(): string | undefined {
+  if (typeof navigator === "undefined") {
+    return undefined;
+  }
+  const platform = navigator.platform.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+  return platform.includes("mac") || userAgent.includes("mac os")
+    ? "darwin"
+    : undefined;
+}
+
 export function getOtherShortcutValues(
   settings: AppSettings,
-  key: ShortcutSettingKey
+  key: ShortcutSettingKey,
 ): string[] {
   const shortcuts = settings.shortcuts;
   const keys: ShortcutSettingKey[] = [
     "toggleRecording",
     "translateDictation",
-    "processSelection"
+    "processSelection",
   ];
   return keys
     .filter((item) => item !== key)
@@ -64,6 +76,9 @@ export function SettingsPage({
   );
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  const [isPackaged, setIsPackaged] = useState<boolean | undefined>(
+    initialSettings ? false : undefined,
+  );
 
   const autoSave = useAutoSaveSettings({
     scope: "page",
@@ -108,6 +123,30 @@ export function SettingsPage({
   }, [autoSave, initialSettings]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let cancelled = false;
+    void window.voiceAI
+      .getAppInfo()
+      .then((info) => {
+        if (!cancelled) {
+          setIsPackaged(info.isPackaged);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsPackaged(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof document === "undefined") {
       return;
     }
@@ -139,7 +178,13 @@ export function SettingsPage({
 
   const text = getSettingsText(settings.ui.language);
   const developerModeEnabled = settings.developer.enabled;
+  const showConnectionSection = isPackaged === false;
   const connectionError = validateConnectionSettings(settings);
+  const defaultSettingsPlatform = getDefaultSettingsPlatform();
+  const defaultShortcuts = createDefaultSettings({
+    isPackaged: isPackaged ?? false,
+    ...(defaultSettingsPlatform ? { platform: defaultSettingsPlatform } : {}),
+  }).shortcuts;
 
   return (
     <main className="settings">
@@ -198,8 +243,8 @@ export function SettingsPage({
                   });
               }}
             >
-              <option value="dark">{text.appearance.darkTheme}</option>
               <option value="light">{text.appearance.lightTheme}</option>
+              <option value="dark">{text.appearance.darkTheme}</option>
             </select>
           </div>
         </div>
@@ -229,9 +274,10 @@ export function SettingsPage({
             <ShortcutRecorder
               language={settings.ui.language}
               value={settings.shortcuts.toggleRecording}
+              defaultValue={defaultShortcuts.toggleRecording}
               existingShortcuts={getOtherShortcutValues(
                 settings,
-                "toggleRecording"
+                "toggleRecording",
               )}
               onChange={(value) =>
                 updateSettings((current) => ({
@@ -255,9 +301,10 @@ export function SettingsPage({
             <ShortcutRecorder
               language={settings.ui.language}
               value={settings.shortcuts.translateDictation}
+              defaultValue={defaultShortcuts.translateDictation}
               existingShortcuts={getOtherShortcutValues(
                 settings,
-                "translateDictation"
+                "translateDictation",
               )}
               onChange={(value) =>
                 updateSettings((current) => ({
@@ -281,9 +328,10 @@ export function SettingsPage({
             <ShortcutRecorder
               language={settings.ui.language}
               value={settings.shortcuts.processSelection}
+              defaultValue={defaultShortcuts.processSelection}
               existingShortcuts={getOtherShortcutValues(
                 settings,
-                "processSelection"
+                "processSelection",
               )}
               onChange={(value) =>
                 updateSettings((current) => ({
@@ -569,53 +617,55 @@ export function SettingsPage({
         </div>
       </section>
 
-      <section
-        className="settings__section settings__section--plain"
-        aria-label={text.sections.connection}
-      >
-        <h2
-          className="settings-group-header"
+      {showConnectionSection ? (
+        <section
+          className="settings__section settings__section--plain"
           aria-label={text.sections.connection}
         >
-          <span className="settings-group-header__icon" aria-hidden="true">
-            <SettingsSectionIcon name="connection" mode="image" />
-          </span>
-          <span className="settings-group-header__label">
-            {text.sections.connection}
-          </span>
-        </h2>
-        <div className="settings-row">
-          <div className="settings-row__text">
-            <strong>{text.connection.developerMode}</strong>
-            <small>{text.connection.developerModeDescription}</small>
+          <h2
+            className="settings-group-header"
+            aria-label={text.sections.connection}
+          >
+            <span className="settings-group-header__icon" aria-hidden="true">
+              <SettingsSectionIcon name="connection" mode="image" />
+            </span>
+            <span className="settings-group-header__label">
+              {text.sections.connection}
+            </span>
+          </h2>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>{text.connection.developerMode}</strong>
+              <small>{text.connection.developerModeDescription}</small>
+            </div>
+            <div className="settings-row__control">
+              <SettingsSwitch
+                checked={developerModeEnabled}
+                label={text.connection.developerMode}
+                onChange={(checked) =>
+                  updateSettings((current) => ({
+                    ...current,
+                    developer: {
+                      ...current.developer,
+                      enabled: checked,
+                    },
+                  }))
+                }
+              />
+            </div>
           </div>
-          <div className="settings-row__control">
-            <SettingsSwitch
-              checked={developerModeEnabled}
-              label={text.connection.developerMode}
-              onChange={(checked) =>
-                updateSettings((current) => ({
-                  ...current,
-                  developer: {
-                    ...current.developer,
-                    enabled: checked,
-                  },
-                }))
-              }
+          {developerModeEnabled ? (
+            <ConnectionSettingsFields
+              layout="page"
+              settings={settings}
+              language={settings.ui.language}
+              onSettingsChange={updateSettings}
             />
-          </div>
-        </div>
-        {developerModeEnabled ? (
-          <ConnectionSettingsFields
-            layout="page"
-            settings={settings}
-            language={settings.ui.language}
-            onSettingsChange={updateSettings}
-          />
-        ) : null}
-      </section>
+          ) : null}
+        </section>
+      ) : null}
 
-      {developerModeEnabled && connectionError && (
+      {showConnectionSection && developerModeEnabled && connectionError && (
         <p className="settings__hint settings__hint--error">
           {connectionError}
         </p>

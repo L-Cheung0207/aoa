@@ -57,6 +57,7 @@ describe("createLoginSetupWindow", () => {
         frame: false,
         autoHideMenuBar: true,
         show: false,
+        title: "Voice Assistant",
       }),
     );
     expect(shortcutGuardMock.blockHomeWindowAltSpaceMenu).toHaveBeenCalledWith(

@@ -54,7 +54,7 @@ describe("desktop development Electron launcher", () => {
     expect(paths.shouldBrandExecutable).toBe(true);
   });
 
-  it("uses the Electron app bundle executable on macOS", () => {
+  it("patches the source Electron app bundle icon on macOS", () => {
     const paths = createDevElectronPaths("/repo/apps/desktop", "/repo", "darwin");
     const sourceElectronExe = join(
       "/repo",
@@ -68,9 +68,36 @@ describe("desktop development Electron launcher", () => {
     );
 
     expect(paths.sourceElectronExe).toBe(sourceElectronExe);
-    expect(paths.devElectronExe).toBe(sourceElectronExe);
+    expect(paths.devElectronExe).toBe(
+      join(
+        "/repo",
+        "node_modules",
+        "electron",
+        "dist",
+        "Voice Assistant.app",
+        "Contents",
+        "MacOS",
+        "Voice Assistant",
+      ),
+    );
+    expect(paths.macIconPath).toBe(
+      join("/repo/apps/desktop", "resources", "app-icon.icns"),
+    );
+    expect(paths.macBundleIconPath).toBe(
+      join(
+        "/repo",
+        "node_modules",
+        "electron",
+        "dist",
+        "Voice Assistant.app",
+        "Contents",
+        "Resources",
+        "app-icon.icns",
+      ),
+    );
     expect(paths.shouldPrepareExecutable).toBe(false);
     expect(paths.shouldBrandExecutable).toBe(false);
+    expect(paths.shouldBrandMacBundle).toBe(true);
   });
 
   it("passes the branded executable path to electron-vite", () => {
@@ -298,24 +325,50 @@ describe("desktop development Electron launcher", () => {
     );
   });
 
-  it("skips preparing Electron when the platform does not need a dev executable copy", () => {
+  it("brands the macOS dev app bundle icon and display name", () => {
     const copyFileSync = vi.fn();
     const cpSync = vi.fn();
     const mkdirSync = vi.fn();
+    const readFileSync = vi.fn(() => `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+\t<key>CFBundleDisplayName</key>
+\t<string>Electron</string>
+\t<key>CFBundleIconFile</key>
+\t<string>electron.icns</string>
+\t<key>CFBundleName</key>
+\t<string>Electron</string>
+</dict>
+</plist>
+`);
+    const writeFileSync = vi.fn();
     const spawnSync = vi.fn(() => ({ status: 0 }));
-    const existsSync = vi.fn((path: string) => !path.endsWith("Contents/MacOS/Electron"));
+    const existsSync = vi.fn(
+      (path: string) => !path.endsWith("Contents/MacOS/Electron") && !path.endsWith("Voice Assistant.app"),
+    );
+    const symlinkSync = vi.fn();
 
     prepareDevElectronExecutable({
       copyFileSync,
       cpSync,
       existsSync,
       iconPath: "app-icon.ico",
+      macAppBundleRoot: join(".dev-electron", "Electron.app"),
+      macBrandedAppBundleRoot: join(".dev-electron", "Voice Assistant.app"),
+      macBundleIconPath: join(".dev-electron", "Voice Assistant.app", "Contents", "Resources", "app-icon.icns"),
+      macBrandedExecutablePath: join(".dev-electron", "Voice Assistant.app", "Contents", "MacOS", "Voice Assistant"),
+      macIconPath: "app-icon.icns",
+      macInfoPlistPath: join(".dev-electron", "Voice Assistant.app", "Contents", "Info.plist"),
+      macSourceExecutablePath: join(".dev-electron", "Voice Assistant.app", "Contents", "MacOS", "Electron"),
       mkdirSync,
+      readFileSync,
       rceditPath: undefined,
       readdirSync: () => [],
       shouldPrepareExecutable: false,
       shouldBrandExecutable: false,
+      shouldBrandMacBundle: true,
       spawnSync,
+      symlinkSync,
       sourceElectronDir: "electron-dist",
       sourceElectronExe: join("electron-dist", "Electron.app", "Contents", "MacOS", "Electron"),
       devElectronDir: ".dev-electron",
@@ -329,12 +382,33 @@ describe("desktop development Electron launcher", () => {
         "Resources",
         "config.json",
       ),
+      writeFileSync,
     });
 
-    expect(cpSync).not.toHaveBeenCalled();
-    expect(copyFileSync).not.toHaveBeenCalled();
     expect(mkdirSync).not.toHaveBeenCalled();
-    expect(spawnSync).not.toHaveBeenCalled();
+    expect(cpSync).not.toHaveBeenCalled();
+    expect(symlinkSync).toHaveBeenCalledWith(
+      join(".dev-electron", "Electron.app"),
+      join(".dev-electron", "Voice Assistant.app"),
+      "dir",
+    );
+    expect(copyFileSync).toHaveBeenCalledWith(
+      "app-icon.icns",
+      join(".dev-electron", "Voice Assistant.app", "Contents", "Resources", "app-icon.icns"),
+    );
+    expect(copyFileSync).toHaveBeenCalledWith(
+      join(".dev-electron", "Voice Assistant.app", "Contents", "MacOS", "Electron"),
+      join(".dev-electron", "Voice Assistant.app", "Contents", "MacOS", "Voice Assistant"),
+    );
+    expect(writeFileSync).toHaveBeenCalledWith(
+      join(".dev-electron", "Voice Assistant.app", "Contents", "Info.plist"),
+      expect.stringContaining("<string>Voice Assistant</string>"),
+    );
+    expect(spawnSync).toHaveBeenCalledWith(
+      "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+      ["-f", join(".dev-electron", "Voice Assistant.app")],
+      { stdio: "ignore" },
+    );
   });
 
   it("brands an existing dev executable to recover from stale Electron icons", () => {

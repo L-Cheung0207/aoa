@@ -80,7 +80,7 @@ const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
     footer: "底部信息",
     currentVersionPrefix: "当前版本 ",
     checkUpdates: "检查更新",
-    contact: "意见反馈"
+    contact: "意见反馈",
   },
   "zh-TW": {
     welcomeAria: "歡迎",
@@ -104,7 +104,7 @@ const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
     footer: "底部資訊",
     currentVersionPrefix: "當前版本 ",
     checkUpdates: "檢查更新",
-    contact: "意見回饋"
+    contact: "意見回饋",
   },
   "en-US": {
     welcomeAria: "Welcome",
@@ -128,8 +128,8 @@ const HOME_PAGE_TEXT: Record<HomePageLanguage, HomePageText> = {
     footer: "Footer",
     currentVersionPrefix: "Current version ",
     checkUpdates: "Check for updates",
-    contact: "Feedback"
-  }
+    contact: "Feedback",
+  },
 };
 
 function getHomePageText(language: HomePageLanguage | undefined): HomePageText {
@@ -248,7 +248,14 @@ export function HomePage({
             {text.checkUpdates}
           </button>
         </div>
-        <button type="button" className="home-footer__link" onClick={onContact}>
+        <button
+          type="button"
+          className="home-footer__link home-footer__link--contact"
+          onClick={onContact}
+        >
+          <span className="home-footer__link-icon" aria-hidden="true">
+            <ThemedIcon name="aboutContactEmail" mode="image" />
+          </span>
           {text.contact}
         </button>
       </footer>
@@ -338,7 +345,11 @@ function RewriteWatermarkIcon(): React.JSX.Element {
   return <ThemedIcon name="watermarkRewrite" mode="image" />;
 }
 
-function TranslationWatermarkIcon({ glyph }: { glyph: string }): React.JSX.Element {
+function TranslationWatermarkIcon({
+  glyph,
+}: {
+  glyph: string;
+}): React.JSX.Element {
   void glyph;
   return <ThemedIcon name="watermarkTranslation" mode="image" />;
 }

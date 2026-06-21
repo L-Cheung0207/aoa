@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
-import { bootstrap } from "./bootstrap";
+import { bootstrap, configureAppIdentity } from "./bootstrap";
 import { installConsoleRedirect } from "./log/redirectConsole";
 import { installSingleInstanceGuard } from "./singleInstance";
 
 app.setAppLogsPath();
+configureAppIdentity();
 
 installConsoleRedirect({
   logFilePath: join(app.getPath("logs"), "main.log")

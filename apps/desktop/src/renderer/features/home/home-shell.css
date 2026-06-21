@@ -25,8 +25,13 @@ body:has(.home-page) {
   background: var(--home-shell-bg);
   color: #f2f2f2;
   font-family:
-    "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    "Microsoft YaHei",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   -webkit-user-select: none;
   user-select: none;
   -webkit-app-region: drag;
@@ -58,6 +63,154 @@ body:has(.home-page) {
 .home-page button,
 .home-page select {
   -webkit-app-region: no-drag;
+}
+
+.contact-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 36px;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(2px);
+  -webkit-app-region: no-drag;
+}
+
+.contact-dialog__window {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.76fr);
+  gap: 30px;
+  width: min(700px, calc(100vw - 72px));
+  min-height: 306px;
+  padding: 34px 40px 32px;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: #111111;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.34);
+}
+
+.contact-dialog__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  color: #5f6368;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.contact-dialog__close:hover {
+  color: #111111;
+  background: #f2f4f7;
+}
+
+.contact-dialog__close .themed-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.contact-dialog__copy {
+  align-self: center;
+  min-width: 0;
+}
+
+.contact-dialog__copy h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 32px;
+  color: #0b0b0b;
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.contact-dialog__section {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 28px;
+}
+
+.contact-dialog__section:last-child {
+  margin-bottom: 0;
+}
+
+.contact-dialog__section h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.contact-dialog__section a {
+  width: max-content;
+  max-width: 100%;
+  color: #5f6368;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.contact-dialog__section p {
+  max-width: 320px;
+  margin: 0;
+  color: #5f6368;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.52;
+  letter-spacing: 0;
+}
+
+.contact-dialog__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.contact-dialog__art img {
+  display: block;
+  width: min(235px, 100%);
+  height: auto;
+  filter: brightness(0);
+  object-fit: contain;
+}
+
+@media (max-width: 840px) {
+  .contact-dialog__window {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 46px 34px 34px;
+  }
+
+  .contact-dialog__copy h1 {
+    margin-bottom: 36px;
+    font-size: 42px;
+  }
+
+  .contact-dialog__section {
+    margin-bottom: 34px;
+  }
+
+  .contact-dialog__art img {
+    width: min(260px, 70vw);
+  }
 }
 
 .home-window-controls {
@@ -258,7 +411,11 @@ body:has(.home-page) {
 :root[data-theme="light"] .home-nav__item--active,
 :root[data-theme="light"] .home-nav__item:hover {
   color: #2f7ef7;
-  background: linear-gradient(90deg, rgba(47, 126, 247, 0.16), rgba(47, 126, 247, 0.24));
+  background: linear-gradient(
+    90deg,
+    rgba(47, 126, 247, 0.16),
+    rgba(47, 126, 247, 0.24)
+  );
 }
 
 .home-sidebar__footer {

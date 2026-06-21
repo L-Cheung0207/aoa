@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const PRODUCT_NAME = "Voice Assistant";
+const MAC_BUNDLE_IDENTIFIER = "com.ctm.voice-assistant.dev";
+const MAC_ICON_FILE_NAME = "app-icon.icns";
 
 export function createDevElectronPaths(
   packageRoot = fileURLToPath(new URL("..", import.meta.url)),
@@ -18,17 +20,25 @@ export function createDevElectronPaths(
   );
   const devElectronDir = join(packageRoot, ".dev-electron", "electron-dist");
   const isWindows = platform === "win32";
+  const isMac = platform === "darwin";
   const electronExecutableRelativePath = isWindows
     ? "electron.exe"
     : join("Electron.app", "Contents", "MacOS", "Electron");
   const sourceElectronExe = join(sourceElectronDir, electronExecutableRelativePath);
+  const macAppBundleRoot = join(sourceElectronDir, "Electron.app");
+  const macBrandedAppBundleRoot = join(sourceElectronDir, `${PRODUCT_NAME}.app`);
+  const macContentsRoot = join(macBrandedAppBundleRoot, "Contents");
+  const macResourcesRoot = join(macContentsRoot, "Resources");
+  const macBrandedExecutablePath = join(macContentsRoot, "MacOS", PRODUCT_NAME);
   return {
     sourceElectronDir,
     sourceElectronExe,
     devElectronDir,
     devElectronExe: isWindows
       ? join(devElectronDir, `${PRODUCT_NAME} Dev.exe`)
-      : sourceElectronExe,
+      : isMac
+        ? macBrandedExecutablePath
+        : sourceElectronExe,
     sourceConfigPath: join(packageRoot, "config.json"),
     devResourcesDir: join(
       devElectronDir,
@@ -41,8 +51,16 @@ export function createDevElectronPaths(
         : ["Electron.app", "Contents", "Resources", "config.json"]),
     ),
     iconPath: join(packageRoot, "resources", "app-icon.ico"),
+    macIconPath: join(packageRoot, "resources", "app-icon.icns"),
+    macAppBundleRoot,
+    macBrandedAppBundleRoot,
+    macInfoPlistPath: join(macContentsRoot, "Info.plist"),
+    macBundleIconPath: join(macResourcesRoot, MAC_ICON_FILE_NAME),
+    macSourceExecutablePath: sourceElectronExe,
+    macBrandedExecutablePath,
     shouldPrepareExecutable: isWindows,
     shouldBrandExecutable: isWindows,
+    shouldBrandMacBundle: isMac,
   };
 }
 
@@ -153,12 +171,22 @@ export function prepareDevElectronExecutable({
   cpSync,
   existsSync,
   iconPath,
+  macBundleIconPath,
+  macAppBundleRoot,
+  macBrandedAppBundleRoot,
+  macBrandedExecutablePath,
+  macIconPath,
+  macInfoPlistPath,
+  macSourceExecutablePath,
   mkdirSync,
+  readFileSync,
   rceditPath,
   readdirSync,
   shouldPrepareExecutable = true,
   shouldBrandExecutable = true,
+  shouldBrandMacBundle = false,
   spawnSync,
+  symlinkSync,
   sourceElectronExe,
   sourceElectronDir,
   devElectronDir,
@@ -166,21 +194,51 @@ export function prepareDevElectronExecutable({
   sourceConfigPath,
   devResourcesDir,
   devConfigPath,
+  writeFileSync,
 }) {
-  if (!shouldPrepareExecutable) {
+  if (!shouldPrepareExecutable && !shouldBrandMacBundle) {
     return;
   }
 
-  if (!existsSync(devElectronExe)) {
+  if (shouldPrepareExecutable && !existsSync(devElectronExe)) {
     mkdirSync(devElectronDir, { recursive: true });
     cpSync(sourceElectronDir, devElectronDir, { recursive: true, force: true });
     if (shouldBrandExecutable) {
       copyFileSync(sourceElectronExe, devElectronExe);
     }
   }
-  if (sourceConfigPath && devResourcesDir && devConfigPath) {
+  if (shouldPrepareExecutable && sourceConfigPath && devResourcesDir && devConfigPath) {
     mkdirSync(devResourcesDir, { recursive: true });
     copyFileSync(sourceConfigPath, devConfigPath);
+  }
+
+  if (shouldBrandMacBundle) {
+    if (macAppBundleRoot && macBrandedAppBundleRoot && !existsSync(macBrandedAppBundleRoot)) {
+      symlinkSync(macAppBundleRoot, macBrandedAppBundleRoot, "dir");
+    }
+    if (macIconPath && macBundleIconPath) {
+      copyFileSync(macIconPath, macBundleIconPath);
+    }
+    if (macSourceExecutablePath && macBrandedExecutablePath) {
+      copyFileSync(macSourceExecutablePath, macBrandedExecutablePath);
+    }
+    if (macInfoPlistPath && readFileSync && writeFileSync) {
+      const plist = readFileSync(macInfoPlistPath, "utf8")
+        .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/, `<key>CFBundleDisplayName</key>\n\t<string>${PRODUCT_NAME}</string>`)
+        .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/, `<key>CFBundleName</key>\n\t<string>${PRODUCT_NAME}</string>`)
+        .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/, `<key>CFBundleExecutable</key>\n\t<string>${PRODUCT_NAME}</string>`)
+        .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/, `<key>CFBundleIdentifier</key>\n\t<string>${MAC_BUNDLE_IDENTIFIER}</string>`)
+        .replace(/<key>CFBundleIconFile<\/key>\s*<string>[^<]*<\/string>/, `<key>CFBundleIconFile</key>\n\t<string>${MAC_ICON_FILE_NAME}</string>`);
+      writeFileSync(macInfoPlistPath, plist);
+    }
+    if (macInfoPlistPath) {
+      const appBundlePath = join(macInfoPlistPath, "..", "..");
+      spawnSync(
+        "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+        ["-f", appBundlePath],
+        { stdio: "ignore" },
+      );
+    }
   }
 
   if (!shouldBrandExecutable) {
@@ -227,9 +285,18 @@ export function runDevElectron(scriptUrl = import.meta.url) {
     cpSync,
     existsSync,
     iconPath: paths.iconPath,
+    macBundleIconPath: paths.macBundleIconPath,
+    macAppBundleRoot: paths.macAppBundleRoot,
+    macBrandedAppBundleRoot: paths.macBrandedAppBundleRoot,
+    macBrandedExecutablePath: paths.macBrandedExecutablePath,
+    macIconPath: paths.macIconPath,
+    macInfoPlistPath: paths.macInfoPlistPath,
+    macSourceExecutablePath: paths.macSourceExecutablePath,
     mkdirSync,
+    readFileSync,
     readdirSync,
     spawnSync,
+    symlinkSync,
     sourceElectronDir: paths.sourceElectronDir,
     sourceElectronExe: paths.sourceElectronExe,
     devElectronDir: paths.devElectronDir,
@@ -239,6 +306,8 @@ export function runDevElectron(scriptUrl = import.meta.url) {
     devConfigPath: paths.devConfigPath,
     shouldPrepareExecutable: paths.shouldPrepareExecutable,
     shouldBrandExecutable: paths.shouldBrandExecutable,
+    shouldBrandMacBundle: paths.shouldBrandMacBundle,
+    writeFileSync,
   });
 
   const result = spawnSync("electron-vite", createElectronViteDevArgs(process.argv.slice(2)), {

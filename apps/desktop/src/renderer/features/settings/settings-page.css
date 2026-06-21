@@ -91,7 +91,10 @@
 
 .settings .settings-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, var(--settings-control-width));
+  grid-template-columns: minmax(0, 1fr) minmax(
+      240px,
+      var(--settings-control-width)
+    );
   align-items: center;
   gap: 24px;
   min-height: 50px;
@@ -235,6 +238,26 @@
   cursor: pointer;
 }
 
+.settings .settings-shortcut-recorder__reset {
+  color: color-mix(in srgb, var(--settings-text), transparent 18%);
+  background: color-mix(in srgb, var(--settings-control-bg), #f7f8fb 8%);
+  border-color: color-mix(
+    in srgb,
+    var(--settings-control-border),
+    transparent 10%
+  );
+}
+
+.settings .settings-shortcut-recorder__reset:hover:not(:disabled),
+.settings .settings-shortcut-recorder__reset:focus-visible {
+  color: var(--settings-text);
+  border-color: var(--settings-control-border-hover);
+}
+
+.settings .settings-shortcut-recorder__reset:disabled {
+  opacity: 0.4;
+}
+
 .settings .settings-shortcut-recorder--invalid,
 .settings .settings-shortcut-recorder--invalid:focus-visible {
   border-color: #ff3b5f;
@@ -375,7 +398,11 @@
   min-height: 38px;
   padding: 0 14px;
   color: var(--settings-text);
-  background: color-mix(in srgb, var(--settings-control-bg), var(--settings-accent) 4%);
+  background: color-mix(
+    in srgb,
+    var(--settings-control-bg),
+    var(--settings-accent) 4%
+  );
   border: 1px solid var(--settings-control-border);
   border-radius: 8px;
   font-family: inherit;
@@ -389,7 +416,11 @@
 }
 
 .settings__btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--settings-control-bg), var(--settings-accent) 9%);
+  background: color-mix(
+    in srgb,
+    var(--settings-control-bg),
+    var(--settings-accent) 9%
+  );
   border-color: var(--settings-control-border-hover);
 }
 
@@ -438,13 +469,17 @@
   color: var(--settings-muted);
 }
 
-:root[data-theme="dark"] .connection-test-result--page.connection-test-result--ok,
-:root:not([data-theme="light"]) .connection-test-result--page.connection-test-result--ok {
+:root[data-theme="dark"]
+  .connection-test-result--page.connection-test-result--ok,
+:root:not([data-theme="light"])
+  .connection-test-result--page.connection-test-result--ok {
   color: #86efac;
 }
 
-:root[data-theme="dark"] .connection-test-result--page.connection-test-result--fail,
-:root:not([data-theme="light"]) .connection-test-result--page.connection-test-result--fail {
+:root[data-theme="dark"]
+  .connection-test-result--page.connection-test-result--fail,
+:root:not([data-theme="light"])
+  .connection-test-result--page.connection-test-result--fail {
   color: #fca5a5;
 }
 
@@ -550,6 +585,7 @@
   .settings .mic-picker,
   .settings .mic-picker__trigger,
   .settings .settings-shortcut-recorder,
+  .settings .settings-shortcut-recorder-field,
   .settings .settings-field,
   .settings .settings-service-control,
   .settings .settings-waveform-control {

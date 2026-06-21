@@ -678,13 +678,21 @@ export function App(): React.JSX.Element {
       }}
       onConfirm={() => {
         console.log("[voice] user clicked confirm");
-        bundleRef.current?.controller.confirm().catch((error) => {
+        const controller = bundleRef.current?.controller;
+        const mode =
+          activeMode ?? controller?.getSnapshot().mode ?? lastRecordingModeRef.current;
+        showStopThinking(mode);
+        controller?.confirm().catch((error) => {
           console.error("[voice] confirm failed", error);
         });
       }}
       onUndoCancel={() => {
         console.log("[voice] user clicked undo cancel");
-        bundleRef.current?.controller.undoCancel().catch((error) => {
+        const controller = bundleRef.current?.controller;
+        const mode =
+          activeMode ?? controller?.getSnapshot().mode ?? lastRecordingModeRef.current;
+        showStopThinking(mode);
+        controller?.undoCancel().catch((error) => {
           console.error("[voice] undoCancel failed", error);
         });
       }}

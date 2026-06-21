@@ -474,14 +474,22 @@
   color: #111827;
   font: inherit;
   font-size: 14px;
-  border: 0;
+  border: 1px solid rgba(17, 24, 39, 0.08);
   border-radius: 7px;
   outline: none;
   background: #e9e9e9;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .login-setup__field input:focus {
-  box-shadow: 0 0 0 3px rgba(47, 128, 237, 0.14);
+  border-color: rgba(47, 128, 237, 0.72);
+  background: #f7fbff;
+  box-shadow:
+    0 0 0 1px rgba(47, 128, 237, 0.14),
+    0 8px 18px rgba(47, 128, 237, 0.1);
 }
 
 .login-setup__code-row {
@@ -507,6 +515,24 @@
 
 .login-setup__license {
   margin: 4px 0 0 94px;
+}
+
+.login-setup__license-link {
+  margin: 0 0 0 2px;
+  padding: 0;
+  color: #1d66d8;
+  font: inherit;
+  font-weight: 800;
+  line-height: 1;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.login-setup__license-link:hover {
+  color: #1556bf;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .login-setup__primary,
@@ -1304,6 +1330,155 @@
   color: #b42318;
   border-color: #fda29b;
   background: #fff1f0;
+}
+
+.login-setup-license-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(17, 24, 39, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.login-setup-license-dialog__window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(820px, calc(100vw - 56px));
+  max-height: min(780px, calc(100vh - 56px));
+  overflow: hidden;
+  color: #1f2937;
+  border: 1px solid rgba(47, 128, 237, 0.16);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(17, 24, 39, 0.22);
+}
+
+.login-setup-license-dialog__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 14px;
+  align-items: center;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.login-setup-license-dialog__header h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 21px;
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.login-setup-license-dialog__close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  color: #6b7280;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.login-setup-license-dialog__close:hover {
+  color: #111827;
+  background: #f3f4f6;
+}
+
+.login-setup-license-dialog__close .themed-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.login-setup-license-dialog__content {
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 36px 34px;
+}
+
+.login-setup-license-dialog__content p,
+.login-setup-license-dialog__content li,
+.login-setup-license-dialog__content td {
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.68;
+  letter-spacing: 0;
+}
+
+.login-setup-license-dialog__content p {
+  margin: 0 0 14px;
+}
+
+.login-setup-license-dialog__content strong {
+  color: #111827;
+  font-weight: 800;
+}
+
+.login-setup-license-dialog__content a {
+  color: #1d66d8;
+  overflow-wrap: anywhere;
+}
+
+.login-setup-license-dialog__content .markdown-content__heading {
+  margin: 24px 0 12px;
+  color: #111827;
+  letter-spacing: 0;
+}
+
+.login-setup-license-dialog__content .markdown-content__heading--1 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+.login-setup-license-dialog__content .markdown-content__heading--2 {
+  font-size: 18px;
+}
+
+.login-setup-license-dialog__content .markdown-content__heading--3 {
+  font-size: 16px;
+}
+
+.login-setup-license-dialog__content ul,
+.login-setup-license-dialog__content ol {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+
+.login-setup-license-dialog__content hr {
+  height: 1px;
+  margin: 24px 0;
+  border: 0;
+  background: #e5e7eb;
+}
+
+.login-setup-license-dialog__content table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.login-setup-license-dialog__content th,
+.login-setup-license-dialog__content td {
+  padding: 9px 10px;
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+
+.login-setup-license-dialog__content th {
+  color: #111827;
+  font-weight: 800;
+  background: #f8fafc;
 }
 
 @media (max-height: 650px) {

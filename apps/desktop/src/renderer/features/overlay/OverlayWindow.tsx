@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import type { InterfaceLanguage, RecordingMode, WaveformStyle } from "@voice/shared";
 import type {
   RecordingState,
@@ -304,6 +310,13 @@ export function getCopyTooltipLabel(
   return getResultCopyTooltipLabel(copied, language);
 }
 
+function preventOverlayButtonFocus(
+  event: MouseEvent<HTMLButtonElement>,
+): void {
+  event.preventDefault();
+  window.voiceAI.notifyOverlayInteraction();
+}
+
 export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
   const state: RecordingState = props.state ?? "idle";
   const text = getOverlayText(props.language);
@@ -412,6 +425,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
             className="overlay__btn overlay__btn--undo"
             aria-label={text.undoCancel}
             title={text.undo}
+            onMouseDown={preventOverlayButtonFocus}
             onClick={props.onUndoCancel}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -485,8 +499,9 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
         <button
           type="button"
           className="overlay__btn overlay__btn--cancel"
-            aria-label={text.cancelRecording}
-            title={text.cancel}
+          aria-label={text.cancelRecording}
+          title={text.cancel}
+          onMouseDown={preventOverlayButtonFocus}
           onClick={props.onCancel}
           disabled={!cancelEnabled}
         >
@@ -516,6 +531,7 @@ export function OverlayWindow(props: OverlayWindowProps): React.JSX.Element {
           className="overlay__btn overlay__btn--confirm"
           aria-label={text.confirmEndRecording}
           title={text.confirm}
+          onMouseDown={preventOverlayButtonFocus}
           onClick={props.onConfirm}
           disabled={!confirmEnabled}
         >
@@ -694,6 +710,7 @@ function NetworkErrorHint({
               className="network-error-hint__close"
               aria-label={text.closeHint}
               title={text.close}
+              onMouseDown={preventOverlayButtonFocus}
               onClick={onDismiss}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -713,6 +730,7 @@ function NetworkErrorHint({
           <button
             type="button"
             className="network-error-hint__retry"
+            onMouseDown={preventOverlayButtonFocus}
             onClick={onRetry}
           >
             {text.retry}
@@ -747,6 +765,7 @@ function MicrophoneErrorHint({
               className="mic-error-hint__close"
               aria-label={text.closeHint}
               title={text.close}
+              onMouseDown={preventOverlayButtonFocus}
               onClick={onDismiss}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -766,6 +785,7 @@ function MicrophoneErrorHint({
           <button
             type="button"
             className="mic-error-hint__help"
+            onMouseDown={preventOverlayButtonFocus}
             onClick={onHelp}
           >
             {text.help}
@@ -803,6 +823,7 @@ function NoSelectionErrorHint({
             className="selection-error-hint__close"
             aria-label={text.closeHint}
             title={text.close}
+            onMouseDown={preventOverlayButtonFocus}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -922,6 +943,7 @@ function InsertionFallbackPanel({
               className="insertion-fallback-panel__close"
               aria-label={text.close}
               title={text.close}
+              onMouseDown={preventOverlayButtonFocus}
               onClick={onDismiss}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -940,6 +962,7 @@ function InsertionFallbackPanel({
         <button
           type="button"
           className="insertion-fallback-panel__copy"
+          onMouseDown={preventOverlayButtonFocus}
           onClick={copyTranscript}
         >
           {copied ? text.copied : text.copy}
@@ -1027,6 +1050,7 @@ function BusyHint({ text, onCancel, onDismiss }: BusyHintProps): React.JSX.Eleme
             className="overlay-busy-hint__close"
             aria-label={text.closeHint}
             title={text.close}
+            onMouseDown={preventOverlayButtonFocus}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1046,6 +1070,7 @@ function BusyHint({ text, onCancel, onDismiss }: BusyHintProps): React.JSX.Eleme
         <button
           type="button"
           className="overlay-busy-hint__cancel"
+          onMouseDown={preventOverlayButtonFocus}
           onClick={onCancel}
         >
           {text.cancel}
@@ -1097,6 +1122,7 @@ function RecordingLimitWarning({
             className="recording-limit-warning__close"
             aria-label={text.closeHint}
             title={text.close}
+            onMouseDown={preventOverlayButtonFocus}
             onClick={onDismiss}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

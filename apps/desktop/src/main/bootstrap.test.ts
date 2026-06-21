@@ -31,6 +31,7 @@ import {
   createLazyUpdateService,
   wireLoginSetupWindowVisibility,
   resolveDevelopmentRuntime,
+  resolvePackagedResourceRuntime,
   resolveAuthDevicePlatform,
   runAuthenticatedDirectIpc,
   runStartupGate,
@@ -41,6 +42,9 @@ import {
   shouldReplayMicErrorOverlay,
   shouldShowShortcutHelpForState,
   createLoginSetupShortcutCaptureController,
+  createElectronNativeWindowHandleCandidates,
+  isCurrentAppWindowHandle,
+  normalizeNativeWindowHandleToken,
 } from "./bootstrap";
 
 vi.mock("electron", () => ({
@@ -87,6 +91,22 @@ describe("bootstrap runtime mode", () => {
     ).toBe(false);
   });
 
+  it("uses development resource paths when a branded dev bundle reports packaged", () => {
+    expect(
+      resolvePackagedResourceRuntime({
+        isDevelopmentRuntime: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses packaged resource paths outside development runtime", () => {
+    expect(
+      resolvePackagedResourceRuntime({
+        isDevelopmentRuntime: false,
+      }),
+    ).toBe(true);
+  });
+
   it("maps Node platforms to auth device platforms", () => {
     expect(resolveAuthDevicePlatform("darwin")).toBe("mac");
     expect(resolveAuthDevicePlatform("linux")).toBe("linux");
@@ -131,6 +151,75 @@ describe("login setup shortcut capture controller", () => {
     expect(suspendGlobalShortcuts).toHaveBeenCalledTimes(1);
     expect(resumeGlobalShortcuts).toHaveBeenCalledTimes(1);
     expect(stopShortcutCaptureSession).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("current app window handle detection", () => {
+  const createNativeHandleBuffer = (handle: bigint): Buffer => {
+    const buffer = Buffer.alloc(8);
+    buffer.writeBigUInt64LE(handle, 0);
+    return buffer;
+  };
+
+  const createWindow = (
+    handle: bigint,
+    options: { destroyed?: boolean } = {},
+  ) => ({
+    isDestroyed: () => options.destroyed === true,
+    getNativeWindowHandle: () => createNativeHandleBuffer(handle),
+  });
+
+  it("matches macOS foreground process identifiers", () => {
+    expect(
+      isCurrentAppWindowHandle("4321", {
+        processIds: [1234, 4321],
+        windows: [],
+        matchProcessIds: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("matches Windows HWND values from Electron native window handles", () => {
+    expect(
+      isCurrentAppWindowHandle("12345", {
+        processIds: [],
+        windows: [createWindow(12345n)],
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores destroyed Electron windows and external handles", () => {
+    expect(
+      isCurrentAppWindowHandle("12345", {
+        processIds: [4321],
+        windows: [createWindow(12345n, { destroyed: true })],
+      }),
+    ).toBe(false);
+    expect(
+      isCurrentAppWindowHandle("67890", {
+        processIds: [4321],
+        windows: [createWindow(12345n)],
+      }),
+    ).toBe(false);
+  });
+
+  it("does not treat process identifiers as handles on Windows-style matching", () => {
+    expect(
+      isCurrentAppWindowHandle("4321", {
+        processIds: [4321],
+        windows: [],
+        matchProcessIds: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("normalizes decimal and hex handle formats", () => {
+    expect(normalizeNativeWindowHandleToken("0x3039")).toBe("12345");
+    expect(
+      createElectronNativeWindowHandleCandidates(
+        createNativeHandleBuffer(12345n),
+      ).has("12345"),
+    ).toBe(true);
   });
 });
 
@@ -766,6 +855,27 @@ describe("startup auth gate", () => {
     expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
     expect(showLoginSetupWindow).not.toHaveBeenCalled();
     expect(stopAuthenticatedRuntime).not.toHaveBeenCalled();
+  });
+
+  it("can open home after authenticated restore when requested", async () => {
+    const { service } = createGateAuthService(authenticatedSnapshot);
+    const startAuthenticatedRuntime = vi.fn();
+    const stopAuthenticatedRuntime = vi.fn();
+    const showLoginSetupWindow = vi.fn();
+    const openHomeWindowAfterLoginSetup = vi.fn();
+
+    await runStartupGate({
+      authService: service,
+      startAuthenticatedRuntime,
+      stopAuthenticatedRuntime,
+      showLoginSetupWindow,
+      openHomeWindowAfterLoginSetup,
+      openHomeWindowOnAuthenticatedRestore: true,
+    });
+
+    expect(startAuthenticatedRuntime).toHaveBeenCalledTimes(1);
+    expect(openHomeWindowAfterLoginSetup).toHaveBeenCalledTimes(1);
+    expect(showLoginSetupWindow).not.toHaveBeenCalled();
   });
 
   it("can force login setup while runtime starts after authenticated restore", async () => {

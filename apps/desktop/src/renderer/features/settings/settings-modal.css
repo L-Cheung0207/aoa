@@ -222,7 +222,7 @@
   width: 100%;
   min-height: 38px;
   height: 38px;
-  padding: 0 12px;
+  padding: 0 42px 0 12px;
   color: var(--ui-select-fg);
   background: var(--ui-select-bg);
   border: 1px solid var(--ui-select-border);
@@ -236,6 +236,40 @@
     border-color 200ms ease,
     box-shadow 200ms ease,
     background-color 200ms ease;
+}
+
+.settings-shortcut-recorder__reset {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: color-mix(in srgb, var(--ui-select-fg), transparent 18%);
+  background: color-mix(in srgb, var(--ui-select-bg), #ffffff 10%);
+  border: 1px solid color-mix(in srgb, var(--ui-select-border), transparent 18%);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.settings-shortcut-recorder__reset:hover:not(:disabled),
+.settings-shortcut-recorder__reset:focus-visible {
+  color: var(--ui-select-fg);
+  border-color: var(--ui-select-border-hover);
+  outline: none;
+}
+
+.settings-shortcut-recorder__reset .themed-icon {
+  width: 13px;
+  height: 13px;
+  color: currentColor;
 }
 
 .settings-shortcut-recorder:hover:not(:disabled) {
@@ -259,6 +293,10 @@
   box-shadow: none;
 }
 
+.settings-shortcut-recorder--invalid-value {
+  color: #ff3b5f;
+}
+
 .settings-shortcut-recorder__error {
   position: absolute;
   top: calc(100% + 6px);
@@ -276,6 +314,11 @@
   color: color-mix(in srgb, var(--ui-select-fg), transparent 52%);
   background-color: color-mix(in srgb, var(--ui-select-bg), transparent 22%);
   cursor: not-allowed;
+}
+
+.settings-shortcut-recorder__reset:disabled {
+  opacity: 0.42;
+  cursor: default;
 }
 
 .settings-row input[type="text"],

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
+import { APP_PRODUCT_NAME } from "../appIdentity";
 import { resolveRuntimeAppIconPath } from "./appIcon";
 import { blockHomeWindowAltSpaceMenu } from "./shortcutCaptureWindowGuard";
 
@@ -7,6 +8,7 @@ export function createLoginSetupWindow(
   options: { route?: "loginSetup" | "postInstallLogin" } = {},
 ): BrowserWindow {
   const window = new BrowserWindow({
+    title: APP_PRODUCT_NAME,
     width: 960,
     height: 680,
     minWidth: 900,

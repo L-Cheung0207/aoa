@@ -125,7 +125,7 @@ export function createVoiceOperationController(
   let starting = false;
   /**
    * 啟動期間使用者主動取消時：
-   * - 若已經開始開麥，立刻停麥並重置 UI（requestAbortDuringStart）
+   * - 若已經開始開麥，立刻停麥並保留撤銷 UI（requestAbortDuringStart）
    * - provider 側仍等啟動收尾後再 cancel，避免 WS 未 open 就 send finished 幀。
    */
   let pendingCancelAfterStart = false;
@@ -251,6 +251,12 @@ export function createVoiceOperationController(
     ) {
       return;
     }
+    if (activeSession && machine.getSnapshot().state === "listening") {
+      machine.send({ type: "cancel" });
+      snapshotRevision += 1;
+      options.onCancel?.(activeSession.mode);
+      return;
+    }
     machine.send({ type: "reset" });
   };
 
@@ -309,6 +315,13 @@ export function createVoiceOperationController(
 
       if (event.type === "error") {
         console.error("[voice] 轉寫錯誤", event);
+        if (
+          activeSession &&
+          (pendingCancelAfterStart || machine.getSnapshot().state === "canceled")
+        ) {
+          console.warn("[voice] 取消期間收到轉寫錯誤，保持已取消狀態");
+          return;
+        }
         if (activeSession && machine.getSnapshot().state === "listening") {
           markTranscriptionUnavailable(activeSession);
           return;
@@ -368,7 +381,11 @@ export function createVoiceOperationController(
       return true;
     } catch (error) {
       console.error("[voice] 轉寫啟動失敗", error);
-      if (activeSession === session) {
+      if (
+        activeSession === session &&
+        !pendingCancelAfterStart &&
+        machine.getSnapshot().state !== "canceled"
+      ) {
         updateTranscriptionStatus(session, { ready: false });
         markTranscriptionUnavailable(session);
       }
@@ -459,7 +476,10 @@ export function createVoiceOperationController(
       keepSessionForRetry =
         stage === "transcription" && activeSession !== undefined;
       // recorder 啟動失敗或啟動後流程失敗時需關麥，避免麥克風一直佔用。
-      if (recorderStarted || stage === "recorder") {
+      if (
+        (recorderStarted || stage === "recorder") &&
+        !(cancelledDuringStart && machine.getSnapshot().state === "canceled")
+      ) {
         try {
           await options.recorder.cancel();
         } catch (cancelError) {
@@ -469,7 +489,10 @@ export function createVoiceOperationController(
           );
         }
       }
-      if (transcriptionStarted || cancelledDuringStart) {
+      if (
+        transcriptionStarted ||
+        (cancelledDuringStart && machine.getSnapshot().state !== "canceled")
+      ) {
         try {
           await options.transcriptionProvider.cancel();
         } catch (cancelError) {
@@ -480,9 +503,11 @@ export function createVoiceOperationController(
         }
       }
       if (cancelledDuringStart) {
-        activeSession = undefined;
-        machine.send({ type: "reset" });
-        snapshotRevision += 1;
+        if (machine.getSnapshot().state !== "canceled") {
+          activeSession = undefined;
+          machine.send({ type: "reset" });
+          snapshotRevision += 1;
+        }
         return;
       }
       if (!keepSessionForRetry) {
@@ -502,7 +527,9 @@ export function createVoiceOperationController(
     }
     if (shouldCancelAfterStart) {
       console.log("[voice] 啟動完成後發現 pendingCancel，立即取消會話");
-      await cancelSession();
+      if (machine.getSnapshot().state !== "canceled") {
+        await cancelSession();
+      }
       return;
     }
     if (
@@ -668,11 +695,17 @@ export function createVoiceOperationController(
       }
     } catch (error) {
       console.warn(
-        "[voice] 進入已取消狀態時 recorder.stop 失敗，改走完整取消",
+        "[voice] 進入已取消狀態時 recorder.stop 失敗，保留撤銷狀態並強制清理 recorder",
         error,
       );
-      await cancelSession();
-      return;
+      try {
+        await options.recorder.cancel();
+      } catch (cancelError) {
+        console.warn(
+          "[voice] 進入已取消狀態時 recorder.cancel 也失敗（已忽略）",
+          cancelError,
+        );
+      }
     }
 
     machine.send({ type: "cancel" });

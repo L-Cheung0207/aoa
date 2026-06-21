@@ -39,6 +39,7 @@ class FakeRecorderService implements RecorderService {
   public starts: Array<Partial<RecorderOptions> | undefined> = [];
   public stopCount = 0;
   public cancelCount = 0;
+  public failNextStop = false;
 
   getState(): "idle" | "listening" {
     return this.state;
@@ -59,6 +60,10 @@ class FakeRecorderService implements RecorderService {
 
   async stop(): Promise<void> {
     this.stopCount += 1;
+    if (this.failNextStop) {
+      this.failNextStop = false;
+      throw new Error("stop failed");
+    }
     this.state = "idle";
     this.emit({ type: "stop" });
   }
@@ -508,6 +513,46 @@ describe("voice operation controller", () => {
     expect(recorder.cancelCount).toBe(0);
     expect(transcriptionProvider.cancelCount).toBe(0);
     expect(transcriptionProvider.stopCount).toBe(0);
+
+    await controller.undoCancel();
+
+    expect(textTarget.inserted).toEqual(["undo transcript"]);
+    expect(transcriptionProvider.stopCount).toBe(1);
+    expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
+  });
+
+  it("keeps the canceled state when recorder stop fails during cancel", async () => {
+    const recorder = new FakeRecorderService();
+    const transcriptionProvider = new FakeTranscriptionProvider("undo transcript");
+    const textTarget = createTextTarget();
+    const controller = createVoiceOperationController({
+      recorder,
+      transcriptionProvider,
+      postProcessService: createPostProcessService({
+        action: "insert",
+        finalText: "unused",
+        confidence: 0,
+        usedDictionaryTermIds: [],
+        warnings: []
+      }),
+      textTarget,
+      settings: createSettings(),
+      getAppContext: async () => ({
+        platform: "macos",
+        appName: "Notes",
+        windowTitle: "notes"
+      })
+    });
+
+    await controller.handleToggle("direct");
+    recorder.failNextStop = true;
+    await controller.cancel();
+
+    expect(controller.getSnapshot()).toEqual({ state: "canceled", mode: "direct" });
+    expect(recorder.stopCount).toBe(1);
+    expect(recorder.cancelCount).toBe(1);
+    expect(recorder.getState()).toBe("idle");
+    expect(transcriptionProvider.cancelCount).toBe(0);
 
     await controller.undoCancel();
 
@@ -1218,6 +1263,70 @@ describe("voice operation controller", () => {
     expect(cancelCount).toBe(0);
     expect(recorder.cancelCount).toBe(0);
     expect(controller.getSnapshot()).toEqual({ state: "success", mode: undefined });
+  });
+  it("keeps canceled when canceling while provider.start is still pending", async () => {
+    const recorder = new FakeRecorderService();
+    let rejectStart: ((error: Error) => void) | undefined;
+    let startCount = 0;
+    let cancelCount = 0;
+    const listeners = new Set<(event: TranscriptionEvent) => void>();
+    const transcriptionProvider = {
+      subscribe: (listener: (event: TranscriptionEvent) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      start: async () => {
+        startCount += 1;
+        await new Promise<void>((_resolve, reject) => {
+          rejectStart = reject;
+        });
+      },
+      sendAudio: () => undefined,
+      stop: async () => undefined,
+      cancel: async () => {
+        cancelCount += 1;
+        for (const listener of listeners) {
+          listener({ type: "error", error: new Error("WS cancel error") });
+        }
+        rejectStart?.(new Error("Java voice WebSocket connection failed"));
+      }
+    };
+    const controller = createVoiceOperationController({
+      recorder,
+      transcriptionProvider,
+      postProcessService: createPostProcessService({
+        action: "insert",
+        finalText: "",
+        confidence: 0,
+        usedDictionaryTermIds: [],
+        warnings: []
+      }),
+      textTarget: createTextTarget(),
+      settings: createSettings(),
+      getAppContext: async () => ({
+        platform: "macos",
+        appName: "Notes",
+        windowTitle: "notes"
+      })
+    });
+
+    const start = controller.handleToggle("direct");
+    for (let i = 0; i < 3 && startCount === 0; i += 1) {
+      await Promise.resolve();
+    }
+    expect(controller.getSnapshot()).toMatchObject({
+      state: "listening",
+      mode: "direct",
+      transcriptionStatus: "starting"
+    });
+
+    await controller.cancel();
+    await start;
+
+    expect(startCount).toBe(1);
+    expect(cancelCount).toBe(1);
+    expect(recorder.cancelCount).toBe(1);
+    expect(controller.getSnapshot()).toEqual({ state: "canceled", mode: "direct" });
   });
   it("starts the recorder before starting transcription", async () => {
     const order: string[] = [];

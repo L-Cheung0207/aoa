@@ -161,6 +161,31 @@ describe("auth service", () => {
     expect(client.refresh).not.toHaveBeenCalled();
   });
 
+  it("creates an in-memory development session when bypass is enabled and no persisted session exists", async () => {
+    const { service, client, store } = createService({
+      allowDevelopmentBypass: true,
+    });
+
+    await expect(service.restoreSession()).resolves.toEqual({
+      status: "authenticated",
+      user: {
+        id: "dev-user",
+        displayName: "Developer",
+        email: "dev@example.test",
+        authType: "email_code",
+      },
+      featureFlags: {
+        developmentAuthBypass: true,
+      },
+    });
+    await expect(service.getAccessTokenForRequest()).resolves.toBe(
+      "dev-access-token",
+    );
+    expect(store.read).toHaveBeenCalledOnce();
+    expect(store.write).not.toHaveBeenCalled();
+    expect(client.refresh).not.toHaveBeenCalled();
+  });
+
   it("clears store and notifies expired when persisted refresh session is expired", async () => {
     const store = createStore(
       createStoredSession({
